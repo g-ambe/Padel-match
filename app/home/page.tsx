@@ -23,12 +23,12 @@ export default function HomePage() {
     }
 
     setLoading(true);
-    const { getSupabaseClient } = await import("@/lib/supabase");
+    const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
     const supabase = getSupabaseClient();
 
     if (!supabase) {
       setLoading(false);
-      setError("設定エラーのため作成できません");
+      setError(getSupabaseEnvErrorMessage() ?? "Supabase初期化に失敗しました");
       return;
     }
 

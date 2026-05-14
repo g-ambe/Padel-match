@@ -30,5 +30,4 @@ npm run dev
 ## Cloudflare Pages対応
 
 - Node.js専用API（`fs`, `child_process`）は未使用
-- `runtime = "edge"` を利用
 - fetch / Supabase SDK前提

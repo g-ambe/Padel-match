@@ -49,6 +49,9 @@ export default function HomePage() {
       return;
     }
 
+    setOpen(false);
+    setName("");
+    setCourtCount(2);
     router.push(`/events/${data.id}`);
   };
 
@@ -72,7 +75,7 @@ export default function HomePage() {
               min={1}
               placeholder="コート数"
               value={courtCount}
-              onChange={(e) => setCourtCount(Number(e.target.value))}
+              onChange={(e) => setCourtCount(Math.max(1, Number(e.target.value) || 1))}
             />
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-2">

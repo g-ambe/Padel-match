@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
@@ -13,6 +13,7 @@ type ScoreInput = { a: number | ""; b: number | "" };
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
+  const router = useRouter();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [eventName, setEventName] = useState("-");
@@ -24,6 +25,8 @@ export default function EventDetailPage() {
   const [scoreInputs, setScoreInputs] = useState<Record<string, ScoreInput>>({});
   const [showAllRounds, setShowAllRounds] = useState(false);
   const [editingMatchIds, setEditingMatchIds] = useState<Record<string, boolean>>({});
+  const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
+  const [editingGuestName, setEditingGuestName] = useState("");
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -205,9 +208,48 @@ export default function EventDetailPage() {
   const addGuest = async () => {
     const supabase = getSupabaseClient();
     if (!supabase || !guestName.trim() || !eventId) return;
+    const normalizeName = (v: string) => v.trim().toLowerCase();
+    const newGuest = normalizeName(guestName);
+    const exists = participants.some((p) => normalizeName(p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "") : "")) === newGuest);
+    if (exists) {
+      setError("同じ名前の参加者が既にいます");
+      return;
+    }
+    setError("");
     await supabase.from("event_participants").insert({ event_id: eventId, guest_name: guestName.trim(), status: "active" });
     setGuestName("");
     await loadAll();
+  };
+
+  const saveGuestName = async (participantId: string) => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    const normalizeName = (v: string) => v.trim().toLowerCase();
+    const candidate = normalizeName(editingGuestName);
+    if (!candidate) {
+      setError("ゲスト名を入力してください");
+      return;
+    }
+    const exists = participants.some((p) => p.id !== participantId && normalizeName(p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "") : "")) === candidate);
+    if (exists) {
+      setError("同じ名前の参加者が既にいます");
+      return;
+    }
+    setError("");
+    await supabase.from("event_participants").update({ guest_name: editingGuestName.trim() }).eq("id", participantId).eq("event_id", eventId);
+    setEditingGuestId(null);
+    setEditingGuestName("");
+    await loadAll();
+  };
+
+  const goTop = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      router.push("/");
+      return;
+    }
+    const { data } = await supabase.auth.getSession();
+    router.push(data.session ? "/home" : "/");
   };
 
   const updateStatus = async (participantId: string, isActive: boolean) => {
@@ -492,7 +534,8 @@ export default function EventDetailPage() {
             const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
             return (
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
-                <p className="mb-2 text-sm">Round {m.round_number} / Court{m.court_number}: {a} vs {b}</p>
+                <p className="text-sm">Round {m.round_number} / Court{m.court_number}</p>
+                <p className="mb-2 text-base font-semibold">{a} vs {b}</p>
                 <div className="flex items-center gap-2">
                   <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" value={scoreInputs[m.id]?.a ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: e.target.value === "" ? "" : Number(e.target.value), b: prev[m.id]?.b ?? "" } }))} />
                   <span>-</span>
@@ -527,6 +570,7 @@ export default function EventDetailPage() {
       {showCourtWarning && (
         <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>
       )}
+      <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       
 
@@ -548,6 +592,19 @@ export default function EventDetailPage() {
                   </span>
                 </button>
               </div>
+              {p.participant_type === "guest" && (
+                <div className="flex items-center gap-2">
+                  {editingGuestId === p.id ? (
+                    <>
+                      <input className="w-full rounded-xl bg-zinc-700 p-2 text-sm" value={editingGuestName} onChange={(e) => setEditingGuestName(e.target.value)} />
+                      <button className="rounded bg-accent px-3 py-2 text-sm text-black" onClick={() => void saveGuestName(p.id)}>保存</button>
+                      <button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => { setEditingGuestId(null); setEditingGuestName(""); }}>キャンセル</button>
+                    </>
+                  ) : (
+                    <button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => { setEditingGuestId(p.id); setEditingGuestName(p.guest_name ?? p.display_name ?? ""); }}>編集</button>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -606,7 +663,7 @@ export default function EventDetailPage() {
               <p className="mb-1 font-semibold">得点ランキング</p>
               <ol className="space-y-1">{eventSummary.scoredRanking.map((r, i) => <li key={`sc-${r.name}-${i}`}>{i + 1}位 {r.name} {r.scored}</li>)}</ol>
             </div>
-            <Link href="/home" className="block w-full rounded-2xl bg-accent py-3 text-center font-semibold text-black">TOPへ戻る</Link>
+            <button className="block w-full rounded-2xl bg-accent py-3 text-center font-semibold text-black" onClick={() => void goTop()}>TOPへ戻る</button>
           </div>
         </Card>
       )}

@@ -13,6 +13,7 @@ export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [matches, setMatches] = useState<MatchView[]>([]);
+  const [eventName, setEventName] = useState("-");
   const [courtCount, setCourtCount] = useState(1);
   const [guestName, setGuestName] = useState("");
   const [error, setError] = useState("");
@@ -90,10 +91,42 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
-    const { data: event } = await supabase.from("events").select("court_count,status").eq("id", eventId).single();
+    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id").eq("id", eventId).single();
+    if (event?.name) setEventName(event.name);
     if (event?.court_count) setCourtCount(event.court_count);
     if (event?.status === "closed") setEventStatus("closed");
     else setEventStatus("active");
+
+
+
+    // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
+    if (event?.club_id) {
+      const { data: members } = await supabase
+        .from("club_members")
+        .select("profile_id, profiles(display_name)")
+        .eq("club_id", event.club_id);
+
+      const { data: existingParticipants } = await supabase
+        .from("event_participants")
+        .select("profile_id")
+        .eq("event_id", eventId)
+        .not("profile_id", "is", null);
+
+      const existingProfileIds = new Set((existingParticipants ?? []).map((x: any) => x.profile_id));
+      const inserts = (members ?? [])
+        .filter((m: any) => m.profile_id && !existingProfileIds.has(m.profile_id))
+        .map((m: any) => ({
+          event_id: eventId,
+          profile_id: m.profile_id,
+          guest_name: m.profiles?.display_name ?? null,
+          status: "active",
+          participant_type: "member"
+        }));
+
+      if (inserts.length > 0) {
+        await supabase.from("event_participants").insert(inserts);
+      }
+    }
 
     const { data: pt } = await supabase
       .from("event_participants")
@@ -237,7 +270,7 @@ export default function EventDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
-      <h1 className="text-xl font-bold">開催詳細</h1>
+      <h1 className="text-xl font-bold">開催詳細：{eventName}</h1>
       <Card title="参加者追加">
         <div className="flex gap-2">
           <input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="ゲスト名" value={guestName} onChange={(e) => setGuestName(e.target.value)} />
@@ -248,11 +281,11 @@ export default function EventDetailPage() {
         <ul className="space-y-2">
           {participants.map((p) => (
             <li key={p.id} className="rounded-xl bg-zinc-800 p-3">
-              <div className="mb-2 flex justify-between"><span>{p.guest_name ?? "ゲスト"}</span><span>{p.status === "active" ? "参加中" : p.status === "resting" ? "休憩" : "離席"}</span></div>
+              <div className="mb-2 flex justify-between"><span>{p.guest_name ?? "ゲスト"}</span><span>{p.status === "active" ? "参加中" : p.status === "resting" ? "休み" : "帰宅"}</span></div>
               <div className="grid grid-cols-3 gap-1 text-sm">
                 <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "active")}>参加中</button>
-                <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "resting")}>休憩</button>
-                <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "absent")}>離席</button>
+                <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "resting")}>休み</button>
+                <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "absent")}>帰宅</button>
               </div>
             </li>
           ))}

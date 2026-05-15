@@ -7,7 +7,7 @@ import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
-type MatchView = { id: string; court_number: number; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { score_a: number; score_b: number; winner_team: "A" | "B" } | null };
+type MatchView = { id: string; court_number: number; round_number: number; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
@@ -20,6 +20,7 @@ export default function EventDetailPage() {
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [scoreInputs, setScoreInputs] = useState<Record<string, { a: number; b: number }>>({});
+  const [showAllRounds, setShowAllRounds] = useState(false);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -74,7 +75,7 @@ export default function EventDetailPage() {
 
   const ranking = useMemo(() => {
     const stats: Record<string, { name: string; m: number; w: number }> = {};
-    for (const p of participants) stats[p.id] = { name: p.guest_name ?? "ゲスト", m: 0, w: 0 };
+    for (const p of participants) stats[p.id] = { name: p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定"), m: 0, w: 0 };
     for (const m of matches) {
       if (!m.completed) continue;
       const score = scoreInputs[m.id];
@@ -91,6 +92,14 @@ export default function EventDetailPage() {
       .sort((a, b) => b.r - a.r);
   }, [participants, matches, scoreInputs]);
 
+
+
+
+  const latestRoundNumber = useMemo(() => matches.reduce((max, m) => Math.max(max, m.round_number), 0), [matches]);
+  const displayedMatches = useMemo(() => {
+    if (showAllRounds) return [...matches].sort((a, b) => (b.round_number - a.round_number) || (a.court_number - b.court_number));
+    return matches.filter((m) => m.round_number === latestRoundNumber);
+  }, [matches, showAllRounds, latestRoundNumber]);
 
   const loadAll = async () => {
     const supabase = getSupabaseClient();
@@ -178,12 +187,12 @@ export default function EventDetailPage() {
 
     const { data: ms } = await supabase
       .from("matches")
-      .select("id,court_number,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)")
+      .select("id,court_number,completed,rounds(round_number),match_players(participant_id,team),match_results(score_a,score_b,winner_team)")
       .eq("event_id", eventId)
       .order("created_at", { ascending: false })
       .limit(8);
 
-    setMatches((ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null })));
+    setMatches((ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null })));
   };
 
   useEffect(() => {
@@ -198,10 +207,10 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
-  const updateStatus = async (participantId: string, status: Participant["status"]) => {
+  const updateStatus = async (participantId: string, isActive: boolean) => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
-    await supabase.from("event_participants").update({ status }).eq("id", participantId);
+    await supabase.from("event_participants").update({ status: isActive ? "active" : "resting" }).eq("id", participantId);
     await loadAll();
   };
 
@@ -314,12 +323,12 @@ export default function EventDetailPage() {
       <h1 className="text-xl font-bold">開催詳細：{eventName}</h1>
       <Card title="試合とスコア入力">
         <div className="space-y-3">
-          {matches.map((m) => {
+          {displayedMatches.map((m) => {
             const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
             const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
             return (
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
-                <p className="mb-2 text-sm">Court{m.court_number}: {a} vs {b}</p>
+                <p className="mb-2 text-sm">Round {m.round_number} / Court{m.court_number}: {a} vs {b}</p>
                 <div className="flex items-center gap-2">
                   <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
                   <span>-</span>
@@ -329,6 +338,11 @@ export default function EventDetailPage() {
               </div>
             );
           })}
+        </div>
+        <div className="mt-3">
+          <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllRounds((v) => !v)}>
+            {showAllRounds ? "閉じる" : "すべて表示"}
+          </button>
         </div>
       </Card>
 
@@ -351,11 +365,19 @@ export default function EventDetailPage() {
         <ul className="space-y-2">
           {participants.map((p) => (
             <li key={p.id} className="rounded-xl bg-zinc-800 p-3">
-              <div className="mb-2 flex justify-between"><span>{p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定")}</span><span>{p.status === "active" ? "参加中" : p.status === "resting" ? "休み" : "帰宅"}</span></div>
-              <div className="grid grid-cols-3 gap-1 text-sm">
-                <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "active")}>参加中</button>
-                <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "resting")}>休み</button>
-                <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "absent")}>帰宅</button>
+              <div className="mb-2 flex items-center justify-between">
+                <span>{p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定")}</span>
+                <button
+                  type="button"
+                  aria-label="参加状態切替"
+                  onClick={() => updateStatus(p.id, p.status !== "active")}
+                  className={`relative h-8 w-20 rounded-full px-1 transition ${p.status === "active" ? "bg-lime-500" : "bg-zinc-300"}`}
+                >
+                  <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${p.status === "active" ? "right-1" : "left-1"}`} />
+                  <span className={`absolute inset-0 flex items-center justify-center text-xs font-semibold ${p.status === "active" ? "text-white" : "text-zinc-700"}`}>
+                    {p.status === "active" ? "参加中" : "休み"}
+                  </span>
+                </button>
               </div>
             </li>
           ))}

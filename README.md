@@ -136,3 +136,21 @@ on conflict do nothing;
 - `participant_type` が `member` / `guest` のみ
 - `event_participants_member_or_guest_check` 制約が存在する
 - `player_profiles` テーブルが存在する
+
+
+### 参加者名が「メンバー名未設定」になる場合の補正
+
+Supabase SQL Editor で次を手動実行してください。
+
+1. `supabase/migrations/0009_backfill_member_profile_links.sql`
+
+推奨実行順（未適用がある場合）:
+- `0006_group_member_guest_model.sql`
+- `0008_fix_0007_participant_type_dependency.sql`
+- `0007_player_profiles.sql`
+- `0009_backfill_member_profile_links.sql`
+
+確認ポイント:
+- `club_members.player_profile_id` が Wytel部活メンバーで埋まっている
+- `event_participants` の `participant_type='member'` 行で `player_profile_id` が埋まっている
+- 開催詳細の参加者欄に 青木/今野/神田/蓮見/赤木/安倍/瀧田/神原 が表示される

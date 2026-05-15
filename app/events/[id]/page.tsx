@@ -9,6 +9,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 type HistoryMatch = { round_number: number; court_number: number; players: { participant_id: string; team: "A" | "B" }[] };
+type ScoreInput = { a: number | ""; b: number | "" };
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
@@ -20,7 +21,7 @@ export default function EventDetailPage() {
   const [error, setError] = useState("");
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
   const [showCloseModal, setShowCloseModal] = useState(false);
-  const [scoreInputs, setScoreInputs] = useState<Record<string, { a: number; b: number }>>({});
+  const [scoreInputs, setScoreInputs] = useState<Record<string, ScoreInput>>({});
   const [showAllRounds, setShowAllRounds] = useState(false);
   const [editingMatchIds, setEditingMatchIds] = useState<Record<string, boolean>>({});
 
@@ -231,6 +232,10 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     const score = scoreInputs[matchId];
     if (!supabase || !score) return;
+    if (score.a === "" || score.b === "") {
+      setError("スコアを入力してください");
+      return;
+    }
     const winner = score.a > score.b ? "A" : "B";
 
     const targetMatch = matches.find((m) => m.id === matchId);
@@ -489,9 +494,9 @@ export default function EventDetailPage() {
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
                 <p className="mb-2 text-sm">Round {m.round_number} / Court{m.court_number}: {a} vs {b}</p>
                 <div className="flex items-center gap-2">
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" value={scoreInputs[m.id]?.a ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
+                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" value={scoreInputs[m.id]?.a ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: e.target.value === "" ? "" : Number(e.target.value), b: prev[m.id]?.b ?? "" } }))} />
                   <span>-</span>
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" value={scoreInputs[m.id]?.b ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? 0, b: Number(e.target.value) } }))} />
+                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" value={scoreInputs[m.id]?.b ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? "", b: e.target.value === "" ? "" : Number(e.target.value) } }))} />
                   <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={(m.completed && !editingMatchIds[m.id]) || eventStatus === "closed"}>{m.completed && !editingMatchIds[m.id] ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>

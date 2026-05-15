@@ -31,3 +31,24 @@ npm run dev
 
 - Node.js専用API（`fs`, `child_process`）は未使用
 - fetch / Supabase SDK前提
+
+
+## Supabase SQL実行手順（初期スキーマ）
+
+1. Supabaseダッシュボードを開く
+2. `SQL Editor` → `New query`
+3. `supabase/migrations/0001_init.sql` を貼り付けて実行
+4. `supabase/migrations/0002_beta_match_ops.sql` を貼り付けて実行
+5. `supabase/migrations/0003_schema_rls_setup.sql` を貼り付けて実行
+
+これで以下テーブルが作成・更新されます。
+- profiles
+- clubs
+- club_members
+- events
+- event_participants
+- rounds
+- matches
+- match_players
+- match_results
+- player_stats

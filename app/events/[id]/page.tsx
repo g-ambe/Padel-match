@@ -330,7 +330,7 @@ export default function EventDetailPage() {
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
       <h1 className="text-xl font-bold">開催詳細：{eventName}</h1>
       <Card title="試合とスコア入力">
-        <div className="space-y-3">
+        <div className={showAllRounds ? "max-h-[34rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
           {displayedMatches.map((m) => {
             const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
             const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
@@ -355,6 +355,8 @@ export default function EventDetailPage() {
             {showAllRounds ? "閉じる" : "すべて表示"}
           </button>
         </div>
+          {showAllRounds && <p className="mt-2 text-xs text-zinc-400">下にスクロールして全試合を確認できます</p>}
+
       </Card>
 
 

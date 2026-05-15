@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
 type Participant = { id: string; profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent" };
-type MatchView = { id: string; court_number: number; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean };
+type MatchView = { id: string; court_number: number; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
@@ -22,6 +23,48 @@ export default function EventDetailPage() {
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.guest_name ?? "ゲスト"])), [participants]);
 
   const profileMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.profile_id])), [participants]);
+
+
+
+  const eventSummary = useMemo(() => {
+    const table: Record<string, { name: string; played: number; wins: number; losses: number; scored: number; conceded: number; winRate: number; diff: number }> = {};
+    for (const p of participants) {
+      table[p.id] = { name: p.guest_name ?? "ゲスト", played: 0, wins: 0, losses: 0, scored: 0, conceded: 0, winRate: 0, diff: 0 };
+    }
+
+    for (const m of matches) {
+      if (!m.completed || !m.result) continue;
+      const teamA = m.players.filter((x) => x.team === "A").map((x) => x.participant_id);
+      const teamB = m.players.filter((x) => x.team === "B").map((x) => x.participant_id);
+
+      for (const pid of teamA) {
+        const row = table[pid];
+        if (!row) continue;
+        row.played += 1;
+        row.scored += m.result.score_a;
+        row.conceded += m.result.score_b;
+        if (m.result.winner_team === "A") row.wins += 1;
+        else row.losses += 1;
+      }
+      for (const pid of teamB) {
+        const row = table[pid];
+        if (!row) continue;
+        row.played += 1;
+        row.scored += m.result.score_b;
+        row.conceded += m.result.score_a;
+        if (m.result.winner_team === "B") row.wins += 1;
+        else row.losses += 1;
+      }
+    }
+
+    const rows = Object.values(table).map((r) => ({ ...r, winRate: r.played ? Math.round((r.wins / r.played) * 1000) / 10 : 0, diff: r.scored - r.conceded }));
+    return {
+      rows,
+      winRateRanking: [...rows].sort((a, b) => b.winRate - a.winRate),
+      diffRanking: [...rows].sort((a, b) => b.diff - a.diff),
+      scoredRanking: [...rows].sort((a, b) => b.scored - a.scored)
+    };
+  }, [participants, matches]);
 
   const ranking = useMemo(() => {
     const stats: Record<string, { name: string; m: number; w: number }> = {};
@@ -61,12 +104,12 @@ export default function EventDetailPage() {
 
     const { data: ms } = await supabase
       .from("matches")
-      .select("id,court_number,completed,match_players(participant_id,team)")
+      .select("id,court_number,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)")
       .eq("event_id", eventId)
       .order("created_at", { ascending: false })
       .limit(8);
 
-    setMatches((ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, completed: m.completed, players: m.match_players ?? [] })));
+    setMatches((ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null })));
   };
 
   useEffect(() => {
@@ -233,6 +276,39 @@ export default function EventDetailPage() {
         </button>
         {eventStatus === "closed" && <p className="mt-2 text-sm text-zinc-300">この開催は終了しました</p>}
       </Card>
+
+
+
+      {eventStatus === "closed" && (
+        <Card title="開催サマリー">
+          <div className="space-y-3 text-sm">
+            <div className="rounded-xl bg-zinc-800 p-3">
+              <p className="mb-2 font-semibold">参加者成績（この開催）</p>
+              <ul className="space-y-1">
+                {eventSummary.rows.map((r) => (
+                  <li key={r.name}>
+                    {r.name} / 試合 {r.played} / 勝 {r.wins} / 敗 {r.losses} / 勝率 {r.winRate}% / 得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-xl bg-zinc-800 p-3">
+              <p className="mb-1 font-semibold">勝率ランキング</p>
+              <ol className="space-y-1">{eventSummary.winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
+            </div>
+            <div className="rounded-xl bg-zinc-800 p-3">
+              <p className="mb-1 font-semibold">得失点差ランキング</p>
+              <ol className="space-y-1">{eventSummary.diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
+            </div>
+            <div className="rounded-xl bg-zinc-800 p-3">
+              <p className="mb-1 font-semibold">得点ランキング</p>
+              <ol className="space-y-1">{eventSummary.scoredRanking.map((r, i) => <li key={`sc-${r.name}-${i}`}>{i + 1}位 {r.name} {r.scored}</li>)}</ol>
+            </div>
+            <Link href="/home" className="block w-full rounded-2xl bg-accent py-3 text-center font-semibold text-black">TOPへ戻る</Link>
+          </div>
+        </Card>
+      )}
 
       <Card title="試合とスコア入力">
         <div className="space-y-3">

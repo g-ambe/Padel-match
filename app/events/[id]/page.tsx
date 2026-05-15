@@ -8,6 +8,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
+type HistoryMatch = { round_number: number; court_number: number; players: { participant_id: string; team: "A" | "B" }[] };
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
@@ -216,52 +217,6 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
-  const generateRound = async () => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !eventId) return;
-    setError("");
-
-    const active = participants.filter((p) => p.status === "active");
-    if (active.length < 4) {
-      setError("アクティブ参加者が4人未満のためRound生成できません");
-      return;
-    }
-
-    const playableCourts = Math.min(courtCount, Math.floor(active.length / 4));
-    if (playableCourts < 1) {
-      setError("コート数に対して参加者が不足しています");
-      return;
-    }
-
-    const { data: lastRound } = await supabase.from("rounds").select("round_number").eq("event_id", eventId).order("round_number", { ascending: false }).limit(1).maybeSingle();
-    const roundNumber = (lastRound?.round_number ?? 0) + 1;
-    const { data: round } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
-    if (!round) return;
-
-    const shuffled = [...active].sort(() => Math.random() - 0.5);
-    const selected = shuffled.slice(0, playableCourts * 4);
-
-    for (let c = 0; c < playableCourts; c++) {
-      const group = selected.slice(c * 4, c * 4 + 4);
-      const { data: match } = await supabase
-        .from("matches")
-        .insert({ event_id: eventId, round_id: round.id, court_number: c + 1, completed: false })
-        .select("id")
-        .single();
-      if (!match) continue;
-      await supabase.from("match_players").insert([
-        { match_id: match.id, participant_id: group[0].id, team: "A" },
-        { match_id: match.id, participant_id: group[1].id, team: "A" },
-        { match_id: match.id, participant_id: group[2].id, team: "B" },
-        { match_id: match.id, participant_id: group[3].id, team: "B" }
-      ]);
-    }
-
-    await loadAll();
-  };
-
-
-
   const closeEvent = async () => {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
@@ -321,6 +276,203 @@ export default function EventDetailPage() {
           await supabase.from("player_stats").insert({ profile_id: profileId, match_count, win_count, loss_count, win_rate });
         }
       }
+    }
+
+    await loadAll();
+  };
+
+  const pairKey = (a: string, b: string) => [a, b].sort().join("|");
+
+  const generateRound = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    setError("");
+
+    const active = participants.filter((p) => p.status === "active");
+    if (active.length < 4) {
+      setError("アクティブ参加者が4人未満のためRound生成できません");
+      return;
+    }
+
+    const maxMatches = Math.min(courtCount, Math.floor(active.length / 4));
+    if (maxMatches < 1) {
+      setError("コート数に対して参加者が不足しています");
+      return;
+    }
+
+    const slots = maxMatches * 4;
+    const restNeeded = active.length - slots;
+
+    const { data: roundsData } = await supabase
+      .from("rounds")
+      .select("id,round_number")
+      .eq("event_id", eventId)
+      .order("round_number", { ascending: true });
+    const rounds = roundsData ?? [];
+    const roundMap = new Map((rounds as any[]).map((r) => [r.id, r.round_number as number]));
+    const lastRoundNumber = rounds.length ? Math.max(...(rounds as any[]).map((r) => r.round_number as number)) : 0;
+
+    const { data: matchesData } = await supabase
+      .from("matches")
+      .select("id,round_id,court_number,match_players(participant_id,team)")
+      .eq("event_id", eventId);
+    const historyMatches: HistoryMatch[] = (matchesData ?? []).map((m: any) => ({
+      round_number: roundMap.get(m.round_id) ?? 0,
+      court_number: m.court_number,
+      players: m.match_players ?? []
+    }));
+
+    const pairCounts = new Map<string, number>();
+    const uniquePartners = new Map<string, Set<string>>();
+    const restCounts = new Map<string, number>();
+    const activeIds = new Set(active.map((p) => p.id));
+    for (const p of active) {
+      uniquePartners.set(p.id, new Set());
+      restCounts.set(p.id, 0);
+    }
+
+    const roundPlayerMap = new Map<number, Set<string>>();
+    for (const m of historyMatches) {
+      if (!roundPlayerMap.has(m.round_number)) roundPlayerMap.set(m.round_number, new Set());
+      const set = roundPlayerMap.get(m.round_number)!;
+      const teamA = m.players.filter((x) => x.team === "A").map((x) => x.participant_id);
+      const teamB = m.players.filter((x) => x.team === "B").map((x) => x.participant_id);
+      for (const pid of [...teamA, ...teamB]) set.add(pid);
+      if (teamA.length === 2) {
+        const k = pairKey(teamA[0], teamA[1]);
+        pairCounts.set(k, (pairCounts.get(k) ?? 0) + 1);
+        if (activeIds.has(teamA[0]) && activeIds.has(teamA[1])) {
+          uniquePartners.get(teamA[0])?.add(teamA[1]);
+          uniquePartners.get(teamA[1])?.add(teamA[0]);
+        }
+      }
+      if (teamB.length === 2) {
+        const k = pairKey(teamB[0], teamB[1]);
+        pairCounts.set(k, (pairCounts.get(k) ?? 0) + 1);
+        if (activeIds.has(teamB[0]) && activeIds.has(teamB[1])) {
+          uniquePartners.get(teamB[0])?.add(teamB[1]);
+          uniquePartners.get(teamB[1])?.add(teamB[0]);
+        }
+      }
+    }
+
+    for (const [rn, playersInRound] of roundPlayerMap) {
+      if (rn <= 0) continue;
+      for (const p of active) {
+        if (!playersInRound.has(p.id)) restCounts.set(p.id, (restCounts.get(p.id) ?? 0) + 1);
+      }
+    }
+
+    const lastRoundPlayers = roundPlayerMap.get(lastRoundNumber) ?? new Set<string>();
+    const lastRoundRest = new Set(active.filter((p) => !lastRoundPlayers.has(p.id)).map((p) => p.id));
+
+    const chooseResters = (): string[] => {
+      if (restNeeded <= 0) return [];
+      const ids = active.map((p) => p.id);
+      let best: { ids: string[]; score: number } | null = null;
+      const tries = 600;
+      for (let t = 0; t < tries; t++) {
+        const shuffled = [...ids].sort(() => Math.random() - 0.5);
+        const resters = shuffled.slice(0, restNeeded);
+        const restSet = new Set(resters);
+        let score = 0;
+        for (const rid of resters) {
+          if (lastRoundRest.has(rid)) score += 10000;
+          score += (restCounts.get(rid) ?? 0) * 300;
+        }
+        for (const prevRest of lastRoundRest) {
+          if (!restSet.has(prevRest)) score -= 300;
+          else score += 5000;
+        }
+        score += Math.random() * 50;
+        if (!best || score < best.score) best = { ids: resters, score };
+      }
+      return best?.ids ?? [];
+    };
+
+    const resters = chooseResters();
+    const playPool = active.filter((p) => !resters.includes(p.id));
+
+    const scorePair = (a: string, b: string): number => {
+      const k = pairKey(a, b);
+      const repeat = pairCounts.get(k) ?? 0;
+      let s = 0;
+      if (lastRoundNumber > 0) {
+        for (const hm of historyMatches) {
+          if (hm.round_number !== lastRoundNumber) continue;
+          const ta = hm.players.filter((x) => x.team === "A").map((x) => x.participant_id);
+          const tb = hm.players.filter((x) => x.team === "B").map((x) => x.participant_id);
+          if ((ta.includes(a) && ta.includes(b)) || (tb.includes(a) && tb.includes(b))) s += 5000;
+        }
+      }
+      const hasPartnered = uniquePartners.get(a)?.has(b) || uniquePartners.get(b)?.has(a);
+      const possibleNewA = playPool.some((p) => p.id !== a && !(uniquePartners.get(a)?.has(p.id)));
+      const possibleNewB = playPool.some((p) => p.id !== b && !(uniquePartners.get(b)?.has(p.id)));
+      if (hasPartnered && (possibleNewA || possibleNewB)) s += 4000;
+      if (hasPartnered) s += 800 * repeat;
+      return s;
+    };
+
+    let bestMatches: { teamA: [string, string]; teamB: [string, string]; court: number }[] = [];
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let trial = 0; trial < 700; trial++) {
+      const shuffled = [...playPool.map((p) => p.id)].sort(() => Math.random() - 0.5);
+      const use = shuffled.slice(0, slots);
+      const candidate: { teamA: [string, string]; teamB: [string, string]; court: number }[] = [];
+      let score = 0;
+      for (let c = 0; c < maxMatches; c++) {
+        const group = use.slice(c * 4, c * 4 + 4);
+        if (group.length < 4) break;
+        const patterns: Array<[[string, string], [string, string]]> = [
+          [[group[0], group[1]], [group[2], group[3]]],
+          [[group[0], group[2]], [group[1], group[3]]],
+          [[group[0], group[3]], [group[1], group[2]]]
+        ];
+        let bestLocal = patterns[0];
+        let bestLocalScore = Number.POSITIVE_INFINITY;
+        for (const ptn of patterns) {
+          const ps = scorePair(ptn[0][0], ptn[0][1]) + scorePair(ptn[1][0], ptn[1][1]);
+          if (ps < bestLocalScore) {
+            bestLocalScore = ps;
+            bestLocal = ptn;
+          }
+        }
+        score += bestLocalScore;
+        candidate.push({ teamA: bestLocal[0], teamB: bestLocal[1], court: c + 1 });
+      }
+      score += Math.random() * 50;
+      if (score < bestScore) {
+        bestScore = score;
+        bestMatches = candidate;
+      }
+    }
+
+    console.info("[Round生成]", {
+      activeCount: active.length,
+      configuredCourts: courtCount,
+      generatedMatches: bestMatches.length,
+      resters,
+      score: bestScore,
+      uniquePartnerCounts: Object.fromEntries(active.map((p) => [p.id, uniquePartners.get(p.id)?.size ?? 0]))
+    });
+
+    const roundNumber = lastRoundNumber + 1;
+    const { data: round } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
+    if (!round) return;
+
+    for (const m of bestMatches) {
+      const { data: match } = await supabase
+        .from("matches")
+        .insert({ event_id: eventId, round_id: round.id, court_number: m.court, completed: false })
+        .select("id")
+        .single();
+      if (!match) continue;
+      await supabase.from("match_players").insert([
+        { match_id: match.id, participant_id: m.teamA[0], team: "A" },
+        { match_id: match.id, participant_id: m.teamA[1], team: "A" },
+        { match_id: match.id, participant_id: m.teamB[0], team: "B" },
+        { match_id: match.id, participant_id: m.teamB[1], team: "B" }
+      ]);
     }
 
     await loadAll();

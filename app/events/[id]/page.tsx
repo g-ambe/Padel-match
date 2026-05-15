@@ -570,11 +570,11 @@ export default function EventDetailPage() {
       {showCourtWarning && (
         <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>
       )}
-      <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       
 
-<Card title="参加者">
+      <Card title="参加者">
+        {eventStatus === "closed" && <p className="mb-2 text-sm text-zinc-300">この開催は終了済みです</p>}
         <ul className="space-y-2">
           {participants.map((p) => (
             <li key={p.id} className="rounded-xl bg-zinc-800 p-3">
@@ -584,6 +584,7 @@ export default function EventDetailPage() {
                   type="button"
                   aria-label="参加状態切替"
                   onClick={() => updateStatus(p.id, p.status !== "active")}
+                  disabled={eventStatus === "closed"}
                   className={`relative h-8 w-20 rounded-full px-1 transition ${p.status === "active" ? "bg-lime-500" : "bg-zinc-300"}`}
                 >
                   <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${p.status === "active" ? "right-1" : "left-1"}`} />
@@ -592,7 +593,7 @@ export default function EventDetailPage() {
                   </span>
                 </button>
               </div>
-              {p.participant_type === "guest" && (
+              {p.participant_type === "guest" && eventStatus !== "closed" && (
                 <div className="flex items-center gap-2">
                   {editingGuestId === p.id ? (
                     <>
@@ -614,8 +615,8 @@ export default function EventDetailPage() {
 
 <Card title="参加者追加">
         <div className="flex gap-2">
-          <input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="ゲスト名" value={guestName} onChange={(e) => setGuestName(e.target.value)} />
-          <button className="min-w-16 whitespace-nowrap rounded-xl bg-accent px-4 py-2 text-black" onClick={addGuest}>追加</button>
+          <input className="w-full rounded-xl bg-zinc-800 p-3 disabled:bg-zinc-900 disabled:text-zinc-500" placeholder="ゲスト名" value={guestName} onChange={(e) => setGuestName(e.target.value)} disabled={eventStatus === "closed"} />
+          <button className="min-w-16 whitespace-nowrap rounded-xl bg-accent px-4 py-2 text-black disabled:bg-zinc-700 disabled:text-zinc-300" onClick={addGuest} disabled={eventStatus === "closed"}>追加</button>
         </div>
       </Card>
       
@@ -663,10 +664,11 @@ export default function EventDetailPage() {
               <p className="mb-1 font-semibold">得点ランキング</p>
               <ol className="space-y-1">{eventSummary.scoredRanking.map((r, i) => <li key={`sc-${r.name}-${i}`}>{i + 1}位 {r.name} {r.scored}</li>)}</ol>
             </div>
-            <button className="block w-full rounded-2xl bg-accent py-3 text-center font-semibold text-black" onClick={() => void goTop()}>TOPへ戻る</button>
           </div>
         </Card>
       )}
+
+      <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       {showCloseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

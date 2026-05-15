@@ -15,6 +15,8 @@ export default function EventDetailPage() {
   const [courtCount, setCourtCount] = useState(1);
   const [guestName, setGuestName] = useState("");
   const [error, setError] = useState("");
+  const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
+  const [showCloseModal, setShowCloseModal] = useState(false);
   const [scoreInputs, setScoreInputs] = useState<Record<string, { a: number; b: number }>>({});
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.guest_name ?? "ゲスト"])), [participants]);
@@ -45,8 +47,10 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
-    const { data: event } = await supabase.from("events").select("court_count").eq("id", eventId).single();
+    const { data: event } = await supabase.from("events").select("court_count,status").eq("id", eventId).single();
     if (event?.court_count) setCourtCount(event.court_count);
+    if (event?.status === "closed") setEventStatus("closed");
+    else setEventStatus("active");
 
     const { data: pt } = await supabase
       .from("event_participants")
@@ -128,6 +132,19 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
+
+
+  const closeEvent = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    await supabase
+      .from("events")
+      .update({ status: "closed", closed_at: new Date().toISOString() })
+      .eq("id", eventId);
+    setShowCloseModal(false);
+    await loadAll();
+  };
+
   const saveScore = async (matchId: string) => {
     const supabase = getSupabaseClient();
     const score = scoreInputs[matchId];
@@ -199,11 +216,22 @@ export default function EventDetailPage() {
         </ul>
       </Card>
 
-      <ActionButton onClick={generateRound}>次Round生成</ActionButton>
+      {eventStatus === "closed" ? (
+        <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
+      ) : (
+        <ActionButton onClick={generateRound}>次Round生成</ActionButton>
+      )}
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <Card title="勝率ランキング">
         <ol className="space-y-1 text-sm">{ranking.map((r, i) => <li key={r.name + i}>{i + 1}位 {r.name} {r.r}%（{r.m}試合）</li>)}</ol>
+      </Card>
+
+      <Card title="開催操作">
+        <button className="w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowCloseModal(true)} disabled={eventStatus === "closed"}>
+          {eventStatus === "closed" ? "イベント終了済み" : "イベント終了"}
+        </button>
+        {eventStatus === "closed" && <p className="mt-2 text-sm text-zinc-300">この開催は終了しました</p>}
       </Card>
 
       <Card title="試合とスコア入力">
@@ -218,13 +246,27 @@ export default function EventDetailPage() {
                   <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
                   <span>-</span>
                   <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? 0, b: Number(e.target.value) } }))} />
-                  <button className="rounded bg-accent px-3 py-2 text-black" onClick={() => saveScore(m.id)} disabled={m.completed}>{m.completed ? "完了" : "保存"}</button>
+                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={m.completed || eventStatus === "closed"}>{m.completed ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
                 </div>
               </div>
             );
           })}
         </div>
       </Card>
+
+
+      {showCloseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-2xl bg-card p-4">
+            <h3 className="mb-2 text-lg font-bold">この開催を終了しますか？</h3>
+            <p className="mb-4 text-sm text-zinc-300">終了後も開催履歴から確認できます。</p>
+            <div className="flex gap-2">
+              <button className="w-1/2 rounded-xl border border-zinc-600 py-3" onClick={() => setShowCloseModal(false)}>キャンセル</button>
+              <button className="w-1/2 rounded-xl bg-red-500 py-3 font-semibold text-white" onClick={closeEvent}>終了する</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

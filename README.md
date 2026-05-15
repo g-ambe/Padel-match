@@ -120,3 +120,17 @@ on conflict do nothing;
    - `clubs` に `Wytel部活` がある
    - `player_profiles` に 青木/今野/神田/蓮見/赤木/安倍/瀧田/神原 がある
    - `club_members` に上記8名が `Wytel部活` のメンバーとして紐づいている
+
+
+### 0007実行時に `participant_type does not exist` が出た場合
+
+`0007` より先に `0006` が未適用だと発生します。以下の順で実行してください。
+
+1. `supabase/migrations/0006_group_member_guest_model.sql`
+2. `supabase/migrations/0008_fix_0007_participant_type_dependency.sql`
+3. `supabase/migrations/0007_player_profiles.sql`（再実行）
+
+確認ポイント:
+- `event_participants.participant_type` が存在する
+- `participant_type` が `member` / `guest` のみ
+- `event_participants_member_or_guest_check` 制約が存在する

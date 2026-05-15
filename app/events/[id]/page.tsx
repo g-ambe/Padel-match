@@ -189,8 +189,7 @@ export default function EventDetailPage() {
       .from("matches")
       .select("id,court_number,created_at,completed,rounds(round_number),match_players(participant_id,team),match_results(id,score_a,score_b,winner_team)")
       .eq("event_id", eventId)
-      .order("created_at", { ascending: false })
-      .limit(8);
+      .order("created_at", { ascending: false });
 
     const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, created_at: m.created_at, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
     setMatches(normalizedMatches);
@@ -493,7 +492,7 @@ export default function EventDetailPage() {
                   <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" value={scoreInputs[m.id]?.a ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
                   <span>-</span>
                   <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" value={scoreInputs[m.id]?.b ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? 0, b: Number(e.target.value) } }))} />
-                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={m.completed || eventStatus === "closed"}>{m.completed && !editingMatchIds[m.id] ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
+                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={(m.completed && !editingMatchIds[m.id]) || eventStatus === "closed"}>{m.completed && !editingMatchIds[m.id] ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
                   )}

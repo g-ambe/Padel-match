@@ -106,3 +106,17 @@ on conflict do nothing;
 - `/home` へ遷移できればOK
 
 > 補足: Supabase Authユーザー作成とSQL実行は、GitHub→Cloudflare自動deployだけでは完結しないため、初回のみ手動作業が必要です。
+
+
+### 追加マイグレーション（選手プロフィール分離）
+
+以下の手順で手動実行してください（GitHub→Cloudflare自動deployではDB変更は反映されません）。
+
+1. Supabase Dashboard → SQL Editor → New query
+2. `supabase/migrations/0007_player_profiles.sql` の内容をコピーして貼り付け
+3. 実行順: `0001` → `0002` → `0003` → `0005` → `0006` → `0007`
+4. 実行後確認:
+   - `player_profiles` テーブルが作成されている
+   - `clubs` に `Wytel部活` がある
+   - `player_profiles` に 青木/今野/神田/蓮見/赤木/安倍/瀧田/神原 がある
+   - `club_members` に上記8名が `Wytel部活` のメンバーとして紐づいている

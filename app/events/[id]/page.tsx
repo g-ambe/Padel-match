@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type Participant = { id: string; profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent" };
+type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent" };
 type MatchView = { id: string; court_number: number; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 
 export default function EventDetailPage() {
@@ -23,7 +23,7 @@ export default function EventDetailPage() {
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.guest_name ?? "ゲスト"])), [participants]);
 
-  const profileMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.profile_id])), [participants]);
+  const profileMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.profile_id ?? p.player_profile_id])), [participants]);
 
 
 
@@ -103,22 +103,21 @@ export default function EventDetailPage() {
     if (event?.club_id) {
       const { data: members } = await supabase
         .from("club_members")
-        .select("profile_id, profiles(display_name)")
+        .select("player_profile_id, player_profiles(display_name)")
         .eq("club_id", event.club_id);
 
       const { data: existingParticipants } = await supabase
         .from("event_participants")
-        .select("profile_id")
-        .eq("event_id", eventId)
-        .not("profile_id", "is", null);
+        .select("profile_id,player_profile_id")
+        .eq("event_id", eventId);
 
-      const existingProfileIds = new Set((existingParticipants ?? []).map((x: any) => x.profile_id));
+      const existingProfileIds = new Set((existingParticipants ?? []).map((x: any) => x.player_profile_id ?? x.profile_id).filter(Boolean));
       const inserts = (members ?? [])
-        .filter((m: any) => m.profile_id && !existingProfileIds.has(m.profile_id))
+        .filter((m: any) => m.player_profile_id && !existingProfileIds.has(m.player_profile_id))
         .map((m: any) => ({
           event_id: eventId,
-          profile_id: m.profile_id,
-          guest_name: m.profiles?.display_name ?? null,
+          player_profile_id: m.player_profile_id,
+          guest_name: m.player_profiles?.display_name ?? null,
           status: "active",
           participant_type: "member"
         }));
@@ -130,7 +129,7 @@ export default function EventDetailPage() {
 
     const { data: pt } = await supabase
       .from("event_participants")
-      .select("id,profile_id,guest_name,status")
+      .select("id,profile_id,player_profile_id,guest_name,status")
       .eq("event_id", eventId)
       .order("created_at", { ascending: true });
     setParticipants((pt ?? []) as Participant[]);

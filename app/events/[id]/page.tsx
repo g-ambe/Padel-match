@@ -570,7 +570,6 @@ export default function EventDetailPage() {
       {showCourtWarning && (
         <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>
       )}
-      <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       
 
@@ -663,10 +662,11 @@ export default function EventDetailPage() {
               <p className="mb-1 font-semibold">得点ランキング</p>
               <ol className="space-y-1">{eventSummary.scoredRanking.map((r, i) => <li key={`sc-${r.name}-${i}`}>{i + 1}位 {r.name} {r.scored}</li>)}</ol>
             </div>
-            <button className="block w-full rounded-2xl bg-accent py-3 text-center font-semibold text-black" onClick={() => void goTop()}>TOPへ戻る</button>
           </div>
         </Card>
       )}
+
+      <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       {showCloseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

@@ -154,3 +154,15 @@ Supabase SQL Editor で次を手動実行してください。
 - `club_members.player_profile_id` が Wytel部活メンバーで埋まっている
 - `event_participants` の `participant_type='member'` 行で `player_profile_id` が埋まっている
 - 開催詳細の参加者欄に 青木/今野/神田/蓮見/赤木/安倍/瀧田/神原 が表示される
+
+
+### 参加者名が「メンバー名未設定」になる（player_profilesが空配列）場合
+
+`player_profiles` にRLS policyが無いと、APIが `200` でも `[]` を返すことがあります。以下を Supabase SQL Editor で実行してください。
+
+1. `supabase/migrations/0010_player_profiles_rls.sql`
+
+確認ポイント:
+- `pg_policies` に `player_profiles` の `dev_all_player_profiles` がある
+- ブラウザNetworkの `/rest/v1/player_profiles?...` が `[]` ではなく名前データを返す
+- 開催詳細の参加者欄で定常メンバー名が表示される

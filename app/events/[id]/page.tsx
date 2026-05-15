@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent" };
+type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
 type MatchView = { id: string; court_number: number; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 
 export default function EventDetailPage() {
@@ -21,7 +21,7 @@ export default function EventDetailPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [scoreInputs, setScoreInputs] = useState<Record<string, { a: number; b: number }>>({});
 
-  const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.guest_name ?? "ゲスト"])), [participants]);
+  const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
   const profileMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.profile_id ?? p.player_profile_id])), [participants]);
 
@@ -129,10 +129,23 @@ export default function EventDetailPage() {
 
     const { data: pt } = await supabase
       .from("event_participants")
-      .select("id,profile_id,player_profile_id,guest_name,status")
+      .select("id,profile_id,player_profile_id,guest_name,status,participant_type,player_profiles(display_name),profiles(display_name)")
       .eq("event_id", eventId)
       .order("created_at", { ascending: true });
-    setParticipants((pt ?? []) as Participant[]);
+    setParticipants(
+      ((pt ?? []) as any[]).map((row) => {
+        const resolvedName = row.player_profiles?.display_name ?? row.profiles?.display_name ?? (row.participant_type === "guest" ? row.guest_name : row.guest_name);
+        return {
+          id: row.id,
+          profile_id: row.profile_id,
+          player_profile_id: row.player_profile_id,
+          guest_name: row.guest_name,
+          status: row.status,
+          participant_type: row.participant_type,
+          display_name: resolvedName ?? null
+        } as Participant;
+      })
+    );
 
     const { data: ms } = await supabase
       .from("matches")
@@ -280,7 +293,7 @@ export default function EventDetailPage() {
         <ul className="space-y-2">
           {participants.map((p) => (
             <li key={p.id} className="rounded-xl bg-zinc-800 p-3">
-              <div className="mb-2 flex justify-between"><span>{p.guest_name ?? "ゲスト"}</span><span>{p.status === "active" ? "参加中" : p.status === "resting" ? "休み" : "帰宅"}</span></div>
+              <div className="mb-2 flex justify-between"><span>{p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定")}</span><span>{p.status === "active" ? "参加中" : p.status === "resting" ? "休み" : "帰宅"}</span></div>
               <div className="grid grid-cols-3 gap-1 text-sm">
                 <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "active")}>参加中</button>
                 <button className="rounded bg-zinc-700 py-1" onClick={() => updateStatus(p.id, "resting")}>休み</button>

@@ -103,7 +103,7 @@ export default function EventDetailPage() {
     if (event?.club_id) {
       const { data: members } = await supabase
         .from("club_members")
-        .select("player_profile_id, player_profiles(display_name)")
+        .select("player_profile_id")
         .eq("club_id", event.club_id);
 
       const { data: existingParticipants } = await supabase
@@ -112,12 +112,18 @@ export default function EventDetailPage() {
         .eq("event_id", eventId);
 
       const existingProfileIds = new Set((existingParticipants ?? []).map((x: any) => x.player_profile_id ?? x.profile_id).filter(Boolean));
+      const memberProfileIds = (members ?? []).map((m: any) => m.player_profile_id).filter(Boolean);
+      const { data: memberProfiles } = memberProfileIds.length
+        ? await supabase.from("player_profiles").select("id,display_name").in("id", memberProfileIds)
+        : { data: [] as any[] };
+      const memberNameMap = new Map((memberProfiles ?? []).map((mp: any) => [mp.id, mp.display_name]));
+
       const inserts = (members ?? [])
         .filter((m: any) => m.player_profile_id && !existingProfileIds.has(m.player_profile_id))
         .map((m: any) => ({
           event_id: eventId,
           player_profile_id: m.player_profile_id,
-          guest_name: m.player_profiles?.display_name ?? null,
+          guest_name: memberNameMap.get(m.player_profile_id) ?? null,
           status: "active",
           participant_type: "member"
         }));
@@ -129,12 +135,30 @@ export default function EventDetailPage() {
 
     const { data: pt } = await supabase
       .from("event_participants")
-      .select("id,profile_id,player_profile_id,guest_name,status,participant_type,player_profiles(display_name),profiles(display_name)")
+      .select("id,profile_id,player_profile_id,guest_name,status,participant_type")
       .eq("event_id", eventId)
       .order("created_at", { ascending: true });
+        const participantRows = (pt ?? []) as any[];
+    const playerProfileIds = participantRows.map((r) => r.player_profile_id).filter(Boolean);
+    const profileIds = participantRows.map((r) => r.profile_id).filter(Boolean);
+
+    const { data: pps } = playerProfileIds.length
+      ? await supabase.from("player_profiles").select("id,display_name").in("id", playerProfileIds)
+      : { data: [] as any[] };
+    const { data: ps } = profileIds.length
+      ? await supabase.from("profiles").select("id,display_name").in("id", profileIds)
+      : { data: [] as any[] };
+
+    const playerProfileNameMap = new Map((pps ?? []).map((x: any) => [x.id, x.display_name]));
+    const profileNameMap = new Map((ps ?? []).map((x: any) => [x.id, x.display_name]));
+
     setParticipants(
-      ((pt ?? []) as any[]).map((row) => {
-        const resolvedName = row.player_profiles?.display_name ?? row.profiles?.display_name ?? (row.participant_type === "guest" ? row.guest_name : row.guest_name);
+      participantRows.map((row) => {
+        const resolvedName =
+          (row.player_profile_id ? playerProfileNameMap.get(row.player_profile_id) : null) ??
+          (row.profile_id ? profileNameMap.get(row.profile_id) : null) ??
+          (row.participant_type === "guest" ? row.guest_name : null);
+
         return {
           id: row.id,
           profile_id: row.profile_id,

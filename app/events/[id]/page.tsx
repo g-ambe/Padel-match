@@ -7,7 +7,7 @@ import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
-type MatchView = { id: string; court_number: number; round_number: number; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { score_a: number; score_b: number; winner_team: "A" | "B" } | null };
+type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
@@ -21,6 +21,7 @@ export default function EventDetailPage() {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [scoreInputs, setScoreInputs] = useState<Record<string, { a: number; b: number }>>({});
   const [showAllRounds, setShowAllRounds] = useState(false);
+  const [editingMatchIds, setEditingMatchIds] = useState<Record<string, boolean>>({});
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -96,10 +97,8 @@ export default function EventDetailPage() {
 
 
   const latestRoundNumber = useMemo(() => matches.reduce((max, m) => Math.max(max, m.round_number), 0), [matches]);
-  const displayedMatches = useMemo(() => {
-    if (showAllRounds) return [...matches].sort((a, b) => (b.round_number - a.round_number) || (a.court_number - b.court_number));
-    return matches.filter((m) => m.round_number === latestRoundNumber);
-  }, [matches, showAllRounds, latestRoundNumber]);
+  const sortedMatches = useMemo(() => [...matches].sort((a, b) => (b.round_number - a.round_number) || (a.court_number - b.court_number) || ((b.created_at ?? "").localeCompare(a.created_at ?? "")) || a.id.localeCompare(b.id)), [matches]);
+  const displayedMatches = useMemo(() => (showAllRounds ? sortedMatches : sortedMatches.slice(0, 5)), [showAllRounds, sortedMatches]);
 
   const loadAll = async () => {
     const supabase = getSupabaseClient();
@@ -187,12 +186,15 @@ export default function EventDetailPage() {
 
     const { data: ms } = await supabase
       .from("matches")
-      .select("id,court_number,completed,rounds(round_number),match_players(participant_id,team),match_results(score_a,score_b,winner_team)")
+      .select("id,court_number,created_at,completed,rounds(round_number),match_players(participant_id,team),match_results(id,score_a,score_b,winner_team)")
       .eq("event_id", eventId)
       .order("created_at", { ascending: false })
       .limit(8);
 
-    setMatches((ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null })));
+    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, created_at: m.created_at, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
+    setMatches(normalizedMatches);
+    const savedScores = Object.fromEntries(normalizedMatches.filter((m: any) => m.result).map((m: any) => [m.id, { a: m.result.score_a, b: m.result.score_b }]));
+    setScoreInputs((prev) => ({ ...savedScores, ...prev }));
   };
 
   useEffect(() => {
@@ -231,8 +233,8 @@ export default function EventDetailPage() {
       return;
     }
 
-    const { data: roundCount } = await supabase.from("rounds").select("id", { count: "exact", head: true }).eq("event_id", eventId);
-    const roundNumber = (roundCount?.length ?? 0) + 1;
+    const { data: lastRound } = await supabase.from("rounds").select("round_number").eq("event_id", eventId).order("round_number", { ascending: false }).limit(1).maybeSingle();
+    const roundNumber = (lastRound?.round_number ?? 0) + 1;
     const { data: round } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
     if (!round) return;
 
@@ -277,8 +279,14 @@ export default function EventDetailPage() {
     if (!supabase || !score) return;
     const winner = score.a > score.b ? "A" : "B";
 
-    await supabase.from("match_results").insert({ match_id: matchId, score_a: score.a, score_b: score.b, winner_team: winner });
+    const targetMatch = matches.find((m) => m.id === matchId);
+    if (targetMatch?.result?.id) {
+      await supabase.from("match_results").update({ score_a: score.a, score_b: score.b, winner_team: winner }).eq("id", targetMatch.result.id);
+    } else {
+      await supabase.from("match_results").insert({ match_id: matchId, score_a: score.a, score_b: score.b, winner_team: winner });
+    }
     await supabase.from("matches").update({ completed: true }).eq("id", matchId);
+    setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
 
     const match = matches.find((m) => m.id === matchId);
     if (match) {
@@ -330,10 +338,13 @@ export default function EventDetailPage() {
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
                 <p className="mb-2 text-sm">Round {m.round_number} / Court{m.court_number}: {a} vs {b}</p>
                 <div className="flex items-center gap-2">
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
+                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" value={scoreInputs[m.id]?.a ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
                   <span>-</span>
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? 0, b: Number(e.target.value) } }))} />
-                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={m.completed || eventStatus === "closed"}>{m.completed ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
+                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" value={scoreInputs[m.id]?.b ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? 0, b: Number(e.target.value) } }))} />
+                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={m.completed || eventStatus === "closed"}>{m.completed && !editingMatchIds[m.id] ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
+                  {m.completed && eventStatus !== "closed" && (
+                    <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
+                  )}
                 </div>
               </div>
             );

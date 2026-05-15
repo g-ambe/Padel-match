@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 
 type Group = { id: string; name: string };
-type EventRow = { id: string; name: string; court_count: number; club_id: string; club_name: string };
+type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
 
 export default function HomePage() {
   const router = useRouter();
@@ -67,7 +67,7 @@ export default function HomePage() {
         name: e.name,
         court_count: e.court_count,
         club_id: e.club_id,
-        club_name: e.clubs?.name ?? "所属グループ未設定"
+        club_name: e.clubs?.name ?? "グループなし"
       }))
     );
   };
@@ -80,8 +80,8 @@ export default function HomePage() {
     e.preventDefault();
     setError("");
 
-    if (!name.trim() || courtCount < 1 || !selectedGroupId) {
-      setError("開催名・コート数・グループを入力してください");
+    if (!name.trim() || courtCount < 1) {
+      setError("開催名・コート数を入力してください");
       return;
     }
 
@@ -101,7 +101,7 @@ export default function HomePage() {
         name: name.trim(),
         court_count: courtCount,
         category: "club",
-        club_id: selectedGroupId
+        club_id: selectedGroupId || null
       })
       .select("id")
       .single();
@@ -128,7 +128,7 @@ export default function HomePage() {
         <Card title="開催作成フォーム">
           <form className="space-y-3" onSubmit={createEvent}>
             <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
-              <option value="">グループを選択</option>
+              <option value="">グループなし</option>
               {groups.map((g) => (
                 <option key={g.id} value={g.id}>{g.name}</option>
               ))}
@@ -139,15 +139,10 @@ export default function HomePage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
-            <input
-              className="w-full rounded-xl bg-zinc-800 p-3"
-              type="number"
-              min={1}
-              placeholder="コート数"
-              value={courtCount}
-              onChange={(e) => setCourtCount(Math.max(1, Number(e.target.value) || 1))}
-            />
-            {selectedGroupName && <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName}</p>}
+            <select className="w-full rounded-xl bg-zinc-800 p-3" value={courtCount} onChange={(e) => setCourtCount(Number(e.target.value))}>
+              {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}面</option>)}
+            </select>
+            <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-2">
               <button type="button" className="w-1/2 rounded-xl border border-zinc-600 py-3" onClick={() => setOpen(false)}>

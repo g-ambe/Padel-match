@@ -166,3 +166,14 @@ Supabase SQL Editor で次を手動実行してください。
 - `pg_policies` に `player_profiles` の `dev_all_player_profiles` がある
 - ブラウザNetworkの `/rest/v1/player_profiles?...` が `[]` ではなく名前データを返す
 - 開催詳細の参加者欄で定常メンバー名が表示される
+
+
+### グループなし開催を有効化する場合
+
+Supabase SQL Editor で以下を手動実行してください。
+
+1. `supabase/migrations/0011_events_club_id_nullable.sql`
+
+確認ポイント:
+- `events.club_id` が nullable になっている
+- ホームの開催作成で「グループなし」を選択して作成できる

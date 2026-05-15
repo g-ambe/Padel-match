@@ -137,7 +137,7 @@ export default function EventDetailPage() {
       .from("event_participants")
       .select("id,profile_id,player_profile_id,guest_name,status,participant_type")
       .eq("event_id", eventId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true }).order("id", { ascending: true });
         const participantRows = (pt ?? []) as any[];
     const playerProfileIds = participantRows.map((r) => r.player_profile_id).filter(Boolean);
     const profileIds = participantRows.map((r) => r.profile_id).filter(Boolean);
@@ -307,13 +307,39 @@ export default function EventDetailPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
       <h1 className="text-xl font-bold">開催詳細：{eventName}</h1>
-      <Card title="参加者追加">
-        <div className="flex gap-2">
-          <input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="ゲスト名" value={guestName} onChange={(e) => setGuestName(e.target.value)} />
-          <button className="rounded-xl bg-accent px-4 text-black" onClick={addGuest}>追加</button>
+      <Card title="試合とスコア入力">
+        <div className="space-y-3">
+          {matches.map((m) => {
+            const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
+            const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
+            return (
+              <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
+                <p className="mb-2 text-sm">Court{m.court_number}: {a} vs {b}</p>
+                <div className="flex items-center gap-2">
+                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
+                  <span>-</span>
+                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? 0, b: Number(e.target.value) } }))} />
+                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={m.completed || eventStatus === "closed"}>{m.completed ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </Card>
-      <Card title="参加者">
+
+
+      
+
+{eventStatus === "closed" ? (
+        <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
+      ) : (
+        <ActionButton onClick={generateRound}>次Round生成</ActionButton>
+      )}
+      {error && <p className="text-sm text-red-400">{error}</p>}
+
+      
+
+<Card title="参加者">
         <ul className="space-y-2">
           {participants.map((p) => (
             <li key={p.id} className="rounded-xl bg-zinc-800 p-3">
@@ -328,18 +354,23 @@ export default function EventDetailPage() {
         </ul>
       </Card>
 
-      {eventStatus === "closed" ? (
-        <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
-      ) : (
-        <ActionButton onClick={generateRound}>次Round生成</ActionButton>
-      )}
-      {error && <p className="text-sm text-red-400">{error}</p>}
+      
 
-      <Card title="勝率ランキング">
+<Card title="参加者追加">
+        <div className="flex gap-2">
+          <input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="ゲスト名" value={guestName} onChange={(e) => setGuestName(e.target.value)} />
+          <button className="min-w-16 whitespace-nowrap rounded-xl bg-accent px-4 py-2 text-black" onClick={addGuest}>追加</button>
+        </div>
+      </Card>
+      
+
+<Card title="勝率ランキング">
         <ol className="space-y-1 text-sm">{ranking.map((r, i) => <li key={r.name + i}>{i + 1}位 {r.name} {r.r}%（{r.m}試合）</li>)}</ol>
       </Card>
 
-      <Card title="開催操作">
+      
+
+<Card title="開催操作">
         <button className="w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowCloseModal(true)} disabled={eventStatus === "closed"}>
           {eventStatus === "closed" ? "イベント終了済み" : "イベント終了"}
         </button>
@@ -348,7 +379,9 @@ export default function EventDetailPage() {
 
 
 
-      {eventStatus === "closed" && (
+      
+
+{eventStatus === "closed" && (
         <Card title="開催サマリー">
           <div className="space-y-3 text-sm">
             <div className="rounded-xl bg-zinc-800 p-3">
@@ -378,27 +411,6 @@ export default function EventDetailPage() {
           </div>
         </Card>
       )}
-
-      <Card title="試合とスコア入力">
-        <div className="space-y-3">
-          {matches.map((m) => {
-            const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
-            const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
-            return (
-              <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
-                <p className="mb-2 text-sm">Court{m.court_number}: {a} vs {b}</p>
-                <div className="flex items-center gap-2">
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: Number(e.target.value), b: prev[m.id]?.b ?? 0 } }))} />
-                  <span>-</span>
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? 0, b: Number(e.target.value) } }))} />
-                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={m.completed || eventStatus === "closed"}>{m.completed ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
 
       {showCloseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

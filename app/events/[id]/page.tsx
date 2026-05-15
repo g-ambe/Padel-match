@@ -205,6 +205,16 @@ export default function EventDetailPage() {
     void loadAll();
   }, [eventId]);
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const supabase = getSupabaseClient();
+      if (!supabase) return;
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) router.replace("/");
+    };
+    void checkAuth();
+  }, [router]);
+
   const addGuest = async () => {
     const supabase = getSupabaseClient();
     if (!supabase || !guestName.trim() || !eventId) return;

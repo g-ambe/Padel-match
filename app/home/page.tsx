@@ -76,6 +76,17 @@ export default function HomePage() {
     void loadHomeData();
   }, []);
 
+  useEffect(() => {
+    const checkAuth = async () => {
+      const { getSupabaseClient } = await import("@/lib/supabase");
+      const supabase = getSupabaseClient();
+      if (!supabase) return;
+      const { data } = await supabase.auth.getSession();
+      if (!data.session) router.replace("/");
+    };
+    void checkAuth();
+  }, [router]);
+
   const createEvent = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");

@@ -69,3 +69,40 @@ Supabase SQL Editor で `supabase/migrations/0006_group_member_guest_model.sql` 
 - 参加者を `member` / `guest` で明示
 - 臨時メンバー（guest）はイベント単位
 - 累積成績はグループ単位（club_id + profile_id）で一意
+
+
+## テストユーザーでのログインとWytel部活紐づけ
+
+### 1) Authユーザー作成（Supabaseダッシュボード）
+1. Supabase Dashboard → Authentication → Users → Add user
+2. 以下で作成
+   - email: `testuser01@example.com`
+   - password: `test0001`
+3. 作成後、Users一覧で `id`（UUID）をコピー
+
+### 2) SQL Editorで実行（プロフィール + グループ + 所属）
+以下SQLの `YOUR_AUTH_USER_ID` を置換して実行してください。
+
+```sql
+insert into profiles (id, display_name)
+values ('YOUR_AUTH_USER_ID', 'testuser01')
+on conflict (id) do update set display_name = excluded.display_name;
+
+insert into clubs (name)
+values ('Wytel部活')
+on conflict do nothing;
+
+insert into club_members (club_id, profile_id, role)
+select c.id, 'YOUR_AUTH_USER_ID', 'member'
+from clubs c
+where c.name = 'Wytel部活'
+on conflict do nothing;
+```
+
+### 3) 動作確認
+- ログイン画面で以下を入力してログイン
+  - メール: `testuser01@example.com`
+  - パスワード: `test0001`
+- `/home` へ遷移できればOK
+
+> 補足: Supabase Authユーザー作成とSQL実行は、GitHub→Cloudflare自動deployだけでは完結しないため、初回のみ手動作業が必要です。

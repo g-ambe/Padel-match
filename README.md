@@ -57,3 +57,15 @@ npm run dev
 ### 追加マイグレーション（イベント終了機能）
 
 `events?select=court_count,status` で 400 が出る場合は、`events.status` が未作成の可能性があります。Supabase SQL Editor で `supabase/migrations/0005_events_status_backfill.sql` を実行してください。
+
+
+### 追加マイグレーション（複数グループ/定常メンバー/臨時メンバー対応）
+
+Supabase SQL Editor で `supabase/migrations/0006_group_member_guest_model.sql` を実行してください。
+
+このSQLで以下を強化します。
+- イベントは1グループ（club）に必ず所属
+- 定常メンバーはグループ単位で一意
+- 参加者を `member` / `guest` で明示
+- 臨時メンバー（guest）はイベント単位
+- 累積成績はグループ単位（club_id + profile_id）で一意

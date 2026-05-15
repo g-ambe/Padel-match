@@ -67,6 +67,11 @@ export default function EventDetailPage() {
     };
   }, [participants, matches]);
 
+
+  const activeParticipantsCount = useMemo(() => participants.filter((p) => p.status === "active").length, [participants]);
+  const maxPlayableCourts = Math.floor(activeParticipantsCount / 4);
+  const showCourtWarning = maxPlayableCourts < courtCount;
+
   const ranking = useMemo(() => {
     const stats: Record<string, { name: string; m: number; w: number }> = {};
     for (const p of participants) stats[p.id] = { name: p.guest_name ?? "ゲスト", m: 0, w: 0 };
@@ -336,6 +341,9 @@ export default function EventDetailPage() {
         <ActionButton onClick={generateRound}>次Round生成</ActionButton>
       )}
       {error && <p className="text-sm text-red-400">{error}</p>}
+      {showCourtWarning && (
+        <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>
+      )}
 
       
 

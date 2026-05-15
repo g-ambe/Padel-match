@@ -122,9 +122,9 @@ on conflict do nothing;
    - `club_members` に上記8名が `Wytel部活` のメンバーとして紐づいている
 
 
-### 0007実行時に `participant_type does not exist` が出た場合
+### 0007/0008実行時に `participant_type` / `player_profile_id` が無いエラーが出た場合
 
-`0007` より先に `0006` が未適用だと発生します。以下の順で実行してください。
+既存DBの適用順が前後している場合に発生します。以下の順で実行してください。
 
 1. `supabase/migrations/0006_group_member_guest_model.sql`
 2. `supabase/migrations/0008_fix_0007_participant_type_dependency.sql`
@@ -132,5 +132,7 @@ on conflict do nothing;
 
 確認ポイント:
 - `event_participants.participant_type` が存在する
+- `event_participants.player_profile_id` が存在する
 - `participant_type` が `member` / `guest` のみ
 - `event_participants_member_or_guest_check` 制約が存在する
+- `player_profiles` テーブルが存在する

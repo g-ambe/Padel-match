@@ -50,13 +50,14 @@ export function GlobalMenu() {
               <span>{groupOpen ? "−" : "+"}</span>
             </button>
             {groupOpen && (
-              <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={closeMenu}>
-                メンバー管理
-              </button>
+              <div className="border-t border-zinc-700">
+                <button className="w-full px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups")}>グループ管理画面</button>
+                <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups")}>メンバー管理</button>
+              </div>
             )}
           </div>
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/home")}>開催一覧</button>
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={closeMenu}>戦績ランキング</button>
+          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button>
           <button className="w-full rounded-lg bg-red-600/80 px-3 py-3 text-left" onClick={() => void logout()}>ログアウト</button>
           {pathname === "/" && <p className="pt-2 text-xs text-zinc-400">ログイン画面です</p>}
         </nav>

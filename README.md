@@ -186,3 +186,9 @@ Supabase SQL Editor で以下を手動実行してください。
 - ゲストはグループ累計戦績には含めない。
 - ペアランキングにゲストは含めない。
 - 個人ランキングは最低10試合以上を基本条件にする。
+
+## グループ権限管理（今回追加）
+
+- `club_members.role` は `main_admin / sub_admin / member` を使用する。
+- グループ削除は `clubs.is_active=false` の論理削除で行う。
+- スーパーユーザーは `app_admins` テーブルで管理する。

@@ -39,7 +39,9 @@ export default function HomePage() {
     const { data: memberships } = await supabase
       .from("club_members")
       .select("club_id, clubs(id,name)")
-      .eq("profile_id", userId);
+      .eq("profile_id", userId)
+      .eq("is_active", true)
+      .eq("clubs.is_active", true);
 
     const groupRows: Group[] = (memberships ?? [])
       .map((m: any) => ({ id: m.club_id as string, name: m.clubs?.name as string }))

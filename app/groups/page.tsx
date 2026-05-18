@@ -1,0 +1,12 @@
+"use client";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { Card } from "@/components/ui";
+import { getSupabaseClient } from "@/lib/supabase";
+
+type Group = { id: string; name: string; description: string | null };
+export default function GroupsPage() { const [groups,setGroups]=useState<Group[]>([]); const [name,setName]=useState(""); const [description,setDescription]=useState(""); const [error,setError]=useState("");
+const load=async()=>{const s=getSupabaseClient(); if(!s) return; const {data:u}=await s.auth.getUser(); const uid=u.user?.id; if(!uid) return; const {data}=await s.from("club_members").select("club_id, clubs(id,name,description)").eq("profile_id",uid).eq("is_active",true); setGroups((data??[]).map((r:any)=>({id:r.clubs?.id,name:r.clubs?.name,description:r.clubs?.description??null})).filter((r:Group)=>r.id&&r.name));};
+useEffect(()=>{void load();},[]);
+const createGroup=async()=>{const s=getSupabaseClient(); if(!s||!name.trim()){setError("グループ名を入力してください"); return;} setError(""); const {data:u}=await s.auth.getUser(); const uid=u.user?.id; if(!uid){setError("ログイン情報を確認できません"); return;} const {data:club,error:ce}=await s.from("clubs").insert({name:name.trim(),description:description.trim()||null,owner_id:uid}).select("id").single(); if(ce||!club?.id){setError("グループ作成に失敗しました"); return;} await s.from("club_members").insert({club_id:club.id,profile_id:uid,role:"owner",is_active:true}); setName(""); setDescription(""); await load();};
+return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4"><h1 className="text-xl font-bold">グループ管理</h1><Card title="グループ作成"><div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="グループ名" value={name} onChange={(e)=>setName(e.target.value)} /><textarea className="w-full rounded-xl bg-zinc-800 p-3" placeholder="説明（任意）" value={description} onChange={(e)=>setDescription(e.target.value)} />{error&&<p className="text-sm text-red-400">{error}</p>}<button className="w-full rounded-xl bg-accent py-3 font-semibold text-black" onClick={createGroup}>作成</button></div></Card><Card title="所属グループ"><div className="space-y-2">{groups.length===0?<p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">所属グループがありません</p>:groups.map((g)=><Link key={g.id} href={`/groups/${g.id}`} className="block rounded-xl bg-zinc-800 p-3"><p className="font-semibold">{g.name}</p><p className="text-xs text-zinc-300">{g.description||"説明なし"}</p></Link>)}</div></Card></main>; }

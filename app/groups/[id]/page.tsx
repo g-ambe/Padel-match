@@ -15,6 +15,8 @@ export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState("メンバー管理");
   const [groupName, setGroupName] = useState("グループ");
+  const [editingGroupName, setEditingGroupName] = useState(false);
+  const [groupNameInput, setGroupNameInput] = useState("");
   const [members, setMembers] = useState<Member[]>([]);
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
   const [isSuperUser, setIsSuperUser] = useState(false);
@@ -50,6 +52,7 @@ export default function GroupDetailPage() {
       return;
     }
     setGroupName(group.name ?? "グループ");
+    setGroupNameInput(group.name ?? "");
 
     const { data } = await s
       .from("club_members")
@@ -142,9 +145,49 @@ export default function GroupDetailPage() {
     await load();
   };
 
+  const saveGroupName = async () => {
+    if (!(isSuperUser || myRole === "main_admin")) return deny();
+    const s = getSupabaseClient();
+    if (!s || !id) return;
+    const trimmed = groupNameInput.trim();
+    if (!trimmed) return setError("グループ名を入力してください");
+    if (trimmed === groupName) {
+      setEditingGroupName(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const { error: updateError } = await s.from("clubs").update({ name: trimmed }).eq("id", id);
+    if (updateError) {
+      setError("グループ名の更新に失敗しました");
+      setLoading(false);
+      return;
+    }
+    setMessage("グループ名を更新しました");
+    setEditingGroupName(false);
+    setLoading(false);
+    await load();
+  };
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <div className="flex items-center justify-between"><h1 className="text-xl font-bold">{groupName} 設定</h1><Link href="/groups" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm">戻る</Link></div>
+      <Card title="グループ名">
+        {editingGroupName ? (
+          <div className="space-y-2">
+            <input className="w-full rounded-xl bg-zinc-800 p-3" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} />
+            <div className="flex gap-2">
+              <button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupName()}>保存</button>
+              <button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingGroupName(false); setGroupNameInput(groupName); }}>キャンセル</button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-zinc-200">{groupName}</p>
+            {(isSuperUser || myRole === "main_admin") && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingGroupName(true)}>編集</button>}
+          </div>
+        )}
+      </Card>
       <p className="text-sm text-zinc-300">あなたの権限：{isSuperUser ? "スーパーユーザー" : roleLabel[myRole]}</p>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}

@@ -152,8 +152,41 @@ export default function GroupDetailPage() {
     setGroupName(group.name ?? "グループ");
     setGroupNameInput(group.name ?? "");
 
-    const { data } = await s.from("club_members").select("id,profile_id,player_profile_id,is_active,role,player_profiles(display_name,linked_auth_user_id)").eq("club_id", id).order("created_at", { ascending: true });
-    const rows: Member[] = (data ?? []).map((r: any) => ({ id: r.id, profile_id: r.profile_id, player_profile_id: r.player_profile_id, display_name: r.player_profiles?.display_name ?? "名称未設定", linked_auth_user_id: r.player_profiles?.linked_auth_user_id ?? null, is_active: r.is_active !== false, role: (r.role ?? "member") as Role }));
+    const { data } = await s
+      .from("club_members")
+      .select("id,profile_id,player_profile_id,is_active,role,player_profiles(id,display_name,linked_auth_user_id)")
+      .eq("club_id", id)
+      .order("created_at", { ascending: true });
+
+    const memberRows = (data ?? []) as any[];
+    const profileIds = [...new Set(memberRows.map((r) => r.profile_id).filter(Boolean))];
+    const linkedAuthIds = [...new Set(memberRows.map((r) => r.player_profiles?.linked_auth_user_id).filter(Boolean))];
+
+    const { data: profileRows } = profileIds.length
+      ? await s.from("profiles").select("id,display_name").in("id", profileIds)
+      : { data: [] as any[] };
+    const profileNameMap = new Map((profileRows ?? []).map((p: any) => [p.id, p.display_name]));
+
+    const { data: linkedProfileRows } = linkedAuthIds.length
+      ? await s.from("player_profiles").select("id,display_name,linked_auth_user_id").in("linked_auth_user_id", linkedAuthIds)
+      : { data: [] as any[] };
+    const linkedAuthNameMap = new Map((linkedProfileRows ?? []).map((p: any) => [p.linked_auth_user_id, p.display_name]));
+
+    const rows: Member[] = memberRows.map((r: any) => {
+      const nameFromPlayerProfile = r.player_profiles?.display_name ?? null;
+      const nameFromProfile = r.profile_id ? (profileNameMap.get(r.profile_id) ?? null) : null;
+      const nameFromLinkedAuth = r.player_profiles?.linked_auth_user_id ? (linkedAuthNameMap.get(r.player_profiles.linked_auth_user_id) ?? null) : null;
+      const resolvedName = nameFromPlayerProfile ?? nameFromProfile ?? nameFromLinkedAuth ?? "名称未設定";
+      return {
+        id: r.id,
+        profile_id: r.profile_id,
+        player_profile_id: r.player_profile_id,
+        display_name: resolvedName,
+        linked_auth_user_id: r.player_profiles?.linked_auth_user_id ?? null,
+        is_active: r.is_active !== false,
+        role: (r.role ?? "member") as Role
+      };
+    });
     setMembers(rows);
     const me = rows.find((r) => r.profile_id === uid && r.is_active);
     setMyProfileId(uid);

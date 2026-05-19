@@ -36,6 +36,14 @@ const resolveDisplayName = (playerProfiles: any) => {
   return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";
 };
 
+type Facility = { id: string; name: string; prefecture: string | null; address: string | null; };
+
+const getProfileRow = (playerProfiles: any) => Array.isArray(playerProfiles) ? playerProfiles[0] : playerProfiles;
+const resolveDisplayName = (playerProfiles: any) => {
+  const displayName = getProfileRow(playerProfiles)?.display_name;
+  return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";
+};
+
 const roleLabel: Record<Role, string> = { main_admin: "メイン管理者", sub_admin: "サブ管理者", member: "メンバー" };
 const roleRank: Record<Role, number> = { main_admin: 0, sub_admin: 1, member: 2 };
 

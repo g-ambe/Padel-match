@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type Group = { id: string; name: string; description: string | null; is_active: boolean };
+type Group = { id: string; name: string; description: string | null; is_active: boolean; visibility: "private" | "public" };
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState<Group[]>([]);
@@ -25,19 +25,48 @@ export default function GroupsPage() {
     const isSuperUser = !!adminRow;
 
     if (isSuperUser) {
-      const { data } = await supabase.from("clubs").select("id,name,description,is_active").order("created_at", { ascending: false });
+      const { data } = await supabase.from("clubs").select("id,name,description,is_active,visibility").order("created_at", { ascending: false });
       setGroups((data ?? []) as Group[]);
       return;
     }
 
-    const { data } = await supabase
-      .from("club_members")
-      .select("clubs(id,name,description,is_active)")
-      .eq("profile_id", userId)
-      .eq("is_active", true)
-      .eq("clubs.is_active", true);
+    const { data: linkedProfile } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("linked_auth_user_id", userId)
+      .maybeSingle();
 
-    const rows: Group[] = (data ?? []).map((r: any) => r.clubs).filter(Boolean);
+    let memberRows: any[] = [];
+    if (linkedProfile?.id) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("clubs(id,name,description,is_active,visibility)")
+        .eq("player_profile_id", linkedProfile.id)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberRows = data ?? [];
+      console.log("[groups] current auth user id:", userId);
+      console.log("[groups] matched player_profile id:", linkedProfile.id);
+      console.log("[groups] loaded club_members count:", memberRows.length);
+    }
+
+    if (!memberRows.length) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("clubs(id,name,description,is_active,visibility)")
+        .eq("profile_id", userId)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberRows = data ?? [];
+    }
+
+    const { data: publicClubs } = await supabase.from("clubs").select("id,name,description,is_active,visibility").eq("is_active", true).eq("visibility", "public");
+
+    const ownedRows: Group[] = memberRows.map((r: any) => r.clubs).filter(Boolean);
+    const merged = new Map<string, Group>();
+    for (const g of [...ownedRows, ...((publicClubs ?? []) as Group[])]) merged.set(g.id, g);
+    const rows = [...merged.values()];
+    console.log("[groups] loaded groups count:", rows.length);
     setGroups(rows);
   };
 
@@ -70,7 +99,35 @@ export default function GroupsPage() {
       return;
     }
 
-    await supabase.from("club_members").insert({ club_id: club.id, profile_id: userId, role: "main_admin", is_active: true });
+    const { data: existingProfile } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("linked_auth_user_id", userId)
+      .maybeSingle();
+
+    let playerProfileId = existingProfile?.id ?? null;
+    if (!playerProfileId) {
+      const fallbackName = userRes.user?.email?.split("@")[0] ?? "メンバー";
+      const { data: createdProfile, error: profileErr } = await supabase
+        .from("player_profiles")
+        .insert({ display_name: fallbackName, linked_auth_user_id: userId, is_active: true })
+        .select("id")
+        .single();
+
+      if (profileErr || !createdProfile?.id) {
+        setError("作成者プロフィールの作成に失敗しました");
+        return;
+      }
+      playerProfileId = createdProfile.id;
+    }
+
+    await supabase.from("club_members").insert({
+      club_id: club.id,
+      profile_id: userId,
+      player_profile_id: playerProfileId,
+      role: "main_admin",
+      is_active: true,
+    });
     setName("");
     setDescription("");
     setMessage("更新しました");
@@ -93,7 +150,7 @@ export default function GroupsPage() {
         <div className="space-y-2">
           {groups.length === 0 ? <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">所属グループがありません</p> : groups.map((g) => (
             <Link key={g.id} href={`/groups/${g.id}`} className="block rounded-xl bg-zinc-800 p-3">
-              <p className="font-semibold">{g.name}{!g.is_active ? "（非表示）" : ""}</p>
+              <p className="font-semibold">{g.name}{g.visibility === "public" ? "（公開）" : ""}{!g.is_active ? "（非表示）" : ""}</p>
               <p className="text-xs text-zinc-300">{g.description || "説明なし"}</p>
             </Link>
           ))}

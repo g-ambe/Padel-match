@@ -536,7 +536,7 @@ export default function EventDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
-      <h1 className="text-xl font-bold">開催詳細：{eventName}</h1>
+      <h1 className="text-xl font-bold">イベント詳細：{eventName}</h1>
       <Card title="試合とスコア入力">
         <div className={showAllRounds ? "max-h-[34rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
           {displayedMatches.map((m) => {

@@ -268,14 +268,36 @@ export default function GroupDetailPage() {
   const uploadGroupImage = async (file: File) => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const ext = file.name.split(".").pop() ?? "jpg"; const path = `${id}/${Date.now()}.${ext}`; const { error: upErr } = await s.storage.from("group-images").upload(path, file, { upsert: true }); if (upErr) { setError("画像アップロードに失敗しました"); setLoading(false); return; } const { data: pub } = s.storage.from("group-images").getPublicUrl(path); const { error: e } = await s.from("clubs").update({ image_url: pub.publicUrl }).eq("id", id); if (e) setError("画像の更新に失敗しました"); else setMessage("画像を更新しました"); setEditingImage(false); setLoading(false); await load(); };
   const saveVisibility = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ visibility: visibilityInput }).eq("id", id); if (e) setError("公開設定の更新に失敗しました"); else setMessage("公開設定を更新しました"); setEditingVisibility(false); setLoading(false); await load(); };
 
+
+
+  const createNotifications = async (targets: string[], payload: { type: string; title: string; body?: string | null; relatedJoinRequestId?: string | null; }) => {
+    const s = getSupabaseClient();
+    if (!s || !id || targets.length === 0) return;
+    const uniqueTargets = [...new Set(targets)];
+    const rows = uniqueTargets.map((target) => ({
+      target_auth_user_id: target,
+      type: payload.type,
+      title: payload.title,
+      body: payload.body ?? null,
+      related_club_id: id,
+      related_join_request_id: payload.relatedJoinRequestId ?? null,
+    }));
+    await s.from("notifications").insert(rows);
+  };
+
   const submitJoinRequest = async () => {
     const s = getSupabaseClient(); if (!s || !id) return;
     const { data: userRes } = await s.auth.getUser(); const uid = userRes.user?.id; if (!uid) return setError("ログイン情報を確認できません");
     if (isMemberOfGroup) return setError("既にこのグループのメンバーです");
     if (myPendingRequest) return setError("申請中です");
     const { data: linkedProfile } = await s.from("player_profiles").select("id").eq("linked_auth_user_id", uid).maybeSingle();
-    const { error: e } = await s.from("join_requests").insert({ club_id: id, target_club_member_id: targetMemberId || null, requester_auth_user_id: uid, requester_player_profile_id: linkedProfile?.id ?? null, message: joinMessage.trim() || null, status: "pending" });
+    const { data: createdRequest, error: e } = await s.from("join_requests").insert({ club_id: id, target_club_member_id: targetMemberId || null, requester_auth_user_id: uid, requester_player_profile_id: linkedProfile?.id ?? null, message: joinMessage.trim() || null, status: "pending" }).select("id").single();
     if (e) return setError("加入申請に失敗しました");
+    const { data: adminTargets } = await s.from("club_members").select("player_profiles!inner(linked_auth_user_id),role").eq("club_id", id).eq("is_active", true).in("role", ["main_admin", "sub_admin"]);
+    const { data: superUsers } = await s.from("app_admins").select("profile_id").eq("is_active", true);
+    const adminUids = (adminTargets ?? []).map((r: any) => r.player_profiles?.linked_auth_user_id).filter(Boolean);
+    const superUids = (superUsers ?? []).map((r: any) => r.profile_id).filter(Boolean);
+    await createNotifications([...adminUids, ...superUids], { type: "join_request_received", title: "加入申請されました", relatedJoinRequestId: createdRequest?.id ?? null });
     setMessage("加入申請を送信しました");
     setTargetMemberId(""); setJoinMessage("");
     await load();
@@ -299,6 +321,7 @@ export default function GroupDetailPage() {
       }
     }
     await s.from("join_requests").update({ status: next, reviewed_by_auth_user_id: uid, reviewed_at: new Date().toISOString() }).eq("id", req.id);
+    await createNotifications([req.requester_auth_user_id], { type: next === "approved" ? "join_request_approved" : "join_request_rejected", title: next === "approved" ? "加入申請が承認されました" : "加入申請が否認されました", relatedJoinRequestId: req.id });
     setMessage(next === "approved" ? "承認しました" : "否認しました");
     await load();
   };

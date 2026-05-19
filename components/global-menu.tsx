@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase";
 
@@ -9,6 +9,7 @@ export function GlobalMenu() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const closeMenu = () => setOpen(false);
 
@@ -16,6 +17,17 @@ export function GlobalMenu() {
     closeMenu();
     router.push(path);
   };
+
+
+  useEffect(() => {
+    const loadUnread = async () => {
+      const supabase = getSupabaseClient();
+      if (!supabase) return;
+      const { count } = await supabase.from("notifications").select("id", { count: "exact", head: true }).eq("is_read", false);
+      setUnreadCount(count ?? 0);
+    };
+    void loadUnread();
+  }, [pathname, open]);
 
   const logout = async () => {
     const supabase = getSupabaseClient();
@@ -43,7 +55,7 @@ export function GlobalMenu() {
         }`}
       >
         <nav className="space-y-2">
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/profile")}>Profile</button>
+          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/profile")}>プロフィール</button>
           <div className="rounded-lg bg-zinc-800">
             <button className="flex w-full items-center justify-between px-3 py-3 text-left" onClick={() => setGroupOpen((v) => !v)}>
               <span>グループ管理</span>
@@ -56,6 +68,7 @@ export function GlobalMenu() {
               </div>
             )}
           </div>
+          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/notifications")}>通知{unreadCount > 0 ? ` (${unreadCount})` : ""}</button>
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/home")}>開催一覧</button>
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button>
           <button className="w-full rounded-lg bg-red-600/80 px-3 py-3 text-left" onClick={() => void logout()}>ログアウト</button>

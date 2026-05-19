@@ -26,6 +26,8 @@ type StatTab = "個人ランキング" | "ペアランキング" | "イベント
 
 type MainTab = "グループ管理" | "メンバー管理" | "グループ戦績";
 
+type Facility = { id: string; name: string; prefecture: string | null; };
+
 const getProfileRow = (playerProfiles: any) => Array.isArray(playerProfiles) ? playerProfiles[0] : playerProfiles;
 const resolveDisplayName = (playerProfiles: any) => {
   const displayName = getProfileRow(playerProfiles)?.display_name;
@@ -45,6 +47,12 @@ export default function GroupDetailPage() {
   const [groupNameInput, setGroupNameInput] = useState("");
   const [editingDescription, setEditingDescription] = useState(false);
   const [groupDescriptionInput, setGroupDescriptionInput] = useState("");
+  const [groupImageUrl, setGroupImageUrl] = useState<string | null>(null);
+  const [facilityId, setFacilityId] = useState<string | null>(null);
+  const [facilityInput, setFacilityInput] = useState("");
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [editingFacility, setEditingFacility] = useState(false);
+  const [editingImage, setEditingImage] = useState(false);
 
   const [members, setMembers] = useState<Member[]>([]);
   const [inactiveMembers, setInactiveMembers] = useState<Member[]>([]);
@@ -151,12 +159,14 @@ export default function GroupDetailPage() {
     const superUser = !!adminRow;
     setIsSuperUser(superUser);
 
-    const { data: group } = await s.from("clubs").select("name,description,is_active").eq("id", id).maybeSingle();
+    const { data: group } = await s.from("clubs").select("name,description,is_active,image_url,main_facility_id").eq("id", id).maybeSingle();
     if (!group || (!group.is_active && !superUser)) { setError("この操作を行う権限がありません"); setLoading(false); return; }
     setGroupName(group.name ?? "グループ");
     setGroupDescription(group.description ?? "");
     setGroupNameInput(group.name ?? "");
     setGroupDescriptionInput(group.description ?? "");
+    setGroupImageUrl((group as any).image_url ?? null);
+    setFacilityId((group as any).main_facility_id ?? null);
 
     const { data } = await s.from("club_members").select("id,profile_id,player_profile_id,is_active,role,player_profiles(id,display_name,linked_auth_user_id)").eq("club_id", id).order("created_at", { ascending: true });
     const rows: Member[] = (data ?? []).map((r: any) => ({
@@ -176,6 +186,9 @@ export default function GroupDetailPage() {
     const me = rows.find((r) => r.profile_id === uid && r.is_active);
     setMyProfileId(uid);
     setMyRole(me?.role ?? "member");
+    const { data: facilityRows } = await s.from("padel_facilities").select("id,name,prefecture").order("name", { ascending: true }).limit(200);
+    setFacilities((facilityRows ?? []) as Facility[]);
+
     setLoading(false);
     await loadStats();
   };
@@ -209,6 +222,8 @@ export default function GroupDetailPage() {
   const doDeleteGroup = async () => { if (!canDeleteGroup) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); await s.from("clubs").update({ is_active: false }).eq("id", id); setConfirmGroupDelete(false); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
   const saveGroupName = async () => { if (!(isSuperUser || myRole === "main_admin")) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupNameInput.trim(); if (!trimmed) return setError("グループ名を入力してください"); if (trimmed === groupName) { setEditingGroupName(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ name: trimmed }).eq("id", id); if (e) setError("グループ名の更新に失敗しました"); else setMessage("グループ名を更新しました"); setEditingGroupName(false); setLoading(false); await load(); };
   const saveGroupDescription = async () => { if (!(isSuperUser || myRole === "main_admin")) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupDescriptionInput.trim(); if (trimmed === groupDescription) { setEditingDescription(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ description: trimmed || null }).eq("id", id); if (e) setError("グループ説明の更新に失敗しました"); else setMessage("更新しました"); setEditingDescription(false); setLoading(false); await load(); };
+  const saveFacility = async () => { if (!(isSuperUser || myRole === "main_admin")) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ main_facility_id: facilityId }).eq("id", id); if (e) setError("活動場所の更新に失敗しました"); else setMessage("更新しました"); setEditingFacility(false); setLoading(false); await load(); };
+  const uploadGroupImage = async (file: File) => { if (!(isSuperUser || myRole === "main_admin")) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const ext = file.name.split(".").pop() ?? "jpg"; const path = `${id}/${Date.now()}.${ext}`; const { error: upErr } = await s.storage.from("group-images").upload(path, file, { upsert: true }); if (upErr) { setError("画像アップロードに失敗しました"); setLoading(false); return; } const { data: pub } = s.storage.from("group-images").getPublicUrl(path); const { error: e } = await s.from("clubs").update({ image_url: pub.publicUrl }).eq("id", id); if (e) setError("画像の更新に失敗しました"); else setMessage("画像を更新しました"); setEditingImage(false); setLoading(false); await load(); };
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
@@ -224,7 +239,7 @@ export default function GroupDetailPage() {
         ))}
       </div>
 
-      {tab === "グループ管理" && <Card title="グループ管理"><div className="space-y-3"><div><p className="mb-1 text-xs text-zinc-400">グループ名</p>{editingGroupName ? <div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupName()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingGroupName(false); setGroupNameInput(groupName); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p>{groupName}</p>{canDeleteGroup && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingGroupName(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">グループ説明</p>{editingDescription ? <div className="space-y-2"><textarea className="w-full rounded-xl bg-zinc-800 p-3" value={groupDescriptionInput} onChange={(e) => setGroupDescriptionInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupDescription()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingDescription(false); setGroupDescriptionInput(groupDescription); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{groupDescription || "説明なし"}</p>{canDeleteGroup && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingDescription(true)}>編集</button>}</div>}</div>{canDeleteGroup && <button className="w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => { setConfirmGroupDelete(true); setConfirmChecked(false); }}>グループ削除</button>}</div></Card>}
+      {tab === "グループ管理" && <Card title="グループ管理"><div className="space-y-3"><div><p className="mb-1 text-xs text-zinc-400">グループ画像</p><div className="rounded-xl bg-zinc-800 p-3">{groupImageUrl ? <img src={groupImageUrl} alt="グループ画像" className="h-28 w-full rounded-lg object-cover" /> : <div className="flex h-28 items-center justify-center rounded-lg bg-zinc-700 text-sm text-zinc-300">画像未設定</div>}{canDeleteGroup && <div className="mt-2">{editingImage ? <input type="file" accept="image/*" className="w-full text-xs" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadGroupImage(f); }} /> : <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingImage(true)}>画像を変更</button>}</div>}</div></div><div><p className="mb-1 text-xs text-zinc-400">グループ名</p>{editingGroupName ? <div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupName()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingGroupName(false); setGroupNameInput(groupName); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p>{groupName}</p>{canDeleteGroup && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingGroupName(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">グループ説明</p>{editingDescription ? <div className="space-y-2"><textarea className="w-full rounded-xl bg-zinc-800 p-3" value={groupDescriptionInput} onChange={(e) => setGroupDescriptionInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupDescription()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingDescription(false); setGroupDescriptionInput(groupDescription); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{groupDescription || "説明なし"}</p>{canDeleteGroup && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingDescription(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">メインの活動場所</p>{editingFacility ? <div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="施設名で検索" value={facilityInput} onChange={(e) => setFacilityInput(e.target.value)} /><select className="w-full rounded-xl bg-zinc-800 p-3" value={facilityId ?? ""} onChange={(e) => setFacilityId(e.target.value || null)}><option value="">未選択</option>{facilities.filter((f) => f.name.includes(facilityInput)).map((f) => <option key={f.id} value={f.id}>{f.name}{f.prefecture ? `（${f.prefecture}）` : ""}</option>)}</select><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black" onClick={() => void saveFacility()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setEditingFacility(false)}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{facilities.find((f) => f.id === facilityId)?.name ?? "未選択"}</p>{canDeleteGroup && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingFacility(true)}>編集</button>}</div>}</div>{canDeleteGroup && <button className="w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => { setConfirmGroupDelete(true); setConfirmChecked(false); }}>グループ削除</button>}</div></Card>}
 
       {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="auth user id（任意）" value={linkId} onChange={(e) => setLinkId(e.target.value)} /><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} onSave={updateMember} onLink={linkMemberAccount} onUnlink={unlinkMemberAccount} onDeactivate={(x) => { if (!canManage) return deny(); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManage && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
 

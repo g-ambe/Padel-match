@@ -83,6 +83,7 @@ export default function LoginPage() {
       } else {
         await supabase.from("player_profiles").insert({ display_name: trimmedName, linked_auth_user_id: uid, is_active: true });
       }
+      await supabase.from("profiles").upsert({ id: uid, display_name: trimmedName, email: email.trim() }, { onConflict: "id" });
     }
 
     setLoading(false);

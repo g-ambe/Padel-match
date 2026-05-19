@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type Group = { id: string; name: string; description: string | null; is_active: boolean };
+type Group = { id: string; name: string; description: string | null; is_active: boolean; visibility: "private" | "public" };
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState<Group[]>([]);
@@ -25,7 +25,7 @@ export default function GroupsPage() {
     const isSuperUser = !!adminRow;
 
     if (isSuperUser) {
-      const { data } = await supabase.from("clubs").select("id,name,description,is_active").order("created_at", { ascending: false });
+      const { data } = await supabase.from("clubs").select("id,name,description,is_active,visibility").order("created_at", { ascending: false });
       setGroups((data ?? []) as Group[]);
       return;
     }
@@ -40,7 +40,7 @@ export default function GroupsPage() {
     if (linkedProfile?.id) {
       const { data } = await supabase
         .from("club_members")
-        .select("clubs(id,name,description,is_active)")
+        .select("clubs(id,name,description,is_active,visibility)")
         .eq("player_profile_id", linkedProfile.id)
         .eq("is_active", true)
         .eq("clubs.is_active", true);
@@ -53,14 +53,19 @@ export default function GroupsPage() {
     if (!memberRows.length) {
       const { data } = await supabase
         .from("club_members")
-        .select("clubs(id,name,description,is_active)")
+        .select("clubs(id,name,description,is_active,visibility)")
         .eq("profile_id", userId)
         .eq("is_active", true)
         .eq("clubs.is_active", true);
       memberRows = data ?? [];
     }
 
-    const rows: Group[] = memberRows.map((r: any) => r.clubs).filter(Boolean);
+    const { data: publicClubs } = await supabase.from("clubs").select("id,name,description,is_active,visibility").eq("is_active", true).eq("visibility", "public");
+
+    const ownedRows: Group[] = memberRows.map((r: any) => r.clubs).filter(Boolean);
+    const merged = new Map<string, Group>();
+    for (const g of [...ownedRows, ...((publicClubs ?? []) as Group[])]) merged.set(g.id, g);
+    const rows = [...merged.values()];
     console.log("[groups] loaded groups count:", rows.length);
     setGroups(rows);
   };
@@ -145,7 +150,7 @@ export default function GroupsPage() {
         <div className="space-y-2">
           {groups.length === 0 ? <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">所属グループがありません</p> : groups.map((g) => (
             <Link key={g.id} href={`/groups/${g.id}`} className="block rounded-xl bg-zinc-800 p-3">
-              <p className="font-semibold">{g.name}{!g.is_active ? "（非表示）" : ""}</p>
+              <p className="font-semibold">{g.name}{g.visibility === "public" ? "（公開）" : ""}{!g.is_active ? "（非表示）" : ""}</p>
               <p className="text-xs text-zinc-300">{g.description || "説明なし"}</p>
             </Link>
           ))}

@@ -162,7 +162,17 @@ export default function GroupsPage() {
         <div className="space-y-2">
           {memberGroups.length === 0 ? <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">所属グループがありません</p> : memberGroups.map((g) => (
             <Link key={g.id} href={`/groups/${g.id}`} className="block rounded-xl bg-zinc-800 p-3">
-              <p className="font-semibold">{g.name}{g.visibility === "public" ? "（公開）" : ""}{!g.is_active ? "（非表示）" : ""}</p>
+              <p className="font-semibold">{g.name}{!g.is_active ? "（非表示）" : ""}</p>
+              <p className="text-xs text-zinc-300">{g.description || "説明なし"}</p>
+            </Link>
+          ))}
+        </div>
+      </Card>
+      <Card title="公開グループ">
+        <div className="space-y-2">
+          {publicGroups.length === 0 ? <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">公開グループはありません</p> : publicGroups.map((g) => (
+            <Link key={g.id} href={`/groups/${g.id}`} className="block rounded-xl bg-zinc-800 p-3">
+              <p className="font-semibold">{g.name}{!g.is_active ? "（非表示）" : ""}</p>
               <p className="text-xs text-zinc-300">{g.description || "説明なし"}</p>
             </Link>
           ))}

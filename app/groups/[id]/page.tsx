@@ -30,15 +30,9 @@ type JoinRequest = { id: string; club_id: string; target_club_member_id: string 
 
 type Facility = { id: string; name: string; prefecture: string | null; address: string | null; };
 
-const getProfileRow = (playerProfiles: any) => Array.isArray(playerProfiles) ? playerProfiles[0] : playerProfiles;
-const resolveDisplayName = (playerProfiles: any) => {
-  const displayName = getProfileRow(playerProfiles)?.display_name;
-  return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";
-};
-
-type Facility = { id: string; name: string; prefecture: string | null; address: string | null; };
-
-const getProfileRow = (playerProfiles: any) => Array.isArray(playerProfiles) ? playerProfiles[0] : playerProfiles;
+function getProfileRow(playerProfiles: any) {
+  return Array.isArray(playerProfiles) ? playerProfiles[0] : playerProfiles;
+}
 const resolveDisplayName = (playerProfiles: any) => {
   const displayName = getProfileRow(playerProfiles)?.display_name;
   return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";

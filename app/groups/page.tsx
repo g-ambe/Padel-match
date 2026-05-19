@@ -70,7 +70,35 @@ export default function GroupsPage() {
       return;
     }
 
-    await supabase.from("club_members").insert({ club_id: club.id, profile_id: userId, role: "main_admin", is_active: true });
+    const { data: existingProfile } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("linked_auth_user_id", userId)
+      .maybeSingle();
+
+    let playerProfileId = existingProfile?.id ?? null;
+    if (!playerProfileId) {
+      const fallbackName = userRes.user?.email?.split("@")[0] ?? "メンバー";
+      const { data: createdProfile, error: profileErr } = await supabase
+        .from("player_profiles")
+        .insert({ display_name: fallbackName, linked_auth_user_id: userId, is_active: true })
+        .select("id")
+        .single();
+
+      if (profileErr || !createdProfile?.id) {
+        setError("作成者プロフィールの作成に失敗しました");
+        return;
+      }
+      playerProfileId = createdProfile.id;
+    }
+
+    await supabase.from("club_members").insert({
+      club_id: club.id,
+      profile_id: userId,
+      player_profile_id: playerProfileId,
+      role: "main_admin",
+      is_active: true,
+    });
     setName("");
     setDescription("");
     setMessage("更新しました");

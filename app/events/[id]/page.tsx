@@ -7,7 +7,7 @@ import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
-type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
+type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 type HistoryMatch = { round_number: number; court_number: number; players: { participant_id: string; team: "A" | "B" }[] };
 type ScoreInput = { a: number | ""; b: number | "" };
 
@@ -27,6 +27,8 @@ export default function EventDetailPage() {
   const [editingMatchIds, setEditingMatchIds] = useState<Record<string, boolean>>({});
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
   const [editingGuestName, setEditingGuestName] = useState("");
+  const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
+  const [editingYoutubeIds, setEditingYoutubeIds] = useState<Record<string, boolean>>({});
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -191,14 +193,16 @@ export default function EventDetailPage() {
 
     const { data: ms } = await supabase
       .from("matches")
-      .select("id,court_number,created_at,completed,rounds(round_number),match_players(participant_id,team),match_results(id,score_a,score_b,winner_team)")
+      .select("id,court_number,created_at,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(id,score_a,score_b,winner_team)")
       .eq("event_id", eventId)
       .order("created_at", { ascending: false });
 
-    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, created_at: m.created_at, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
+    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
     setMatches(normalizedMatches);
     const savedScores = Object.fromEntries(normalizedMatches.filter((m: any) => m.result).map((m: any) => [m.id, { a: m.result.score_a, b: m.result.score_b }]));
     setScoreInputs((prev) => ({ ...savedScores, ...prev }));
+    const savedYoutube = Object.fromEntries(normalizedMatches.map((m: any) => [m.id, m.youtube_url ?? ""]));
+    setYoutubeInputs((prev) => ({ ...savedYoutube, ...prev }));
   };
 
   useEffect(() => {
@@ -334,6 +338,37 @@ export default function EventDetailPage() {
       }
     }
 
+    await loadAll();
+  };
+
+
+  const isYoutubeUrl = (v: string) => {
+    const u = v.trim();
+    return /^https:\/\/(www\.)?youtube\.com\/watch\?v=/.test(u)
+      || /^https:\/\/youtu\.be\//.test(u)
+      || /^https:\/\/(www\.)?youtube\.com\/shorts\//.test(u);
+  };
+
+  const saveYoutubeUrl = async (matchId: string) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    const value = (youtubeInputs[matchId] ?? "").trim();
+    if (!value) return setError("YouTubeのURLを入力してください");
+    if (!isYoutubeUrl(value)) return setError("YouTubeのURLを入力してください");
+    const { error: e } = await supabase.from("matches").update({ youtube_url: value }).eq("id", matchId);
+    if (e) return setError("YouTubeリンクの保存に失敗しました");
+    setEditingYoutubeIds((prev) => ({ ...prev, [matchId]: false }));
+    setError("");
+    await loadAll();
+  };
+
+  const deleteYoutubeUrl = async (matchId: string) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    const { error: e } = await supabase.from("matches").update({ youtube_url: null }).eq("id", matchId);
+    if (e) return setError("YouTubeリンクの削除に失敗しました");
+    setYoutubeInputs((prev) => ({ ...prev, [matchId]: "" }));
+    setEditingYoutubeIds((prev) => ({ ...prev, [matchId]: false }));
     await loadAll();
   };
 
@@ -554,7 +589,7 @@ export default function EventDetailPage() {
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
                   )}
-                </div>
+                </div><div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>}</div>
               </div>
             );
           })}

@@ -16,6 +16,7 @@ export default function HomePage() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [events, setEvents] = useState<EventRow[]>([]);
+  const [showAllEvents, setShowAllEvents] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -36,14 +37,34 @@ export default function HomePage() {
       return;
     }
 
-    const { data: memberships } = await supabase
-      .from("club_members")
-      .select("club_id, clubs(id,name)")
-      .eq("profile_id", userId)
-      .eq("is_active", true)
-      .eq("clubs.is_active", true);
+    const { data: linkedProfile } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("linked_auth_user_id", userId)
+      .maybeSingle();
 
-    const groupRows: Group[] = (memberships ?? [])
+    let memberships: any[] = [];
+    if (linkedProfile?.id) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("club_id, clubs(id,name)")
+        .eq("player_profile_id", linkedProfile.id)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberships = data ?? [];
+    }
+
+    if (!memberships.length) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("club_id, clubs(id,name)")
+        .eq("profile_id", userId)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberships = data ?? [];
+    }
+
+    const groupRows: Group[] = memberships
       .map((m: any) => ({ id: m.club_id as string, name: m.clubs?.name as string }))
       .filter((g) => g.id && g.name);
 
@@ -60,6 +81,7 @@ export default function HomePage() {
       .from("events")
       .select("id,name,court_count,club_id,clubs(name)")
       .in("club_id", groupIds)
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(20);
 
@@ -134,11 +156,11 @@ export default function HomePage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
-      <h1 className="text-xl font-bold">開催一覧</h1>
-      <ActionButton onClick={() => setOpen(true)}>開催作成</ActionButton>
+      <h1 className="text-xl font-bold">イベント</h1>
+      <ActionButton onClick={() => setOpen(true)}>イベント作成</ActionButton>
 
       {open && (
-        <Card title="開催作成フォーム">
+        <Card title="イベント作成フォーム">
           <form className="space-y-3" onSubmit={createEvent}>
             <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
               <option value="">グループなし</option>
@@ -169,12 +191,12 @@ export default function HomePage() {
         </Card>
       )}
 
-      <Card title="あなたの開催">
-        <div className="space-y-2">
+      <Card title="イベント一覧">
+        <div className={`space-y-2 ${showAllEvents ? "max-h-80 overflow-y-auto pr-1" : ""}`}>
           {events.length === 0 ? (
             <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">開催がありません</p>
           ) : (
-            events.map((ev) => (
+            (showAllEvents ? events : events.slice(0, 5)).map((ev) => (
               <Link key={ev.id} href={`/events/${ev.id}`} className="block rounded-xl bg-zinc-800 p-3">
                 <p className="font-semibold">{ev.name}</p>
                 <p className="text-xs text-zinc-300">{ev.club_name} / コート{ev.court_count}面</p>
@@ -182,6 +204,7 @@ export default function HomePage() {
             ))
           )}
         </div>
+        {events.length > 5 && <div className="mt-3">{showAllEvents ? <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(false)}>閉じる</button> : <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(true)}>すべて表示</button>}</div>}
       </Card>
     </main>
   );

@@ -61,6 +61,7 @@ export default function HomePage() {
       .from("events")
       .select("id,name,court_count,club_id,clubs(name)")
       .in("club_id", groupIds)
+      .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(20);
 

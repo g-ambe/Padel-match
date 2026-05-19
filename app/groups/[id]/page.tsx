@@ -88,7 +88,7 @@ export default function GroupDetailPage() {
   const loadStats = async () => {
     const s = getSupabaseClient();
     if (!s || !id) return;
-    const { data: events } = await s.from("events").select("id,name,created_at,status").eq("club_id", id).eq("status", "closed").order("created_at", { ascending: false });
+    const { data: events } = await s.from("events").select("id,name,created_at,status").eq("club_id", id).eq("status", "closed").eq("is_deleted", false).order("created_at", { ascending: false });
     const closedEventIds = (events ?? []).map((e: any) => e.id);
     if (!closedEventIds.length) {
       setIndividualRows([]); setPairRows([]); setEventHistoryRows([]); return;

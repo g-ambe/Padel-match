@@ -131,8 +131,30 @@ export default function EventDetailPage() {
     const superUser = !!adminRow;
     let canDelete = superUser;
     if (!canDelete && uid && event?.club_id) {
-      const { data: myMember } = await supabase.from("club_members").select("role").eq("club_id", event.club_id).eq("profile_id", uid).eq("is_active", true).maybeSingle();
-      canDelete = myMember?.role === "main_admin";
+      const { data: linkedProfiles } = await supabase
+        .from("player_profiles")
+        .select("id")
+        .eq("linked_auth_user_id", uid);
+      const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
+      if (linkedProfileIds.length) {
+        const { data: myMembers } = await supabase
+          .from("club_members")
+          .select("role")
+          .eq("club_id", event.club_id)
+          .in("player_profile_id", linkedProfileIds)
+          .eq("is_active", true);
+        canDelete = (myMembers ?? []).some((m: any) => m.role === "main_admin");
+      }
+      if (!canDelete) {
+        const { data: myMember } = await supabase
+          .from("club_members")
+          .select("role")
+          .eq("club_id", event.club_id)
+          .eq("profile_id", uid)
+          .eq("is_active", true)
+          .maybeSingle();
+        canDelete = myMember?.role === "main_admin";
+      }
     }
     setCanDeleteEvent(canDelete);
 

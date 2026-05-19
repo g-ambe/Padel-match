@@ -37,18 +37,19 @@ export default function HomePage() {
       return;
     }
 
-    const { data: linkedProfile } = await supabase
+    const { data: linkedProfiles } = await supabase
       .from("player_profiles")
       .select("id")
-      .eq("linked_auth_user_id", userId)
-      .maybeSingle();
+      .eq("linked_auth_user_id", userId);
+
+    const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
 
     let memberships: any[] = [];
-    if (linkedProfile?.id) {
+    if (linkedProfileIds.length) {
       const { data } = await supabase
         .from("club_members")
         .select("club_id, clubs(id,name)")
-        .eq("player_profile_id", linkedProfile.id)
+        .in("player_profile_id", linkedProfileIds)
         .eq("is_active", true)
         .eq("clubs.is_active", true);
       memberships = data ?? [];

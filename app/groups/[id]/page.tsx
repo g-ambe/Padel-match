@@ -278,5 +278,42 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, onSave
     const rows = (data ?? []).map((x: any) => ({ auth_user_id: x.id, display_name: x.display_name ?? "名称未設定", email: x.email ?? null, created_at: x.created_at ?? null }));
     setCandidates(rows);
   };
-  return <div className="rounded-xl bg-zinc-800 p-3"><p className="text-xs text-zinc-400">在籍</p>{editing ? <div className="space-y-2"><input className="w-full rounded-lg bg-zinc-700 p-2" value={n} onChange={(e) => setN(e.target.value)} /><select className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={(e) => setR(e.target.value as Role)}><option value="main_admin">メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option></select><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-lg bg-accent py-2 text-black disabled:bg-zinc-600" onClick={async () => { await onSave(member, n, r); setEditing(false); }}>保存</button><button className="w-1/2 rounded-lg border border-zinc-500 py-2" onClick={() => setEditing(false)}>キャンセル</button></div><div className="mt-2 rounded-lg border border-zinc-600 p-2"><p className="mb-1 text-xs text-zinc-300">アカウントを検索</p><div className="flex gap-2"><input className="w-full rounded-lg bg-zinc-700 p-2 text-sm" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="名前・メールで検索" /><button className="rounded-lg border border-zinc-500 px-3 text-sm" onClick={() => void searchAccounts()}>検索</button></div>{searching ? <p className="mt-2 text-xs text-zinc-400">検索中...</p> : searchError ? <p className="mt-2 text-xs text-red-400">{searchError}</p> : (searched && candidates.length === 0) ? <p className="mt-2 text-xs text-zinc-400">候補が見つかりません</p> : <div className="mt-2 space-y-1">{candidates.map((c) => <button key={c.auth_user_id} className={`w-full rounded-lg p-2 text-left text-xs ${selected?.auth_user_id === c.auth_user_id ? "bg-zinc-600" : "bg-zinc-700"}`} onClick={() => setSelected(c)}><p className="font-semibold">{c.display_name}</p><p>{c.email ?? "メール未設定"}</p></button>)}</div>)}{selected && <div className="mt-2 rounded-lg bg-zinc-700 p-2 text-xs"><p>選択中: {selected.display_name}</p><p>{selected.email ?? "メール未設定"}</p></div>}<div className="mt-2 flex gap-2"><button disabled={!selected || loading} className="w-1/2 rounded-lg bg-accent py-2 text-xs text-black disabled:bg-zinc-600" onClick={async () => { if (!selected) return; await onLink(member, selected); }}>このアカウントを紐づける</button><button disabled={!member.linked_auth_user_id || loading} className="w-1/2 rounded-lg border border-zinc-500 py-2 text-xs disabled:text-zinc-500" onClick={async () => { await onUnlink(member); }}>紐づけ解除</button></div></div></div> : <div className="space-y-1"><div className="flex items-center gap-2"><p className="font-semibold">{member.display_name}</p><span className="rounded-full bg-blue-600/30 px-2 py-0.5 text-[11px] text-blue-200">{roleLabel[member.role]}</span>{isSuper && <span className="rounded-full bg-amber-500/30 px-2 py-0.5 text-[11px] text-amber-200">スーパーユーザー</span>}</div><p className="text-xs text-zinc-300">連携: {member.linked_auth_user_id ?? "未設定"}</p>{!cannotEdit && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button><button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示/退会</button></div>}</div>}</div>;
+  return (
+    <div className="rounded-xl bg-zinc-800 p-3">
+      <p className="text-xs text-zinc-400">在籍</p>
+      {editing ? (
+        <div className="space-y-2">
+          <input className="w-full rounded-lg bg-zinc-700 p-2" value={n} onChange={(e) => setN(e.target.value)} />
+          <select className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={(e) => setR(e.target.value as Role)}>
+            <option value="main_admin">メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option>
+          </select>
+          <div className="flex gap-2">
+            <button disabled={loading} className="w-1/2 rounded-lg bg-accent py-2 text-black disabled:bg-zinc-600" onClick={async () => { await onSave(member, n, r); setEditing(false); }}>保存</button>
+            <button className="w-1/2 rounded-lg border border-zinc-500 py-2" onClick={() => setEditing(false)}>キャンセル</button>
+          </div>
+          <div className="mt-2 rounded-lg border border-zinc-600 p-2">
+            <p className="mb-1 text-xs text-zinc-300">アカウントを検索</p>
+            <div className="flex gap-2">
+              <input className="w-full rounded-lg bg-zinc-700 p-2 text-sm" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="名前・メールで検索" />
+              <button className="rounded-lg border border-zinc-500 px-3 text-sm" onClick={() => void searchAccounts()}>検索</button>
+            </div>
+            {searching ? <p className="mt-2 text-xs text-zinc-400">検索中...</p> : searchError ? <p className="mt-2 text-xs text-red-400">{searchError}</p> : (searched && candidates.length === 0) ? <p className="mt-2 text-xs text-zinc-400">候補が見つかりません</p> : (
+              <div className="mt-2 space-y-1">{candidates.map((c) => <button key={c.auth_user_id} className={`w-full rounded-lg p-2 text-left text-xs ${selected?.auth_user_id === c.auth_user_id ? "bg-zinc-600" : "bg-zinc-700"}`} onClick={() => setSelected(c)}><p className="font-semibold">{c.display_name}</p><p>{c.email ?? "メール未設定"}</p></button>)}</div>
+            )}
+            {selected && <div className="mt-2 rounded-lg bg-zinc-700 p-2 text-xs"><p>選択中: {selected.display_name}</p><p>{selected.email ?? "メール未設定"}</p></div>}
+            <div className="mt-2 flex gap-2">
+              <button disabled={!selected || loading} className="w-1/2 rounded-lg bg-accent py-2 text-xs text-black disabled:bg-zinc-600" onClick={async () => { if (!selected) return; await onLink(member, selected); }}>このアカウントを紐づける</button>
+              <button disabled={!member.linked_auth_user_id || loading} className="w-1/2 rounded-lg border border-zinc-500 py-2 text-xs disabled:text-zinc-500" onClick={async () => { await onUnlink(member); }}>紐づけ解除</button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2"><p className="font-semibold">{member.display_name}</p><span className="rounded-full bg-blue-600/30 px-2 py-0.5 text-[11px] text-blue-200">{roleLabel[member.role]}</span>{isSuper && <span className="rounded-full bg-amber-500/30 px-2 py-0.5 text-[11px] text-amber-200">スーパーユーザー</span>}</div>
+          <p className="text-xs text-zinc-300">連携: {member.linked_auth_user_id ?? "未設定"}</p>
+          {!cannotEdit && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button><button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示/退会</button></div>}
+        </div>
+      )}
+    </div>
+  );
 }

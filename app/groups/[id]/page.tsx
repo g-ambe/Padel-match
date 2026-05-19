@@ -20,6 +20,12 @@ type StatTab = "個人ランキング" | "ペアランキング" | "イベント
 
 type MainTab = "グループ管理" | "メンバー管理" | "グループ戦績";
 
+const getProfileRow = (playerProfiles: any) => Array.isArray(playerProfiles) ? playerProfiles[0] : playerProfiles;
+const resolveDisplayName = (playerProfiles: any) => {
+  const displayName = getProfileRow(playerProfiles)?.display_name;
+  return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";
+};
+
 const roleLabel: Record<Role, string> = { main_admin: "メイン管理者", sub_admin: "サブ管理者", member: "メンバー" };
 const roleRank: Record<Role, number> = { main_admin: 0, sub_admin: 1, member: 2 };
 
@@ -151,8 +157,8 @@ export default function GroupDetailPage() {
       id: r.id,
       profile_id: r.profile_id,
       player_profile_id: r.player_profile_id,
-      display_name: r.player_profiles?.display_name ?? "名称未設定",
-      linked_auth_user_id: r.player_profiles?.linked_auth_user_id ?? null,
+      display_name: resolveDisplayName(r.player_profiles),
+      linked_auth_user_id: getProfileRow(r.player_profiles)?.linked_auth_user_id ?? null,
       is_active: r.is_active !== false,
       role: (r.role ?? "member") as Role
     }));
@@ -173,7 +179,7 @@ export default function GroupDetailPage() {
   const activeMainAdmins = useMemo(() => members.filter((m) => m.role === "main_admin").length, [members]);
 
   const addMember = async () => { if (!canManage) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = name.trim(); if (!trimmed) return setError("メンバー名を入力してください"); if (members.some((m) => m.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます"); setLoading(true); const { data: pp, error: pe } = await s.from("player_profiles").insert({ display_name: trimmed, linked_auth_user_id: linkId.trim() || null, is_active: true }).select("id").single(); if (pe || !pp?.id) { setError("メンバー追加に失敗しました"); setLoading(false); return; } await s.from("club_members").insert({ club_id: id, player_profile_id: pp.id, role: "member", is_active: true }); setMessage("更新しました"); setName(""); setLinkId(""); setLoading(false); await load(); };
-  const updateMember = async (m: Member, newName: string, newLink: string, newRole: Role) => { const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); const trimmed = newName.trim(); if (!trimmed) return setError("メンバー名を入力してください"); if (members.some((x) => x.id !== m.id && x.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます"); setLoading(true); await s.from("player_profiles").update({ display_name: trimmed, linked_auth_user_id: newLink.trim() || null }).eq("id", m.player_profile_id); await s.from("club_members").update({ role: newRole }).eq("id", m.id); setMessage("更新しました"); setLoading(false); await load(); };
+  const updateMember = async (m: Member, newName: string, _newLink: string, newRole: Role) => { const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); const trimmed = newName.trim(); if (!trimmed) return setError("メンバー名を入力してください"); if (members.some((x) => x.id !== m.id && x.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます"); setLoading(true); await s.from("player_profiles").update({ display_name: trimmed }).eq("id", m.player_profile_id); await s.from("club_members").update({ role: newRole }).eq("id", m.id); setMessage("更新しました"); setLoading(false); await load(); };
   const doDeactivate = async () => { if (!confirmLeave) return; if (!canManage) return deny(); if (confirmLeave.role === "main_admin" && activeMainAdmins <= 1) return setError("メイン管理者は最低1人必要です"); const s = getSupabaseClient(); if (!s) return; setLoading(true); await s.from("club_members").update({ is_active: false }).eq("id", confirmLeave.id); setConfirmLeave(null); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
   const restoreMember = async (m: Member) => { if (!canManage) return deny(); const s = getSupabaseClient(); if (!s) return; setLoading(true); await s.from("club_members").update({ is_active: true }).eq("id", m.id); setMessage("反映しました"); setLoading(false); await load(); };
   const doDeleteGroup = async () => { if (!canDeleteGroup) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); await s.from("clubs").update({ is_active: false }).eq("id", id); setConfirmGroupDelete(false); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };

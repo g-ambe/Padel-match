@@ -20,8 +20,13 @@ export default function EventDetailPage() {
   const [courtCount, setCourtCount] = useState(1);
   const [guestName, setGuestName] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [eventStatus, setEventStatus] = useState<"active" | "closed">("active");
   const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteChecked, setDeleteChecked] = useState(false);
+  const [isDeletedEvent, setIsDeletedEvent] = useState(false);
+  const [canDeleteEvent, setCanDeleteEvent] = useState(false);
   const [scoreInputs, setScoreInputs] = useState<Record<string, ScoreInput>>({});
   const [showAllRounds, setShowAllRounds] = useState(false);
   const [editingMatchIds, setEditingMatchIds] = useState<Record<string, boolean>>({});
@@ -109,13 +114,25 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
-    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id").eq("id", eventId).single();
+    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted").eq("id", eventId).single();
+    if (!event) { setError("イベントが見つかりません"); return; }
+    if (event.is_deleted) { setIsDeletedEvent(true); setEventName(event.name ?? "-"); return; }
+    setIsDeletedEvent(false);
     if (event?.name) setEventName(event.name);
     if (event?.court_count) setCourtCount(event.court_count);
     if (event?.status === "closed") setEventStatus("closed");
     else setEventStatus("active");
 
-
+    const { data: userRes } = await supabase.auth.getUser();
+    const uid = userRes.user?.id;
+    const { data: adminRow } = uid ? await supabase.from("app_admins").select("id").eq("profile_id", uid).eq("is_active", true).maybeSingle() : { data: null as any };
+    const superUser = !!adminRow;
+    let canDelete = superUser;
+    if (!canDelete && uid && event?.club_id) {
+      const { data: myMember } = await supabase.from("club_members").select("role").eq("club_id", event.club_id).eq("profile_id", uid).eq("is_active", true).maybeSingle();
+      canDelete = myMember?.role === "main_admin";
+    }
+    setCanDeleteEvent(canDelete);
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
     if (event?.club_id) {
@@ -534,15 +551,43 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
+  const deleteEvent = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    if (!canDeleteEvent) return setError("この操作を行う権限がありません");
+    if (eventStatus !== "closed") return setError("終了済みイベントのみ削除できます");
+    const { error: e } = await supabase.from("events").update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed");
+    if (e) return setError("イベントの削除に失敗しました");
+    setMessage("イベントを削除しました");
+    router.push("/home");
+  };
+
+  if (isDeletedEvent) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント詳細：{eventName}</h1><Card title="イベント詳細"><p className="text-sm text-zinc-300">このイベントは削除済みです</p><button className="mt-3 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button></Card></main>;
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
-      <h1 className="text-xl font-bold">開催詳細：{eventName}</h1>
+      <h1 className="text-xl font-bold">イベント詳細：{eventName}</h1>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      {message && <p className="text-sm text-emerald-400">{message}</p>}
       <Card title="試合とスコア入力">
         <div className={showAllRounds ? "max-h-[34rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
           {displayedMatches.map((m) => {
             const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
             const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
-            return (
+            const deleteEvent = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    if (!canDeleteEvent) return setError("この操作を行う権限がありません");
+    if (eventStatus !== "closed") return setError("終了済みイベントのみ削除できます");
+    const { error: e } = await supabase.from("events").update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed");
+    if (e) return setError("イベントの削除に失敗しました");
+    setMessage("イベントを削除しました");
+    router.push("/home");
+  };
+
+  if (isDeletedEvent) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント詳細：{eventName}</h1><Card title="イベント詳細"><p className="text-sm text-zinc-300">このイベントは削除済みです</p><button className="mt-3 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button></Card></main>;
+
+  return (
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
                 <p className="text-sm">Round {m.round_number} / Court{m.court_number}</p>
                 <p className="mb-2 text-base font-semibold">{a} vs {b}</p>
@@ -642,6 +687,7 @@ export default function EventDetailPage() {
           {eventStatus === "closed" ? "イベント終了済み" : "イベント終了"}
         </button>
         {eventStatus === "closed" && <p className="mt-2 text-sm text-zinc-300">この開催は終了しました</p>}
+        {eventStatus === "closed" && canDeleteEvent && <button className="mt-2 w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
       </Card>
 
 
@@ -679,6 +725,8 @@ export default function EventDetailPage() {
       )}
 
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
+
+      {showDeleteModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">本当にこのイベントを削除しますか？</p><p className="mt-2 text-sm text-zinc-300">このイベントの試合結果・戦績はランキングに反映されなくなります。</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={deleteChecked} onChange={(e) => setDeleteChecked(e.target.checked)} /><span>この操作を実行して問題ないことを確認しました</span></label><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setShowDeleteModal(false)}>キャンセル</button><button disabled={!deleteChecked} className="w-1/2 rounded-xl bg-red-500 py-2 disabled:bg-zinc-600" onClick={deleteEvent}>イベントを削除する</button></div></div></div>}
 
       {showCloseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

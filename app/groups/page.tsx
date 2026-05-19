@@ -30,23 +30,24 @@ export default function GroupsPage() {
       return;
     }
 
-    const { data: linkedProfile } = await supabase
+    const { data: linkedProfiles } = await supabase
       .from("player_profiles")
       .select("id")
-      .eq("linked_auth_user_id", userId)
-      .maybeSingle();
+      .eq("linked_auth_user_id", userId);
+
+    const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
 
     let memberRows: any[] = [];
-    if (linkedProfile?.id) {
+    if (linkedProfileIds.length) {
       const { data } = await supabase
         .from("club_members")
         .select("clubs(id,name,description,is_active,visibility)")
-        .eq("player_profile_id", linkedProfile.id)
+        .in("player_profile_id", linkedProfileIds)
         .eq("is_active", true)
         .eq("clubs.is_active", true);
       memberRows = data ?? [];
       console.log("[groups] current auth user id:", userId);
-      console.log("[groups] matched player_profile id:", linkedProfile.id);
+      console.log("[groups] matched player_profile ids:", linkedProfileIds);
       console.log("[groups] loaded club_members count:", memberRows.length);
     }
 
@@ -99,13 +100,14 @@ export default function GroupsPage() {
       return;
     }
 
-    const { data: existingProfile } = await supabase
+    const { data: existingProfiles } = await supabase
       .from("player_profiles")
       .select("id")
       .eq("linked_auth_user_id", userId)
-      .maybeSingle();
+      .order("created_at", { ascending: true })
+      .limit(1);
 
-    let playerProfileId = existingProfile?.id ?? null;
+    let playerProfileId = existingProfiles?.[0]?.id ?? null;
     if (!playerProfileId) {
       const fallbackName = userRes.user?.email?.split("@")[0] ?? "メンバー";
       const { data: createdProfile, error: profileErr } = await supabase

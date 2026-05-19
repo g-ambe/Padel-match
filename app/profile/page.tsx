@@ -83,6 +83,12 @@ export default function ProfilePage() {
     }
 
     const row = playerProfile.data;
+    if (!row) {
+      setError("プロフィールの読み込みに失敗しました");
+      setLoading(false);
+      return;
+    }
+
     setProfileId(row.id);
     const normalized: ProfileForm = {
       display_name: row.display_name ?? "",

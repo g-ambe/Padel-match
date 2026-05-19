@@ -30,14 +30,38 @@ export default function GroupsPage() {
       return;
     }
 
-    const { data } = await supabase
-      .from("club_members")
-      .select("clubs(id,name,description,is_active)")
-      .eq("profile_id", userId)
-      .eq("is_active", true)
-      .eq("clubs.is_active", true);
+    const { data: linkedProfile } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("linked_auth_user_id", userId)
+      .maybeSingle();
 
-    const rows: Group[] = (data ?? []).map((r: any) => r.clubs).filter(Boolean);
+    let memberRows: any[] = [];
+    if (linkedProfile?.id) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("clubs(id,name,description,is_active)")
+        .eq("player_profile_id", linkedProfile.id)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberRows = data ?? [];
+      console.log("[groups] current auth user id:", userId);
+      console.log("[groups] matched player_profile id:", linkedProfile.id);
+      console.log("[groups] loaded club_members count:", memberRows.length);
+    }
+
+    if (!memberRows.length) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("clubs(id,name,description,is_active)")
+        .eq("profile_id", userId)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberRows = data ?? [];
+    }
+
+    const rows: Group[] = memberRows.map((r: any) => r.clubs).filter(Boolean);
+    console.log("[groups] loaded groups count:", rows.length);
     setGroups(rows);
   };
 
@@ -70,7 +94,35 @@ export default function GroupsPage() {
       return;
     }
 
-    await supabase.from("club_members").insert({ club_id: club.id, profile_id: userId, role: "main_admin", is_active: true });
+    const { data: existingProfile } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("linked_auth_user_id", userId)
+      .maybeSingle();
+
+    let playerProfileId = existingProfile?.id ?? null;
+    if (!playerProfileId) {
+      const fallbackName = userRes.user?.email?.split("@")[0] ?? "メンバー";
+      const { data: createdProfile, error: profileErr } = await supabase
+        .from("player_profiles")
+        .insert({ display_name: fallbackName, linked_auth_user_id: userId, is_active: true })
+        .select("id")
+        .single();
+
+      if (profileErr || !createdProfile?.id) {
+        setError("作成者プロフィールの作成に失敗しました");
+        return;
+      }
+      playerProfileId = createdProfile.id;
+    }
+
+    await supabase.from("club_members").insert({
+      club_id: club.id,
+      profile_id: userId,
+      player_profile_id: playerProfileId,
+      role: "main_admin",
+      is_active: true,
+    });
     setName("");
     setDescription("");
     setMessage("更新しました");

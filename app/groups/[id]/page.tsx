@@ -212,10 +212,17 @@ export default function GroupDetailPage() {
   const addMember = async () => { if (!canManage) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = name.trim(); if (!trimmed) return setError("メンバー名を入力してください"); if (members.some((m) => m.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます"); setLoading(true); const { data: pp, error: pe } = await s.from("player_profiles").insert({ display_name: trimmed, linked_auth_user_id: linkId.trim() || null, is_active: true }).select("id").single(); if (pe || !pp?.id) { setError("メンバー追加に失敗しました"); setLoading(false); return; } await s.from("club_members").insert({ club_id: id, player_profile_id: pp.id, role: "member", is_active: true }); setMessage("更新しました"); setName(""); setLinkId(""); setLoading(false); await load(); };
   const updateMember = async (m: Member, newName: string, newRole: Role) => { const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); const trimmed = newName.trim(); if (!trimmed) return setError("メンバー名を入力してください"); if (members.some((x) => x.id !== m.id && x.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます"); setLoading(true); await s.from("player_profiles").update({ display_name: trimmed }).eq("id", m.player_profile_id); await s.from("club_members").update({ role: newRole }).eq("id", m.id); setMessage("更新しました"); setLoading(false); await load(); };
   const linkMemberAccount = async (m: Member, account: AccountCandidate) => {
-    const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny();
+    const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); if (!id) return;
     setLoading(true);
-    const { data: duplicated } = await s.from("player_profiles").select("id").eq("linked_auth_user_id", account.auth_user_id).neq("id", m.player_profile_id).maybeSingle();
-    if (duplicated?.id) { setError("このアカウントは既に別のメンバーに紐づいています"); setLoading(false); return; }
+    const { data: sameClubMembers } = await s
+      .from("club_members")
+      .select("id,player_profile_id,player_profiles!inner(linked_auth_user_id)")
+      .eq("club_id", id)
+      .eq("is_active", true);
+
+    const duplicatedInSameClub = (sameClubMembers ?? []).some((row: any) => row.id !== m.id && row.player_profiles?.linked_auth_user_id === account.auth_user_id);
+    if (duplicatedInSameClub) { setError("このアカウントはこのグループ内の別メンバーに既に紐づいています"); setLoading(false); return; }
+
     await s.from("player_profiles").update({ linked_auth_user_id: account.auth_user_id }).eq("id", m.player_profile_id);
     setMessage("紐づけました");
     setLoading(false);

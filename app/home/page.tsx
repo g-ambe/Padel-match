@@ -37,14 +37,34 @@ export default function HomePage() {
       return;
     }
 
-    const { data: memberships } = await supabase
-      .from("club_members")
-      .select("club_id, clubs(id,name)")
-      .eq("profile_id", userId)
-      .eq("is_active", true)
-      .eq("clubs.is_active", true);
+    const { data: linkedProfile } = await supabase
+      .from("player_profiles")
+      .select("id")
+      .eq("linked_auth_user_id", userId)
+      .maybeSingle();
 
-    const groupRows: Group[] = (memberships ?? [])
+    let memberships: any[] = [];
+    if (linkedProfile?.id) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("club_id, clubs(id,name)")
+        .eq("player_profile_id", linkedProfile.id)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberships = data ?? [];
+    }
+
+    if (!memberships.length) {
+      const { data } = await supabase
+        .from("club_members")
+        .select("club_id, clubs(id,name)")
+        .eq("profile_id", userId)
+        .eq("is_active", true)
+        .eq("clubs.is_active", true);
+      memberships = data ?? [];
+    }
+
+    const groupRows: Group[] = memberships
       .map((m: any) => ({ id: m.club_id as string, name: m.clubs?.name as string }))
       .filter((g) => g.id && g.name);
 

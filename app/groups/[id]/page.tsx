@@ -376,7 +376,82 @@ export default function GroupDetailPage() {
 
       {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="auth user id（任意）" value={linkId} onChange={(e) => setLinkId(e.target.value)} /><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} onSave={updateMember} onLink={linkMemberAccount} onUnlink={unlinkMemberAccount} onDeactivate={(x) => { if (!canManage) return deny(); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManage && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
 
-      {tab === "グループ戦績" && <Card title="グループ戦績"><div className="flex gap-2 text-xs"><button className={`rounded-lg px-2 py-2 ${statTab === "個人ランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setStatTab("個人ランキング")}>個人ランキング</button><button className={`rounded-lg px-2 py-2 ${statTab === "ペアランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setStatTab("ペアランキング")}>ペアランキング</button><button className={`rounded-lg px-2 py-2 ${statTab === "イベント履歴" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setStatTab("イベント履歴")}>イベント履歴</button></div><div className="mt-3 max-h-[28rem] space-y-2 overflow-y-auto pr-1">{statTab === "個人ランキング" && (<>{individualRows.length === 0 ? <p className="text-sm text-zinc-300">まだ戦績がありません</p> : <><div className="mb-2 flex gap-2 text-xs"><button className={`rounded-lg px-2 py-2 ${individualMode === "総合ランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setIndividualMode("総合ランキング")}>総合ランキング</button><button className={`rounded-lg px-2 py-2 ${individualMode === "勝率ランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setIndividualMode("勝率ランキング")}>勝率ランキング</button></div>{targetIndividuals.length === 0 ? <p className="text-sm text-zinc-300">ランキング対象のメンバーがいません</p> : <><p className="text-xs text-zinc-400">ランキング対象</p>{targetIndividuals.map((r: any, i: number) => <div key={`t-${i}`} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-semibold">{i + 1}位 {r.name}</p><p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p><p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p><p>1試合平均得点 {r.avgScored.toFixed(1)} / 1試合平均失点 {r.avgConceded.toFixed(1)}</p><p>総合ポイント {r.totalPoint.toFixed(1)}</p></div>)}</>}{referenceIndividuals.length > 0 && <><p className="mt-2 text-xs text-zinc-400">参考記録（3試合未満）</p><p className="text-xs text-amber-300">参考記録のみ表示しています</p>{referenceIndividuals.map((r: any, i: number) => <div key={`r-${i}`} className="rounded-xl border border-amber-600/40 bg-zinc-800 p-3 text-sm"><p className="font-semibold">{r.name}（参考記録）</p><p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p><p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p><p>1試合平均得点 {r.avgScored.toFixed(1)} / 1試合平均失点 {r.avgConceded.toFixed(1)}</p><p>総合ポイント {r.totalPoint.toFixed(1)}</p></div>)}</>}</>}</>}</>)}{statTab === "ペアランキング" && (pairRows.length === 0 ? <p className="text-sm text-zinc-300">まだ戦績がありません</p> : pairRows.map((r: any, i: number) => <div key={i} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-semibold">{i + 1}位 {r.pairName}</p><p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p><p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p><p>1試合平均得失点差 {r.avgDiff.toFixed(1)}</p></div>))}{statTab === "イベント履歴" && (eventHistoryRows.length === 0 ? <p className="text-sm text-zinc-300">まだ戦績がありません</p> : eventHistoryRows.map((e: any) => <div key={e.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-semibold">{e.name}</p><p>開催日 {new Date(e.date).toLocaleDateString("ja-JP")}</p><p>試合数 {e.matchCount} / 参加人数 {e.participantCount}</p><Link className="mt-1 inline-block text-xs underline" href={`/events/${e.id}`}>詳細を見る</Link></div>))}</div></Card>}
+      {tab === "グループ戦績" && (
+        <Card title="グループ戦績">
+          <div className="flex gap-2 text-xs">
+            <button className={`rounded-lg px-2 py-2 ${statTab === "個人ランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setStatTab("個人ランキング")}>個人ランキング</button>
+            <button className={`rounded-lg px-2 py-2 ${statTab === "ペアランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setStatTab("ペアランキング")}>ペアランキング</button>
+            <button className={`rounded-lg px-2 py-2 ${statTab === "イベント履歴" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setStatTab("イベント履歴")}>イベント履歴</button>
+          </div>
+          <div className="mt-3 max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+            {statTab === "個人ランキング" && (
+              <>
+                {individualRows.length === 0 ? (
+                  <p className="text-sm text-zinc-300">まだ戦績がありません</p>
+                ) : (
+                  <>
+                    <div className="mb-2 flex gap-2 text-xs">
+                      <button className={`rounded-lg px-2 py-2 ${individualMode === "総合ランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setIndividualMode("総合ランキング")}>総合ランキング</button>
+                      <button className={`rounded-lg px-2 py-2 ${individualMode === "勝率ランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setIndividualMode("勝率ランキング")}>勝率ランキング</button>
+                    </div>
+                    {targetIndividuals.length === 0 ? (
+                      <p className="text-sm text-zinc-300">ランキング対象のメンバーがいません</p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-zinc-400">ランキング対象</p>
+                        {targetIndividuals.map((r: any, i: number) => (
+                          <div key={`t-${i}`} className="rounded-xl bg-zinc-800 p-3 text-sm">
+                            <p className="font-semibold">{i + 1}位 {r.name}</p>
+                            <p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p>
+                            <p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p>
+                            <p>1試合平均得点 {r.avgScored.toFixed(1)} / 1試合平均失点 {r.avgConceded.toFixed(1)}</p>
+                            <p>総合ポイント {r.totalPoint.toFixed(1)}</p>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {referenceIndividuals.length > 0 && (
+                      <>
+                        <p className="mt-2 text-xs text-zinc-400">参考記録（3試合未満）</p>
+                        <p className="text-xs text-amber-300">参考記録のみ表示しています</p>
+                        {referenceIndividuals.map((r: any, i: number) => (
+                          <div key={`r-${i}`} className="rounded-xl border border-amber-600/40 bg-zinc-800 p-3 text-sm">
+                            <p className="font-semibold">{r.name}（参考記録）</p>
+                            <p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p>
+                            <p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p>
+                            <p>1試合平均得点 {r.avgScored.toFixed(1)} / 1試合平均失点 {r.avgConceded.toFixed(1)}</p>
+                            <p>総合ポイント {r.totalPoint.toFixed(1)}</p>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {statTab === "ペアランキング" && (
+              pairRows.length === 0 ? <p className="text-sm text-zinc-300">まだ戦績がありません</p> : pairRows.map((r: any, i: number) => (
+                <div key={i} className="rounded-xl bg-zinc-800 p-3 text-sm">
+                  <p className="font-semibold">{i + 1}位 {r.pairName}</p>
+                  <p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p>
+                  <p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p>
+                  <p>1試合平均得失点差 {r.avgDiff.toFixed(1)}</p>
+                </div>
+              ))
+            )}
+            {statTab === "イベント履歴" && (
+              eventHistoryRows.length === 0 ? <p className="text-sm text-zinc-300">まだ戦績がありません</p> : eventHistoryRows.map((e: any) => (
+                <div key={e.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
+                  <p className="font-semibold">{e.name}</p>
+                  <p>開催日 {new Date(e.date).toLocaleDateString("ja-JP")}</p>
+                  <p>試合数 {e.matchCount} / 参加人数 {e.participantCount}</p>
+                  <Link className="mt-1 inline-block text-xs underline" href={`/events/${e.id}`}>詳細を見る</Link>
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+      )}
 
 
       {!isMemberOfGroup && visibility === "public" && <Card title="加入申請"><div className="space-y-2"><p className="text-xs text-zinc-300">紐づけたいメンバー</p><select className="w-full rounded-xl bg-zinc-800 p-3" value={targetMemberId} onChange={(e) => setTargetMemberId(e.target.value)}><option value="">未選択</option>{members.filter((m) => !m.linked_auth_user_id).map((m) => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select><textarea className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メッセージ" value={joinMessage} onChange={(e) => setJoinMessage(e.target.value)} />{myPendingRequest ? <p className="text-sm text-zinc-300">申請中です</p> : <button disabled={loading} className="w-full rounded-xl bg-accent py-2 text-black" onClick={() => void submitJoinRequest()}>申請する</button>}</div></Card>}

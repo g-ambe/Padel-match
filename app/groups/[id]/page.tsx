@@ -331,7 +331,7 @@ export default function GroupDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
-      <div className="flex items-center justify-between"><h1 className="text-xl font-bold">{groupName} 設定</h1><Link href="/groups" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm">戻る</Link></div>
+      <div className="flex items-start justify-between gap-2 pr-14"><Link href="/groups" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm">戻る</Link><h1 className="pt-1 text-right text-xl font-bold">{groupName} 設定</h1></div>
       <p className="text-sm text-zinc-300">あなたの権限：{appRole === "super_user" ? "スーパーユーザー" : roleLabel[myRole]}</p>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}

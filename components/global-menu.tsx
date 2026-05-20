@@ -10,6 +10,7 @@ export function GlobalMenu() {
   const [open, setOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
 
   const closeMenu = () => setOpen(false);
 
@@ -18,16 +19,42 @@ export function GlobalMenu() {
     router.push(path);
   };
 
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      setHasSession(false);
+      return;
+    }
+
+    void supabase.auth.getSession().then(({ data }) => {
+      setHasSession(!!data.session);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setHasSession(!!session);
+      if (!session) {
+        setOpen(false);
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
     const loadUnread = async () => {
+      if (!hasSession) {
+        setUnreadCount(0);
+        return;
+      }
       const supabase = getSupabaseClient();
       if (!supabase) return;
       const { count } = await supabase.from("notifications").select("id", { count: "exact", head: true }).eq("is_read", false);
       setUnreadCount(count ?? 0);
     };
     void loadUnread();
-  }, [pathname, open]);
+  }, [pathname, open, hasSession]);
 
   const logout = async () => {
     const supabase = getSupabaseClient();
@@ -36,6 +63,8 @@ export function GlobalMenu() {
     router.replace("/");
     router.refresh();
   };
+
+  if (!hasSession) return null;
 
   return (
     <>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
+import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent } from "@/lib/guest-events";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
@@ -34,6 +35,7 @@ export default function EventDetailPage() {
   const [editingGuestName, setEditingGuestName] = useState("");
   const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
   const [editingYoutubeIds, setEditingYoutubeIds] = useState<Record<string, boolean>>({});
+  const [guestMode, setGuestMode] = useState(false);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -80,6 +82,9 @@ export default function EventDetailPage() {
       scoredRanking: [...rows].sort((a, b) => b.scored - a.scored)
     };
   }, [participants, matches]);
+  const totalMatches = useMemo(() => matches.length, [matches]);
+  const winRanking = useMemo(() => [...eventSummary.rows].sort((a, b) => b.wins - a.wins || b.winRate - a.winRate), [eventSummary.rows]);
+  const mvp = useMemo(() => winRanking[0] ?? null, [winRanking]);
 
 
   const activeParticipantsCount = useMemo(() => participants.filter((p) => p.status === "active").length, [participants]);
@@ -113,6 +118,19 @@ export default function EventDetailPage() {
   const displayedMatches = useMemo(() => (showAllRounds ? sortedMatches : sortedMatches.slice(0, 5)), [showAllRounds, sortedMatches]);
 
   const loadAll = async () => {
+    if (typeof eventId === "string" && eventId.startsWith("guest_")) {
+      setGuestMode(true);
+      const ge = getGuestEvent(eventId);
+      if (!ge) { setError("イベントが見つかりません"); return; }
+      setEventName(ge.name);
+      setCourtCount(ge.court_count);
+      setEventStatus(ge.status);
+      setParticipants(ge.participants.map((p) => ({ ...p, profile_id: null, player_profile_id: null, display_name: p.guest_name })));
+      setMatches(ge.matches as any);
+      setScoreInputs(Object.fromEntries(ge.matches.filter((m) => m.result).map((m) => [m.id, { a: m.result!.score_a, b: m.result!.score_b }])));
+      return;
+    }
+    setGuestMode(false);
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
@@ -250,6 +268,7 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      if (typeof eventId === "string" && eventId.startsWith("guest_") && isGuestModeEnabled()) return;
       const supabase = getSupabaseClient();
       if (!supabase) return;
       const { data } = await supabase.auth.getSession();
@@ -259,6 +278,16 @@ export default function EventDetailPage() {
   }, [router]);
 
   const addGuest = async () => {
+    if (guestMode) {
+      if (!guestName.trim() || !eventId) return;
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.participants.push({ id: `gp_${Date.now()}`, guest_name: guestName.trim(), status: "active", participant_type: "guest" });
+      upsertGuestEvent(ge);
+      setGuestName("");
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !guestName.trim() || !eventId) return;
     const normalizeName = (v: string) => v.trim().toLowerCase();
@@ -275,6 +304,16 @@ export default function EventDetailPage() {
   };
 
   const saveGuestName = async (participantId: string) => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.participants = ge.participants.map((p) => p.id === participantId ? { ...p, guest_name: editingGuestName.trim() } : p);
+      upsertGuestEvent(ge);
+      setEditingGuestId(null);
+      setEditingGuestName("");
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
     const normalizeName = (v: string) => v.trim().toLowerCase();
@@ -296,6 +335,11 @@ export default function EventDetailPage() {
   };
 
   const goTop = async () => {
+    if (guestMode && eventId) {
+      removeGuestEvent(eventId);
+      router.push("/home");
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase) {
       router.push("/");
@@ -306,6 +350,14 @@ export default function EventDetailPage() {
   };
 
   const updateStatus = async (participantId: string, isActive: boolean) => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.participants = ge.participants.map((p) => p.id === participantId ? { ...p, status: isActive ? "active" : "resting" } : p);
+      upsertGuestEvent(ge);
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase) return;
     await supabase.from("event_participants").update({ status: isActive ? "active" : "resting" }).eq("id", participantId);
@@ -313,6 +365,15 @@ export default function EventDetailPage() {
   };
 
   const closeEvent = async () => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.status = "closed";
+      upsertGuestEvent(ge);
+      setShowCloseModal(false);
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
     await supabase
@@ -322,8 +383,33 @@ export default function EventDetailPage() {
     setShowCloseModal(false);
     await loadAll();
   };
+  const reopenEvent = async () => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.status = "active";
+      upsertGuestEvent(ge);
+      await loadAll();
+      return;
+    }
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    await supabase.from("events").update({ status: "active" }).eq("id", eventId);
+    await loadAll();
+  };
 
   const saveScore = async (matchId: string) => {
+    if (guestMode && eventId) {
+      const score = scoreInputs[matchId];
+      if (!score || score.a === "" || score.b === "") return;
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.matches = ge.matches.map((m) => m.id === matchId ? { ...m, completed: true, result: { score_a: Number(score.a), score_b: Number(score.b), winner_team: Number(score.a) > Number(score.b) ? "A" : "B" } } : m);
+      upsertGuestEvent(ge);
+      setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     const score = scoreInputs[matchId];
     if (!supabase || !score) return;
@@ -414,6 +500,24 @@ export default function EventDetailPage() {
   const pairKey = (a: string, b: string) => [a, b].sort().join("|");
 
   const generateRound = async () => {
+    if (guestMode && eventId) {
+      const active = participants.filter((p) => p.status === "active");
+      if (active.length < 4) return setError("アクティブ参加者が4人未満のためRound生成できません");
+      const maxMatches = Math.min(courtCount, Math.floor(active.length / 4));
+      const slots = maxMatches * 4;
+      const shuffled = [...active].sort(() => Math.random() - 0.5).slice(0, slots);
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      const nextRound = (Math.max(0, ...ge.matches.map((m) => m.round_number)) + 1);
+      const created = Array.from({ length: maxMatches }).map((_, i) => {
+        const g = shuffled.slice(i * 4, i * 4 + 4);
+        return { id: `gm_${Date.now()}_${i}`, court_number: i + 1, round_number: nextRound, created_at: new Date().toISOString(), completed: false, youtube_url: null, players: [{ participant_id: g[0].id, team: "A" as const }, { participant_id: g[1].id, team: "A" as const }, { participant_id: g[2].id, team: "B" as const }, { participant_id: g[3].id, team: "B" as const }], result: null };
+      });
+      ge.matches = [...created, ...ge.matches];
+      upsertGuestEvent(ge);
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
     setError("");
@@ -621,30 +725,47 @@ export default function EventDetailPage() {
 
   if (isDeletedEvent) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント詳細：{eventName}</h1><Card title="イベント詳細"><p className="text-sm text-zinc-300">このイベントは削除済みです</p><button className="mt-3 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button></Card></main>;
 
+  const resultSummarySection = (
+    <Card title="結果サマリー">
+      <div className="space-y-3 text-sm">
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p>イベント名：{eventName}</p>
+          <p>総試合数：{totalMatches}</p>
+          <p>参加者数：{participants.length}</p>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="mb-1 font-semibold">勝利数ランキング</p>
+          <ol className="space-y-1">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝</li>)}</ol>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="mb-1 font-semibold">勝率ランキング</p>
+          <ol className="space-y-1">{eventSummary.winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="mb-1 font-semibold">得失点差ランキング</p>
+          <ol className="space-y-1">{eventSummary.diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="font-semibold">MVP</p>
+          <p className="mt-1">{mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p>
+        </div>
+      </div>
+    </Card>
+  );
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
       <h1 className="text-xl font-bold">イベント詳細：{eventName}</h1>
+      {guestMode && <p className="text-xs text-amber-300">ゲストモードではデータは一時保存です。ログインするとイベントや戦績を保存できます。</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}
+      {eventStatus === "closed" && resultSummarySection}
       <Card title="試合とスコア入力">
         <div className={showAllRounds ? "max-h-[34rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
           {displayedMatches.map((m) => {
             const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
             const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
-            const deleteEvent = async () => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !eventId) return;
-    if (!canDeleteEvent) return setError("この操作を行う権限がありません");
-    if (eventStatus !== "closed") return setError("終了済みイベントのみ削除できます");
-    const { error: e } = await supabase.from("events").update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed");
-    if (e) return setError("イベントの削除に失敗しました");
-    setMessage("イベントを削除しました");
-    router.push("/home");
-  };
-
-  if (isDeletedEvent) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント詳細：{eventName}</h1><Card title="イベント詳細"><p className="text-sm text-zinc-300">このイベントは削除済みです</p><button className="mt-3 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button></Card></main>;
-
-  return (
+            return (
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
                 <p className="text-sm">Round {m.round_number} / Court{m.court_number}</p>
                 <p className="mb-2 text-base font-semibold">{a} vs {b}</p>
@@ -744,6 +865,7 @@ export default function EventDetailPage() {
           {eventStatus === "closed" ? "イベント終了済み" : "イベント終了"}
         </button>
         {eventStatus === "closed" && <p className="mt-2 text-sm text-zinc-300">この開催は終了しました</p>}
+        {eventStatus === "closed" && <button className="mt-2 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={reopenEvent}>イベント再開</button>}
         {eventStatus === "closed" && canDeleteEvent && <button className="mt-2 w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
       </Card>
 
@@ -751,36 +873,7 @@ export default function EventDetailPage() {
 
       
 
-{eventStatus === "closed" && (
-        <Card title="開催サマリー">
-          <div className="space-y-3 text-sm">
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-2 font-semibold">参加者成績（この開催）</p>
-              <ul className="space-y-1">
-                {eventSummary.rows.map((r) => (
-                  <li key={r.name}>
-                    {r.name} / 試合 {r.played} / 勝 {r.wins} / 敗 {r.losses} / 勝率 {r.winRate}% / 得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-1 font-semibold">勝率ランキング</p>
-              <ol className="space-y-1">{eventSummary.winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
-            </div>
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-1 font-semibold">得失点差ランキング</p>
-              <ol className="space-y-1">{eventSummary.diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
-            </div>
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-1 font-semibold">得点ランキング</p>
-              <ol className="space-y-1">{eventSummary.scoredRanking.map((r, i) => <li key={`sc-${r.name}-${i}`}>{i + 1}位 {r.name} {r.scored}</li>)}</ol>
-            </div>
-          </div>
-        </Card>
-      )}
-
+      {guestMode && <p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>}
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       {showDeleteModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">本当にこのイベントを削除しますか？</p><p className="mt-2 text-sm text-zinc-300">このイベントの試合結果・戦績はランキングに反映されなくなります。</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={deleteChecked} onChange={(e) => setDeleteChecked(e.target.checked)} /><span>この操作を実行して問題ないことを確認しました</span></label><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setShowDeleteModal(false)}>キャンセル</button><button disabled={!deleteChecked} className="w-1/2 rounded-xl bg-red-500 py-2 disabled:bg-zinc-600" onClick={deleteEvent}>イベントを削除する</button></div></div></div>}

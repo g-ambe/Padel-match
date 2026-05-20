@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getGuestEvent, isGuestModeEnabled, upsertGuestEvent } from "@/lib/guest-events";
+import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent } from "@/lib/guest-events";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
@@ -335,6 +335,11 @@ export default function EventDetailPage() {
   };
 
   const goTop = async () => {
+    if (guestMode && eventId) {
+      removeGuestEvent(eventId);
+      router.push("/home");
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase) {
       router.push("/");
@@ -868,6 +873,7 @@ export default function EventDetailPage() {
 
       
 
+      {guestMode && <p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>}
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       {showDeleteModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">本当にこのイベントを削除しますか？</p><p className="mt-2 text-sm text-zinc-300">このイベントの試合結果・戦績はランキングに反映されなくなります。</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={deleteChecked} onChange={(e) => setDeleteChecked(e.target.checked)} /><span>この操作を実行して問題ないことを確認しました</span></label><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setShowDeleteModal(false)}>キャンセル</button><button disabled={!deleteChecked} className="w-1/2 rounded-xl bg-red-500 py-2 disabled:bg-zinc-600" onClick={deleteEvent}>イベントを削除する</button></div></div></div>}

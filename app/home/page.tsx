@@ -229,6 +229,23 @@ export default function HomePage() {
                 {loading ? "作成中..." : "作成"}
               </button>
             </div>
+            {guestMode && (
+              <div className="pt-2">
+                <p className="mb-2 text-xs text-amber-300">TOPへ戻ると入力中の内容は破棄されます</p>
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-zinc-600 py-2 text-sm"
+                  onClick={() => {
+                    setName("");
+                    setCourtCount(2);
+                    setOpen(false);
+                    router.push("/home");
+                  }}
+                >
+                  TOPへ戻る
+                </button>
+              </div>
+            )}
           </form>
         </Card>
       )}

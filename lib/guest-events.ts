@@ -62,3 +62,13 @@ export const upsertGuestEvent = (event: GuestEvent) => {
   else all.unshift(event);
   writeAll(all);
 };
+
+export const removeGuestEvent = (id: string) => {
+  const all = readAll().filter((e) => e.id !== id);
+  if (typeof window === "undefined") return;
+  if (all.length === 0) {
+    window.sessionStorage.removeItem(KEY);
+    return;
+  }
+  writeAll(all);
+};

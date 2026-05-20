@@ -25,6 +25,21 @@ export default function HomePage() {
   const selectedGroupName = useMemo(() => groups.find((g) => g.id === selectedGroupId)?.name ?? "", [groups, selectedGroupId]);
 
   const loadHomeData = async () => {
+    if (isGuestModeEnabled()) {
+      setGuestModeState(true);
+      const guestEvents = listGuestEvents();
+      setGroups([]);
+      setEvents(
+        guestEvents.map((e) => ({
+          id: e.id,
+          name: `${e.name}（ゲストモード・一時保存）`,
+          court_count: e.court_count,
+          club_id: null,
+          club_name: "グループなし"
+        }))
+      );
+      return;
+    }
     const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
     const supabase = getSupabaseClient();
     if (!supabase) {

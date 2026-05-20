@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
+import { getGuestEvent, isGuestModeEnabled, upsertGuestEvent } from "@/lib/guest-events";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
@@ -34,6 +35,7 @@ export default function EventDetailPage() {
   const [editingGuestName, setEditingGuestName] = useState("");
   const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
   const [editingYoutubeIds, setEditingYoutubeIds] = useState<Record<string, boolean>>({});
+  const [guestMode, setGuestMode] = useState(false);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -116,6 +118,19 @@ export default function EventDetailPage() {
   const displayedMatches = useMemo(() => (showAllRounds ? sortedMatches : sortedMatches.slice(0, 5)), [showAllRounds, sortedMatches]);
 
   const loadAll = async () => {
+    if (typeof eventId === "string" && eventId.startsWith("guest_")) {
+      setGuestMode(true);
+      const ge = getGuestEvent(eventId);
+      if (!ge) { setError("イベントが見つかりません"); return; }
+      setEventName(ge.name);
+      setCourtCount(ge.court_count);
+      setEventStatus(ge.status);
+      setParticipants(ge.participants.map((p) => ({ ...p, profile_id: null, player_profile_id: null, display_name: p.guest_name })));
+      setMatches(ge.matches as any);
+      setScoreInputs(Object.fromEntries(ge.matches.filter((m) => m.result).map((m) => [m.id, { a: m.result!.score_a, b: m.result!.score_b }])));
+      return;
+    }
+    setGuestMode(false);
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
@@ -253,6 +268,7 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      if (typeof eventId === "string" && eventId.startsWith("guest_") && isGuestModeEnabled()) return;
       const supabase = getSupabaseClient();
       if (!supabase) return;
       const { data } = await supabase.auth.getSession();
@@ -262,6 +278,16 @@ export default function EventDetailPage() {
   }, [router]);
 
   const addGuest = async () => {
+    if (guestMode) {
+      if (!guestName.trim() || !eventId) return;
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.participants.push({ id: `gp_${Date.now()}`, guest_name: guestName.trim(), status: "active", participant_type: "guest" });
+      upsertGuestEvent(ge);
+      setGuestName("");
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !guestName.trim() || !eventId) return;
     const normalizeName = (v: string) => v.trim().toLowerCase();
@@ -278,6 +304,16 @@ export default function EventDetailPage() {
   };
 
   const saveGuestName = async (participantId: string) => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.participants = ge.participants.map((p) => p.id === participantId ? { ...p, guest_name: editingGuestName.trim() } : p);
+      upsertGuestEvent(ge);
+      setEditingGuestId(null);
+      setEditingGuestName("");
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
     const normalizeName = (v: string) => v.trim().toLowerCase();
@@ -309,6 +345,14 @@ export default function EventDetailPage() {
   };
 
   const updateStatus = async (participantId: string, isActive: boolean) => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.participants = ge.participants.map((p) => p.id === participantId ? { ...p, status: isActive ? "active" : "resting" } : p);
+      upsertGuestEvent(ge);
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase) return;
     await supabase.from("event_participants").update({ status: isActive ? "active" : "resting" }).eq("id", participantId);
@@ -316,6 +360,15 @@ export default function EventDetailPage() {
   };
 
   const closeEvent = async () => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.status = "closed";
+      upsertGuestEvent(ge);
+      setShowCloseModal(false);
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
     await supabase
@@ -325,8 +378,33 @@ export default function EventDetailPage() {
     setShowCloseModal(false);
     await loadAll();
   };
+  const reopenEvent = async () => {
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.status = "active";
+      upsertGuestEvent(ge);
+      await loadAll();
+      return;
+    }
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    await supabase.from("events").update({ status: "active" }).eq("id", eventId);
+    await loadAll();
+  };
 
   const saveScore = async (matchId: string) => {
+    if (guestMode && eventId) {
+      const score = scoreInputs[matchId];
+      if (!score || score.a === "" || score.b === "") return;
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.matches = ge.matches.map((m) => m.id === matchId ? { ...m, completed: true, result: { score_a: Number(score.a), score_b: Number(score.b), winner_team: Number(score.a) > Number(score.b) ? "A" : "B" } } : m);
+      upsertGuestEvent(ge);
+      setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     const score = scoreInputs[matchId];
     if (!supabase || !score) return;
@@ -417,6 +495,24 @@ export default function EventDetailPage() {
   const pairKey = (a: string, b: string) => [a, b].sort().join("|");
 
   const generateRound = async () => {
+    if (guestMode && eventId) {
+      const active = participants.filter((p) => p.status === "active");
+      if (active.length < 4) return setError("アクティブ参加者が4人未満のためRound生成できません");
+      const maxMatches = Math.min(courtCount, Math.floor(active.length / 4));
+      const slots = maxMatches * 4;
+      const shuffled = [...active].sort(() => Math.random() - 0.5).slice(0, slots);
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      const nextRound = (Math.max(0, ...ge.matches.map((m) => m.round_number)) + 1);
+      const created = Array.from({ length: maxMatches }).map((_, i) => {
+        const g = shuffled.slice(i * 4, i * 4 + 4);
+        return { id: `gm_${Date.now()}_${i}`, court_number: i + 1, round_number: nextRound, created_at: new Date().toISOString(), completed: false, youtube_url: null, players: [{ participant_id: g[0].id, team: "A" as const }, { participant_id: g[1].id, team: "A" as const }, { participant_id: g[2].id, team: "B" as const }, { participant_id: g[3].id, team: "B" as const }], result: null };
+      });
+      ge.matches = [...created, ...ge.matches];
+      upsertGuestEvent(ge);
+      await loadAll();
+      return;
+    }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
     setError("");
@@ -655,6 +751,7 @@ export default function EventDetailPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
       <h1 className="text-xl font-bold">イベント詳細：{eventName}</h1>
+      {guestMode && <p className="text-xs text-amber-300">ゲストモードではデータは一時保存です。ログインするとイベントや戦績を保存できます。</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}
       {eventStatus === "closed" && resultSummarySection}
@@ -763,6 +860,7 @@ export default function EventDetailPage() {
           {eventStatus === "closed" ? "イベント終了済み" : "イベント終了"}
         </button>
         {eventStatus === "closed" && <p className="mt-2 text-sm text-zinc-300">この開催は終了しました</p>}
+        {eventStatus === "closed" && <button className="mt-2 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={reopenEvent}>イベント再開</button>}
         {eventStatus === "closed" && canDeleteEvent && <button className="mt-2 w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
       </Card>
 

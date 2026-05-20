@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ActionButton, Card } from "@/components/ui";
+import { setGuestMode } from "@/lib/guest-events";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -121,7 +122,7 @@ export default function LoginPage() {
           {message && <p className="text-sm text-emerald-400">{message}</p>}
           <ActionButton type="submit" disabled={loading}>{loading ? (signupMode ? "作成中..." : "ログイン中...") : (signupMode ? "アカウント作成" : "メールでログイン")}</ActionButton>
           {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={loginWithGoogle}>Googleでログイン</button>}
-          {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={() => router.push("/home")}>ゲストで利用</button>}
+          {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={() => { setGuestMode(true); router.push("/home"); }}>ゲストで利用</button>}
           <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={() => { setSignupMode((v) => !v); setError(""); setMessage(""); }}>
             {signupMode ? "ログインへ戻る" : "アカウント作成"}
           </button>

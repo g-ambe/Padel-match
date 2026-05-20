@@ -80,6 +80,9 @@ export default function EventDetailPage() {
       scoredRanking: [...rows].sort((a, b) => b.scored - a.scored)
     };
   }, [participants, matches]);
+  const totalMatches = useMemo(() => matches.length, [matches]);
+  const winRanking = useMemo(() => [...eventSummary.rows].sort((a, b) => b.wins - a.wins || b.winRate - a.winRate), [eventSummary.rows]);
+  const mvp = useMemo(() => winRanking[0] ?? null, [winRanking]);
 
 
   const activeParticipantsCount = useMemo(() => participants.filter((p) => p.status === "active").length, [participants]);
@@ -621,30 +624,46 @@ export default function EventDetailPage() {
 
   if (isDeletedEvent) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント詳細：{eventName}</h1><Card title="イベント詳細"><p className="text-sm text-zinc-300">このイベントは削除済みです</p><button className="mt-3 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button></Card></main>;
 
+  const resultSummarySection = (
+    <Card title="結果サマリー">
+      <div className="space-y-3 text-sm">
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p>イベント名：{eventName}</p>
+          <p>総試合数：{totalMatches}</p>
+          <p>参加者数：{participants.length}</p>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="mb-1 font-semibold">勝利数ランキング</p>
+          <ol className="space-y-1">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝</li>)}</ol>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="mb-1 font-semibold">勝率ランキング</p>
+          <ol className="space-y-1">{eventSummary.winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="mb-1 font-semibold">得失点差ランキング</p>
+          <ol className="space-y-1">{eventSummary.diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
+        </div>
+        <div className="rounded-xl bg-zinc-800 p-3">
+          <p className="font-semibold">MVP</p>
+          <p className="mt-1">{mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p>
+        </div>
+      </div>
+    </Card>
+  );
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
       <h1 className="text-xl font-bold">イベント詳細：{eventName}</h1>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}
+      {eventStatus === "closed" && resultSummarySection}
       <Card title="試合とスコア入力">
         <div className={showAllRounds ? "max-h-[34rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
           {displayedMatches.map((m) => {
             const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
             const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
-            const deleteEvent = async () => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !eventId) return;
-    if (!canDeleteEvent) return setError("この操作を行う権限がありません");
-    if (eventStatus !== "closed") return setError("終了済みイベントのみ削除できます");
-    const { error: e } = await supabase.from("events").update({ is_deleted: true, deleted_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed");
-    if (e) return setError("イベントの削除に失敗しました");
-    setMessage("イベントを削除しました");
-    router.push("/home");
-  };
-
-  if (isDeletedEvent) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント詳細：{eventName}</h1><Card title="イベント詳細"><p className="text-sm text-zinc-300">このイベントは削除済みです</p><button className="mt-3 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button></Card></main>;
-
-  return (
+            return (
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
                 <p className="text-sm">Round {m.round_number} / Court{m.court_number}</p>
                 <p className="mb-2 text-base font-semibold">{a} vs {b}</p>
@@ -750,36 +769,6 @@ export default function EventDetailPage() {
 
 
       
-
-{eventStatus === "closed" && (
-        <Card title="開催サマリー">
-          <div className="space-y-3 text-sm">
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-2 font-semibold">参加者成績（この開催）</p>
-              <ul className="space-y-1">
-                {eventSummary.rows.map((r) => (
-                  <li key={r.name}>
-                    {r.name} / 試合 {r.played} / 勝 {r.wins} / 敗 {r.losses} / 勝率 {r.winRate}% / 得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-1 font-semibold">勝率ランキング</p>
-              <ol className="space-y-1">{eventSummary.winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
-            </div>
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-1 font-semibold">得失点差ランキング</p>
-              <ol className="space-y-1">{eventSummary.diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
-            </div>
-            <div className="rounded-xl bg-zinc-800 p-3">
-              <p className="mb-1 font-semibold">得点ランキング</p>
-              <ol className="space-y-1">{eventSummary.scoredRanking.map((r, i) => <li key={`sc-${r.name}-${i}`}>{i + 1}位 {r.name} {r.scored}</li>)}</ol>
-            </div>
-          </div>
-        </Card>
-      )}
 
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 

@@ -72,3 +72,8 @@ export const removeGuestEvent = (id: string) => {
   }
   writeAll(all);
 };
+
+export const clearGuestEvents = () => {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(KEY);
+};

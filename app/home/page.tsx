@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
-import { isGuestModeEnabled, listGuestEvents, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
+import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
 type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
@@ -239,7 +239,8 @@ export default function HomePage() {
                     setName("");
                     setCourtCount(2);
                     setOpen(false);
-                    router.push("/home");
+                    clearGuestEvents();
+                    router.push("/");
                   }}
                 >
                   TOPへ戻る

@@ -337,7 +337,7 @@ export default function EventDetailPage() {
   const goTop = async () => {
     if (guestMode && eventId) {
       removeGuestEvent(eventId);
-      router.push("/home");
+      router.push("/");
       return;
     }
     const supabase = getSupabaseClient();

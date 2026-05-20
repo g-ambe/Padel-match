@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ActionButton, Card } from "@/components/ui";
-import { setGuestMode } from "@/lib/guest-events";
+import { resetGuestModeData, setGuestMode } from "@/lib/guest-events";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,7 +39,7 @@ export default function LoginPage() {
       setError("メールまたはパスワードが正しくありません");
       return;
     }
-
+    resetGuestModeData();
     router.push("/home");
   };
 
@@ -92,6 +92,7 @@ export default function LoginPage() {
       setMessage("確認メールを送信しました。メール内のリンクから登録を完了してください。");
       return;
     }
+    resetGuestModeData();
     router.push("/home");
   };
 

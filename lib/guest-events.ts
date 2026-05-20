@@ -77,3 +77,13 @@ export const clearGuestEvents = () => {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(KEY);
 };
+
+export const clearGuestMode = () => {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(MODE_KEY);
+};
+
+export const resetGuestModeData = () => {
+  clearGuestEvents();
+  clearGuestMode();
+};

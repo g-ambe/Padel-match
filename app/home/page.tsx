@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
-import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
+import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeData, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
 type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
@@ -44,6 +44,25 @@ export default function HomePage() {
     const supabase = getSupabaseClient();
     if (!supabase) {
       setError(getSupabaseEnvErrorMessage() ?? "Supabase初期化に失敗しました");
+      return;
+    }
+    const { data: sessionRes } = await supabase.auth.getSession();
+    if (sessionRes.session) {
+      resetGuestModeData();
+      setGuestModeState(false);
+    } else if (isGuestModeEnabled()) {
+      setGuestModeState(true);
+      const guestEvents = listGuestEvents();
+      setGroups([]);
+      setEvents(
+        guestEvents.map((e) => ({
+          id: e.id,
+          name: `${e.name}（ゲストモード・一時保存）`,
+          court_count: e.court_count,
+          club_id: null,
+          club_name: "グループなし"
+        }))
+      );
       return;
     }
 
@@ -124,7 +143,12 @@ export default function HomePage() {
       const supabase = getSupabaseClient();
       if (!supabase) return;
       const { data } = await supabase.auth.getSession();
-      if (!data.session && !isGuestModeEnabled()) router.replace("/");
+      if (data.session) {
+        resetGuestModeData();
+        setGuestModeState(false);
+        return;
+      }
+      if (!isGuestModeEnabled()) router.replace("/");
     };
     void checkAuth();
   }, [router]);

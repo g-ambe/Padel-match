@@ -374,7 +374,6 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
   const canEditSelfNameOnly = !editable && isLinkedSelf;
   const cannotEdit = !editable || !canSubAdminEditTarget({ isSuperUser, myRole: currentRole }, member.role);
   const hideRoleAndOps = !canViewRole;
-  const isSuper = !!member.linked_auth_user_id;
   const searchAccounts = async () => {
     const s = getSupabaseClient();
     const q = search.trim();
@@ -420,7 +419,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
         </div>
       ) : (
         <div className="space-y-1">
-          <div className="flex items-center gap-2"><p className="font-semibold">{member.display_name}</p>{isLinkedSelf && <span className="rounded-full bg-emerald-500/30 px-2 py-0.5 text-[11px] text-emerald-200">あなた</span>}{canViewRole && <span className="rounded-full bg-blue-600/30 px-2 py-0.5 text-[11px] text-blue-200">{roleLabel[member.role]}</span>}{canViewRole && isSuper && <span className="rounded-full bg-amber-500/30 px-2 py-0.5 text-[11px] text-amber-200">スーパーユーザー</span>}</div>
+          <div className="flex items-center gap-2"><p className="font-semibold">{member.display_name}</p>{isLinkedSelf && <span className="rounded-full bg-emerald-500/30 px-2 py-0.5 text-[11px] text-emerald-200">あなた</span>}{canViewRole && <span className="rounded-full bg-blue-600/30 px-2 py-0.5 text-[11px] text-blue-200">{roleLabel[member.role]}</span>}</div>
           <p className="text-xs text-zinc-300">連携: {member.linked_auth_user_id ?? "未設定"}</p>
           {(!cannotEdit || canEditSelfNameOnly) && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!canEditSelfNameOnly && !cannotEdit && <button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示/退会</button>}</div>}
         </div>

@@ -28,8 +28,25 @@ export default function GroupsPage() {
     if (isSuperUser) {
       const { data } = await supabase.from("clubs").select("id,name,description,is_active,visibility").order("created_at", { ascending: false });
       const all = (data ?? []) as Group[];
-      const memberships = all.filter((g) => g.is_active);
-      const publics = all.filter((g) => g.visibility === "public" && g.is_active);
+      const { data: linkedProfilesForSuper } = await supabase
+        .from("player_profiles")
+        .select("id")
+        .eq("linked_auth_user_id", userId);
+      const linkedProfileIdsForSuper = (linkedProfilesForSuper ?? []).map((p: any) => p.id).filter(Boolean);
+      const { data: memberRowsForSuper } = linkedProfileIdsForSuper.length
+        ? await supabase
+            .from("club_members")
+            .select("club_id")
+            .in("player_profile_id", linkedProfileIdsForSuper)
+            .eq("is_active", true)
+        : await supabase
+            .from("club_members")
+            .select("club_id")
+            .eq("profile_id", userId)
+            .eq("is_active", true);
+      const memberClubIdSet = new Set((memberRowsForSuper ?? []).map((r: any) => r.club_id).filter(Boolean));
+      const memberships = all.filter((g) => g.is_active && memberClubIdSet.has(g.id));
+      const publics = all.filter((g) => g.is_active && g.visibility === "public" && !memberClubIdSet.has(g.id));
       setMemberGroups(memberships);
       setPublicGroups(publics);
       return;
@@ -173,16 +190,6 @@ export default function GroupsPage() {
           {publicGroups.length === 0 ? <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">公開グループはありません</p> : publicGroups.map((g) => (
             <Link key={g.id} href={`/groups/${g.id}`} className="block rounded-xl bg-zinc-800 p-3">
               <p className="font-semibold">{g.name}{!g.is_active ? "（非表示）" : ""}</p>
-              <p className="text-xs text-zinc-300">{g.description || "説明なし"}</p>
-            </Link>
-          ))}
-        </div>
-      </Card>
-      <Card title="公開グループ">
-        <div className="space-y-2">
-          {publicGroups.length === 0 ? <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">公開グループはありません</p> : publicGroups.map((g) => (
-            <Link key={g.id} href={`/groups/${g.id}`} className="block rounded-xl bg-zinc-800 p-3">
-              <p className="font-semibold">{g.name}（公開）{!g.is_active ? "（非表示）" : ""}</p>
               <p className="text-xs text-zinc-300">{g.description || "説明なし"}</p>
             </Link>
           ))}

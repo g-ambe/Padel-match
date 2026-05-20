@@ -73,7 +73,7 @@ export function GlobalMenu() {
         className="fixed right-3 top-3 z-50 rounded-lg bg-zinc-900/90 p-2 text-zinc-100 shadow-lg"
         onClick={() => setOpen((v) => !v)}
       >
-        {open ? "×" : "☰"}
+        ☰
       </button>
 
       {open && <button className="fixed inset-0 z-40 bg-black/60" aria-label="閉じる" onClick={closeMenu} />}
@@ -83,6 +83,13 @@ export function GlobalMenu() {
           open ? "translate-x-0" : "translate-x-full"
         }`}
       >
+        <button
+          aria-label="閉じる"
+          className="absolute right-3 top-3 rounded-lg bg-zinc-800 px-3 py-1 text-lg leading-none"
+          onClick={closeMenu}
+        >
+          ×
+        </button>
         <nav className="space-y-2">
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/profile")}>プロフィール</button>
           <div className="rounded-lg bg-zinc-800">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
+import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeData, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
 type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
@@ -19,6 +20,7 @@ export default function HomePage() {
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [guestMode, setGuestModeState] = useState(false);
 
   const selectedGroupName = useMemo(() => groups.find((g) => g.id === selectedGroupId)?.name ?? "", [groups, selectedGroupId]);
 
@@ -27,6 +29,25 @@ export default function HomePage() {
     const supabase = getSupabaseClient();
     if (!supabase) {
       setError(getSupabaseEnvErrorMessage() ?? "Supabase初期化に失敗しました");
+      return;
+    }
+    const { data: sessionRes } = await supabase.auth.getSession();
+    if (sessionRes.session) {
+      resetGuestModeData();
+      setGuestModeState(false);
+    } else if (isGuestModeEnabled()) {
+      setGuestModeState(true);
+      const guestEvents = listGuestEvents();
+      setGroups([]);
+      setEvents(
+        guestEvents.map((e) => ({
+          id: e.id,
+          name: `${e.name}（ゲストモード・一時保存）`,
+          court_count: e.court_count,
+          club_id: null,
+          club_name: "グループなし"
+        }))
+      );
       return;
     }
 
@@ -107,7 +128,12 @@ export default function HomePage() {
       const supabase = getSupabaseClient();
       if (!supabase) return;
       const { data } = await supabase.auth.getSession();
-      if (!data.session) router.replace("/");
+      if (data.session) {
+        resetGuestModeData();
+        setGuestModeState(false);
+        return;
+      }
+      if (!isGuestModeEnabled()) router.replace("/");
     };
     void checkAuth();
   }, [router]);
@@ -122,6 +148,24 @@ export default function HomePage() {
     }
 
     setLoading(true);
+    if (guestMode) {
+      const event: GuestEvent = {
+        id: `guest_${Date.now()}`,
+        name: name.trim(),
+        court_count: courtCount,
+        status: "active",
+        participants: [],
+        matches: [],
+        created_at: new Date().toISOString()
+      };
+      upsertGuestEvent(event);
+      setLoading(false);
+      setOpen(false);
+      setName("");
+      setCourtCount(2);
+      router.push(`/events/${event.id}`);
+      return;
+    }
     const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
     const supabase = getSupabaseClient();
 
@@ -158,6 +202,12 @@ export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <h1 className="text-xl font-bold">イベント</h1>
+      {guestMode && (
+        <Card title="ゲストモード">
+          <p className="text-sm text-zinc-300">ゲストモードではデータは一時保存です</p>
+          <p className="mt-1 text-xs text-zinc-400">ログインするとイベントや戦績を保存できます</p>
+        </Card>
+      )}
       <ActionButton onClick={() => setOpen(true)}>イベント作成</ActionButton>
 
       {open && (
@@ -188,6 +238,24 @@ export default function HomePage() {
                 {loading ? "作成中..." : "作成"}
               </button>
             </div>
+            {guestMode && (
+              <div className="pt-2">
+                <p className="mb-2 text-xs text-amber-300">TOPへ戻ると入力中の内容は破棄されます</p>
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-zinc-600 py-2 text-sm"
+                  onClick={() => {
+                    setName("");
+                    setCourtCount(2);
+                    setOpen(false);
+                    clearGuestEvents();
+                    router.push("/");
+                  }}
+                >
+                  TOPへ戻る
+                </button>
+              </div>
+            )}
           </form>
         </Card>
       )}

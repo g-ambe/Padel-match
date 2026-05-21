@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Card, ActionButton } from "@/components/ui";
+import { Card } from "@/components/ui";
 import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeData, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
@@ -11,7 +11,6 @@ type EventRow = { id: string; name: string; court_count: number; club_id: string
 
 export default function HomePage() {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [courtCount, setCourtCount] = useState(2);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -175,7 +174,6 @@ export default function HomePage() {
       };
       upsertGuestEvent(event);
       setLoading(false);
-      setOpen(false);
       setName("");
       setCourtCount(2);
       router.push(`/events/${event.id}`);
@@ -208,7 +206,6 @@ export default function HomePage() {
       return;
     }
 
-    setOpen(false);
     setName("");
     setCourtCount(2);
     router.push(`/events/${data.id}`);
@@ -223,61 +220,34 @@ export default function HomePage() {
           <p className="mt-1 text-xs text-zinc-400">ログインするとイベントや戦績を保存できます</p>
         </Card>
       )}
-      <ActionButton onClick={() => setOpen(true)}>イベント作成</ActionButton>
-
-      {open && (
-        <Card title="イベント作成フォーム">
-          <form className="space-y-3" onSubmit={createEvent}>
-            {!guestMode && (
-              <>
-                <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
-                  <option value="">グループなし</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-                <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
-              </>
-            )}
-            <input
-              className="w-full rounded-xl bg-zinc-800 p-3"
-              placeholder="開催名"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <select className="w-full rounded-xl bg-zinc-800 p-3" value={courtCount} onChange={(e) => setCourtCount(Number(e.target.value))}>
-              {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}面</option>)}
-            </select>
-            {error && <p className="text-sm text-red-400">{error}</p>}
-            <div className="flex gap-2">
-              <button type="button" className="w-1/2 rounded-xl border border-zinc-600 py-3" onClick={() => setOpen(false)}>
-                キャンセル
-              </button>
-              <button type="submit" className="w-1/2 rounded-xl bg-accent py-3 font-semibold text-black" disabled={loading}>
-                {loading ? "作成中..." : "作成"}
-              </button>
-            </div>
-            {guestMode && (
-              <div className="pt-2">
-                <p className="mb-2 text-xs text-amber-300">TOPへ戻ると入力中の内容は破棄されます</p>
-                <button
-                  type="button"
-                  className="w-full rounded-xl border border-zinc-600 py-2 text-sm"
-                  onClick={() => {
-                    setName("");
-                    setCourtCount(2);
-                    setOpen(false);
-                    clearGuestEvents();
-                    router.push("/");
-                  }}
-                >
-                  TOPへ戻る
-                </button>
-              </div>
-            )}
-          </form>
-        </Card>
-      )}
+      <Card title="イベント作成フォーム">
+        <form className="space-y-3" onSubmit={createEvent}>
+          {!guestMode && (
+            <>
+              <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
+                <option value="">グループなし</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
+            </>
+          )}
+          <input
+            className="w-full rounded-xl bg-zinc-800 p-3"
+            placeholder="開催名"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <select className="w-full rounded-xl bg-zinc-800 p-3" value={courtCount} onChange={(e) => setCourtCount(Number(e.target.value))}>
+            {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}面</option>)}
+          </select>
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          <button type="submit" className="w-full rounded-xl bg-accent py-3 font-semibold text-black" disabled={loading}>
+            {loading ? "作成中..." : "作成"}
+          </button>
+        </form>
+      </Card>
 
       <Card title="イベント一覧">
         <div className={`space-y-2 ${showAllEvents ? "max-h-80 overflow-y-auto pr-1" : ""}`}>
@@ -294,7 +264,7 @@ export default function HomePage() {
         </div>
         {events.length > 5 && <div className="mt-3">{showAllEvents ? <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(false)}>閉じる</button> : <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(true)}>すべて表示</button>}</div>}
       </Card>
-      {guestMode && !open && (
+      {guestMode && (
         <Card title="終了">
           <p className="mb-2 text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>
           <button
@@ -304,7 +274,6 @@ export default function HomePage() {
               clearGuestEvents();
               setName("");
               setCourtCount(2);
-              setOpen(false);
               router.push("/");
             }}
           >

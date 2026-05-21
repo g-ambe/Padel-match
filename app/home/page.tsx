@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
+import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeData, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
 type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
@@ -19,6 +20,7 @@ export default function HomePage() {
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [guestMode, setGuestModeState] = useState(false);
 
   const selectedGroupName = useMemo(() => groups.find((g) => g.id === selectedGroupId)?.name ?? "", [groups, selectedGroupId]);
 
@@ -27,6 +29,25 @@ export default function HomePage() {
     const supabase = getSupabaseClient();
     if (!supabase) {
       setError(getSupabaseEnvErrorMessage() ?? "Supabase初期化に失敗しました");
+      return;
+    }
+    const { data: sessionRes } = await supabase.auth.getSession();
+    if (sessionRes.session) {
+      resetGuestModeData();
+      setGuestModeState(false);
+    } else if (isGuestModeEnabled()) {
+      setGuestModeState(true);
+      const guestEvents = listGuestEvents();
+      setGroups([]);
+      setEvents(
+        guestEvents.map((e) => ({
+          id: e.id,
+          name: `${e.name}（ゲストモード・一時保存）`,
+          court_count: e.court_count,
+          club_id: null,
+          club_name: "グループなし"
+        }))
+      );
       return;
     }
 
@@ -107,7 +128,12 @@ export default function HomePage() {
       const supabase = getSupabaseClient();
       if (!supabase) return;
       const { data } = await supabase.auth.getSession();
-      if (!data.session) router.replace("/");
+      if (data.session) {
+        resetGuestModeData();
+        setGuestModeState(false);
+        return;
+      }
+      if (!isGuestModeEnabled()) router.replace("/");
     };
     void checkAuth();
   }, [router]);
@@ -122,6 +148,24 @@ export default function HomePage() {
     }
 
     setLoading(true);
+    if (guestMode) {
+      const event: GuestEvent = {
+        id: `guest_${Date.now()}`,
+        name: name.trim(),
+        court_count: courtCount,
+        status: "active",
+        participants: [],
+        matches: [],
+        created_at: new Date().toISOString()
+      };
+      upsertGuestEvent(event);
+      setLoading(false);
+      setOpen(false);
+      setName("");
+      setCourtCount(2);
+      router.push(`/events/${event.id}`);
+      return;
+    }
     const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
     const supabase = getSupabaseClient();
 
@@ -158,17 +202,28 @@ export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <h1 className="text-xl font-bold">イベント</h1>
+      {guestMode && (
+        <Card title="ゲストモード">
+          <p className="text-sm text-zinc-300">ゲストモードではデータは一時保存です</p>
+          <p className="mt-1 text-xs text-zinc-400">ログインするとイベントや戦績を保存できます</p>
+        </Card>
+      )}
       <ActionButton onClick={() => setOpen(true)}>イベント作成</ActionButton>
 
       {open && (
         <Card title="イベント作成フォーム">
           <form className="space-y-3" onSubmit={createEvent}>
-            <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
-              <option value="">グループなし</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
+            {!guestMode && (
+              <>
+                <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
+                  <option value="">グループなし</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
+              </>
+            )}
             <input
               className="w-full rounded-xl bg-zinc-800 p-3"
               placeholder="開催名"
@@ -178,7 +233,6 @@ export default function HomePage() {
             <select className="w-full rounded-xl bg-zinc-800 p-3" value={courtCount} onChange={(e) => setCourtCount(Number(e.target.value))}>
               {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}面</option>)}
             </select>
-            <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-2">
               <button type="button" className="w-1/2 rounded-xl border border-zinc-600 py-3" onClick={() => setOpen(false)}>
@@ -207,6 +261,24 @@ export default function HomePage() {
         </div>
         {events.length > 5 && <div className="mt-3">{showAllEvents ? <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(false)}>閉じる</button> : <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(true)}>すべて表示</button>}</div>}
       </Card>
+      {guestMode && !open && (
+        <Card title="終了">
+          <p className="mb-2 text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>
+          <button
+            type="button"
+            className="w-full rounded-xl border border-zinc-600 py-3 text-sm"
+            onClick={() => {
+              clearGuestEvents();
+              setName("");
+              setCourtCount(2);
+              setOpen(false);
+              router.push("/");
+            }}
+          >
+            TOPへ戻る
+          </button>
+        </Card>
+      )}
     </main>
   );
 }

@@ -92,6 +92,7 @@ export function GlobalMenu() {
         </button>
         <nav className="space-y-2">
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/profile")}>プロフィール</button>
+          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/home")}>イベント作成・閲覧</button>
           <div className="rounded-lg bg-zinc-800">
             <button className="flex w-full items-center justify-between px-3 py-3 text-left" onClick={() => setGroupOpen((v) => !v)}>
               <span>グループ</span>
@@ -106,8 +107,8 @@ export function GlobalMenu() {
             )}
           </div>
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/notifications")}>通知{unreadCount > 0 ? ` (${unreadCount})` : ""}</button>
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/home")}>開催一覧</button>
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button>
+          {/* 一時的に非表示: 将来再表示予定 */}
+          {/* <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button> */}
           <button className="w-full rounded-lg bg-red-600/80 px-3 py-3 text-left" onClick={() => void logout()}>ログアウト</button>
           {pathname === "/" && <p className="pt-2 text-xs text-zinc-400">ログイン画面です</p>}
         </nav>

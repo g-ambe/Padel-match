@@ -36,6 +36,10 @@ export default function EventDetailPage() {
   const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
   const [editingYoutubeIds, setEditingYoutubeIds] = useState<Record<string, boolean>>({});
   const [guestMode, setGuestMode] = useState(false);
+  const [shareEnabled, setShareEnabled] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
+  const [canManageShare, setCanManageShare] = useState(false);
+  const [canCopyShare, setCanCopyShare] = useState(false);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -134,7 +138,7 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
-    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted").eq("id", eventId).single();
+    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token").eq("id", eventId).single();
     if (!event) { setError("イベントが見つかりません"); return; }
     if (event.is_deleted) { setIsDeletedEvent(true); setEventName(event.name ?? "-"); return; }
     setIsDeletedEvent(false);
@@ -142,6 +146,8 @@ export default function EventDetailPage() {
     if (event?.court_count) setCourtCount(event.court_count);
     if (event?.status === "closed") setEventStatus("closed");
     else setEventStatus("active");
+    setShareEnabled(!!event?.share_enabled);
+    setShareToken(event?.share_token ?? null);
 
     const { data: userRes } = await supabase.auth.getUser();
     const uid = userRes.user?.id;
@@ -175,6 +181,26 @@ export default function EventDetailPage() {
       }
     }
     setCanDeleteEvent(canDelete);
+    let allowManageShare = superUser;
+    let allowCopyShare = false;
+    if (uid && event?.club_id) {
+      const { data: linkedProfiles } = await supabase.from("player_profiles").select("id").eq("linked_auth_user_id", uid);
+      const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
+      let memberRoles: any[] = [];
+      if (linkedProfileIds.length) {
+        const { data } = await supabase.from("club_members").select("role").eq("club_id", event.club_id).in("player_profile_id", linkedProfileIds).eq("is_active", true);
+        memberRoles = data ?? [];
+      }
+      if (!memberRoles.length) {
+        const { data } = await supabase.from("club_members").select("role").eq("club_id", event.club_id).eq("profile_id", uid).eq("is_active", true);
+        memberRoles = data ?? [];
+      }
+      const roles = new Set(memberRoles.map((x: any) => x.role));
+      allowManageShare = allowManageShare || roles.has("main_admin") || roles.has("sub_admin");
+      allowCopyShare = allowManageShare || roles.has("member");
+    }
+    setCanManageShare(allowManageShare);
+    setCanCopyShare(allowCopyShare);
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
     if (event?.club_id) {
@@ -260,6 +286,49 @@ export default function EventDetailPage() {
     setScoreInputs((prev) => ({ ...savedScores, ...prev }));
     const savedYoutube = Object.fromEntries(normalizedMatches.map((m: any) => [m.id, m.youtube_url ?? ""]));
     setYoutubeInputs((prev) => ({ ...savedYoutube, ...prev }));
+  };
+
+  const generateShareToken = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return Array.from(bytes).map((b) => chars[b % chars.length]).join("");
+  };
+  const shareUrl = useMemo(() => {
+    if (!shareToken || typeof window === "undefined") return "";
+    return `${window.location.origin}/share/events/${shareToken}`;
+  }, [shareToken]);
+  const createShareLink = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    if (eventStatus !== "closed") return setError("終了済みイベントのみ共有できます");
+    if (!canManageShare) return setError("この操作を行う権限がありません");
+    const token = generateShareToken();
+    const { error: e } = await supabase.from("events").update({ share_enabled: true, share_token: token, share_token_updated_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed").eq("is_deleted", false);
+    if (e) return setError("共有リンクの作成に失敗しました");
+    setShareEnabled(true); setShareToken(token); setMessage("共有リンクを作成しました");
+  };
+  const stopShareLink = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    if (!canManageShare) return setError("この操作を行う権限がありません");
+    const { error: e } = await supabase.from("events").update({ share_enabled: false, share_token_updated_at: new Date().toISOString() }).eq("id", eventId);
+    if (e) return setError("共有停止に失敗しました");
+    setShareEnabled(false); setMessage("共有を停止しました");
+  };
+  const reissueShareLink = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    if (!canManageShare) return setError("この操作を行う権限がありません");
+    const token = generateShareToken();
+    const { error: e } = await supabase.from("events").update({ share_enabled: true, share_token: token, share_token_updated_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed").eq("is_deleted", false);
+    if (e) return setError("共有リンクの再発行に失敗しました");
+    setShareEnabled(true); setShareToken(token); setMessage("共有リンクを再発行しました");
+  };
+  const copyShareLink = async () => {
+    if (!canCopyShare) return setError("この操作を行う権限がありません");
+    if (!shareEnabled || !shareToken) return setError("このイベントは共有されていません");
+    await navigator.clipboard.writeText(shareUrl);
+    setMessage("共有リンクをコピーしました");
   };
 
   useEffect(() => {
@@ -760,6 +829,19 @@ export default function EventDetailPage() {
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}
       {eventStatus === "closed" && resultSummarySection}
+      {eventStatus === "closed" && (
+        <Card title="結果共有">
+          <div className="space-y-2 text-sm">
+            {shareEnabled && shareToken ? <p className="break-all rounded bg-zinc-800 p-2">{shareUrl}</p> : <p className="text-zinc-300">このイベントは共有されていません</p>}
+            <div className="grid grid-cols-2 gap-2">
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void createShareLink()} disabled={!canManageShare}>共有リンクを作成</button>
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void copyShareLink()} disabled={!canCopyShare}>共有リンクをコピー</button>
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void stopShareLink()} disabled={!canManageShare}>共有リンクを停止</button>
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void reissueShareLink()} disabled={!canManageShare}>共有リンクを再発行</button>
+            </div>
+          </div>
+        </Card>
+      )}
       <Card title="試合とスコア入力">
         <div className={showAllRounds ? "max-h-[34rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
           {displayedMatches.map((m) => {

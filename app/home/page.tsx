@@ -294,7 +294,7 @@ export default function HomePage() {
         </div>
         {events.length > 5 && <div className="mt-3">{showAllEvents ? <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(false)}>閉じる</button> : <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(true)}>すべて表示</button>}</div>}
       </Card>
-      {guestMode && (
+      {guestMode && !open && (
         <Card title="終了">
           <p className="mb-2 text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>
           <button

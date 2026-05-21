@@ -228,12 +228,17 @@ export default function HomePage() {
       {open && (
         <Card title="イベント作成フォーム">
           <form className="space-y-3" onSubmit={createEvent}>
-            <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
-              <option value="">グループなし</option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
+            {!guestMode && (
+              <>
+                <select className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
+                  <option value="">グループなし</option>
+                  {groups.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
+              </>
+            )}
             <input
               className="w-full rounded-xl bg-zinc-800 p-3"
               placeholder="開催名"
@@ -243,7 +248,6 @@ export default function HomePage() {
             <select className="w-full rounded-xl bg-zinc-800 p-3" value={courtCount} onChange={(e) => setCourtCount(Number(e.target.value))}>
               {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}面</option>)}
             </select>
-            <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
             {error && <p className="text-sm text-red-400">{error}</p>}
             <div className="flex gap-2">
               <button type="button" className="w-1/2 rounded-xl border border-zinc-600 py-3" onClick={() => setOpen(false)}>
@@ -290,6 +294,24 @@ export default function HomePage() {
         </div>
         {events.length > 5 && <div className="mt-3">{showAllEvents ? <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(false)}>閉じる</button> : <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllEvents(true)}>すべて表示</button>}</div>}
       </Card>
+      {guestMode && (
+        <Card title="終了">
+          <p className="mb-2 text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>
+          <button
+            type="button"
+            className="w-full rounded-xl border border-zinc-600 py-3 text-sm"
+            onClick={() => {
+              clearGuestEvents();
+              setName("");
+              setCourtCount(2);
+              setOpen(false);
+              router.push("/");
+            }}
+          >
+            TOPへ戻る
+          </button>
+        </Card>
+      )}
     </main>
   );
 }

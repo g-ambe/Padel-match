@@ -94,13 +94,14 @@ export function GlobalMenu() {
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/profile")}>プロフィール</button>
           <div className="rounded-lg bg-zinc-800">
             <button className="flex w-full items-center justify-between px-3 py-3 text-left" onClick={() => setGroupOpen((v) => !v)}>
-              <span>グループ管理</span>
+              <span>グループ</span>
               <span>{groupOpen ? "−" : "+"}</span>
             </button>
             {groupOpen && (
               <div className="border-t border-zinc-700">
-                <button className="w-full px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups")}>グループ管理画面</button>
-                <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups")}>メンバー管理</button>
+                <button className="w-full px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups")}>所属グループ閲覧・設定</button>
+                <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups/discover")}>グループを探す</button>
+                <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups/new")}>グループを作成する</button>
               </div>
             )}
           </div>

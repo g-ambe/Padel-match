@@ -25,6 +25,21 @@ export default function HomePage() {
   const selectedGroupName = useMemo(() => groups.find((g) => g.id === selectedGroupId)?.name ?? "", [groups, selectedGroupId]);
 
   const loadHomeData = async () => {
+    if (isGuestModeEnabled()) {
+      setGuestModeState(true);
+      const guestEvents = listGuestEvents();
+      setGroups([]);
+      setEvents(
+        guestEvents.map((e) => ({
+          id: e.id,
+          name: `${e.name}（ゲストモード・一時保存）`,
+          court_count: e.court_count,
+          club_id: null,
+          club_name: "グループなし"
+        }))
+      );
+      return;
+    }
     const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
     const supabase = getSupabaseClient();
     if (!supabase) {
@@ -242,6 +257,24 @@ export default function HomePage() {
                 {loading ? "作成中..." : "作成"}
               </button>
             </div>
+            {guestMode && (
+              <div className="pt-2">
+                <p className="mb-2 text-xs text-amber-300">TOPへ戻ると入力中の内容は破棄されます</p>
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-zinc-600 py-2 text-sm"
+                  onClick={() => {
+                    setName("");
+                    setCourtCount(2);
+                    setOpen(false);
+                    clearGuestEvents();
+                    router.push("/");
+                  }}
+                >
+                  TOPへ戻る
+                </button>
+              </div>
+            )}
           </form>
         </Card>
       )}

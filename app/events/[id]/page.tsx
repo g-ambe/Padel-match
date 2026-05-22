@@ -810,6 +810,9 @@ export default function EventDetailPage() {
     }
 
     await loadAll();
+    } finally {
+      setIsGeneratingRound(false);
+    }
   };
 
   const deleteEvent = async () => {

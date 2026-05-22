@@ -942,9 +942,11 @@ export default function EventDetailPage() {
       </Card>
       
 
-<Card title="勝率ランキング">
+{eventStatus !== "closed" && (
+      <Card title="勝率ランキング">
         <ol className="space-y-1 text-sm">{ranking.map((r, i) => <li key={r.name + i}>{i + 1}位 {r.name} {r.r}%（{r.m}試合）</li>)}</ol>
       </Card>
+      )}
 
       
 

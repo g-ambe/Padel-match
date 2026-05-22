@@ -87,7 +87,11 @@ export default function EventDetailPage() {
     };
   }, [participants, matches]);
   const totalMatches = useMemo(() => matches.length, [matches]);
-  const winRanking = useMemo(() => [...eventSummary.rows].sort((a, b) => b.wins - a.wins || b.winRate - a.winRate), [eventSummary.rows]);
+  const summaryRankingRows = useMemo(() => eventSummary.rows.filter((r) => r.played > 0), [eventSummary.rows]);
+  const hasSummaryResults = summaryRankingRows.length > 0;
+  const winRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.wins - a.wins || b.winRate - a.winRate), [summaryRankingRows]);
+  const winRateRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.winRate - a.winRate), [summaryRankingRows]);
+  const diffRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.diff - a.diff), [summaryRankingRows]);
   const mvp = useMemo(() => winRanking[0] ?? null, [winRanking]);
 
 
@@ -802,22 +806,24 @@ export default function EventDetailPage() {
           <p>総試合数：{totalMatches}</p>
           <p>参加者数：{participants.length}</p>
         </div>
+        {hasSummaryResults ? <>
         <div className="rounded-xl bg-zinc-800 p-3">
           <p className="mb-1 font-semibold">勝利数ランキング</p>
           <ol className="space-y-1">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝</li>)}</ol>
         </div>
         <div className="rounded-xl bg-zinc-800 p-3">
           <p className="mb-1 font-semibold">勝率ランキング</p>
-          <ol className="space-y-1">{eventSummary.winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
+          <ol className="space-y-1">{winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
         </div>
         <div className="rounded-xl bg-zinc-800 p-3">
           <p className="mb-1 font-semibold">得失点差ランキング</p>
-          <ol className="space-y-1">{eventSummary.diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
+          <ol className="space-y-1">{diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
         </div>
         <div className="rounded-xl bg-zinc-800 p-3">
           <p className="font-semibold">MVP</p>
           <p className="mt-1">{mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p>
         </div>
+        </> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
       </div>
     </Card>
   );

@@ -633,7 +633,7 @@ export default function EventDetailPage() {
     const roundMap = new Map((rounds as any[]).map((r) => [r.id, r.round_number as number]));
     const lastRoundNumber = rounds.length ? Math.max(...(rounds as any[]).map((r) => r.round_number as number)) : 0;
     if (lastRoundNumber !== latestRoundNumber) {
-      setError("他のユーザーが先にRoundを生成しました。画面を更新してください");
+      setError("他のユーザーが先にRoundを生成しました。画面を更新したので、追加されたRoundをご確認ください。");
       await loadAll();
       return;
     }
@@ -785,7 +785,7 @@ export default function EventDetailPage() {
     const roundNumber = lastRoundNumber + 1;
     const { data: round, error: roundInsertError } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
     if (roundInsertError?.code === "23505") {
-      setError("他のユーザーが先にRoundを生成しました。画面を更新してください");
+      setError("他のユーザーが先にRoundを生成しました。画面を更新したので、追加されたRoundをご確認ください。");
       await loadAll();
       return;
     }

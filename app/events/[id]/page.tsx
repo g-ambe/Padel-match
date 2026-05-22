@@ -915,7 +915,7 @@ export default function EventDetailPage() {
 {eventStatus === "closed" ? (
         <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
       ) : (
-        <ActionButton onClick={generateRound} disabled={isGeneratingRound || eventStatus === "closed"}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>
+        <ActionButton onClick={generateRound} disabled={isGeneratingRound}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>
       )}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {showCourtWarning && (

@@ -40,6 +40,7 @@ export default function EventDetailPage() {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [canManageShare, setCanManageShare] = useState(false);
   const [canCopyShare, setCanCopyShare] = useState(false);
+  const [isGeneratingRound, setIsGeneratingRound] = useState(false);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -405,6 +406,9 @@ export default function EventDetailPage() {
     setEditingGuestId(null);
     setEditingGuestName("");
     await loadAll();
+    } finally {
+      setIsGeneratingRound(false);
+    }
   };
 
   const goTop = async () => {
@@ -435,6 +439,9 @@ export default function EventDetailPage() {
     if (!supabase) return;
     await supabase.from("event_participants").update({ status: isActive ? "active" : "resting" }).eq("id", participantId);
     await loadAll();
+    } finally {
+      setIsGeneratingRound(false);
+    }
   };
 
   const closeEvent = async () => {
@@ -455,6 +462,9 @@ export default function EventDetailPage() {
       .eq("id", eventId);
     setShowCloseModal(false);
     await loadAll();
+    } finally {
+      setIsGeneratingRound(false);
+    }
   };
   const reopenEvent = async () => {
     if (guestMode && eventId) {
@@ -469,6 +479,9 @@ export default function EventDetailPage() {
     if (!supabase || !eventId) return;
     await supabase.from("events").update({ status: "active" }).eq("id", eventId);
     await loadAll();
+    } finally {
+      setIsGeneratingRound(false);
+    }
   };
 
   const saveScore = async (matchId: string) => {
@@ -537,6 +550,9 @@ export default function EventDetailPage() {
     }
 
     await loadAll();
+    } finally {
+      setIsGeneratingRound(false);
+    }
   };
 
 
@@ -573,7 +589,15 @@ export default function EventDetailPage() {
   const pairKey = (a: string, b: string) => [a, b].sort().join("|");
 
   const generateRound = async () => {
+    if (isGeneratingRound) return;
+    if (eventStatus === "closed") {
+      setError("終了済みイベントはRound生成できません");
+      return;
+    }
+
     if (guestMode && eventId) {
+      setIsGeneratingRound(true);
+      try {
       const active = participants.filter((p) => p.status === "active");
       if (active.length < 4) return setError("アクティブ参加者が4人未満のためRound生成できません");
       const maxMatches = Math.min(courtCount, Math.floor(active.length / 4));
@@ -590,11 +614,16 @@ export default function EventDetailPage() {
       upsertGuestEvent(ge);
       await loadAll();
       return;
+      } finally {
+        setIsGeneratingRound(false);
+      }
     }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
     setError("");
+    setIsGeneratingRound(true);
 
+    try {
     const active = participants.filter((p) => p.status === "active");
     if (active.length < 4) {
       setError("アクティブ参加者が4人未満のためRound生成できません");
@@ -618,6 +647,11 @@ export default function EventDetailPage() {
     const rounds = roundsData ?? [];
     const roundMap = new Map((rounds as any[]).map((r) => [r.id, r.round_number as number]));
     const lastRoundNumber = rounds.length ? Math.max(...(rounds as any[]).map((r) => r.round_number as number)) : 0;
+    if (lastRoundNumber !== latestRoundNumber) {
+      setError("他のユーザーが先にRoundを生成しました。画面を更新してください");
+      await loadAll();
+      return;
+    }
 
     const { data: matchesData } = await supabase
       .from("matches")
@@ -764,8 +798,16 @@ export default function EventDetailPage() {
     });
 
     const roundNumber = lastRoundNumber + 1;
-    const { data: round } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
-    if (!round) return;
+    const { data: round, error: roundInsertError } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
+    if (roundInsertError?.code === "23505") {
+      setError("他のユーザーが先にRoundを生成しました。画面を更新してください");
+      await loadAll();
+      return;
+    }
+    if (roundInsertError || !round) {
+      setError("Round生成に失敗しました");
+      return;
+    }
 
     for (const m of bestMatches) {
       const { data: match } = await supabase
@@ -783,6 +825,9 @@ export default function EventDetailPage() {
     }
 
     await loadAll();
+    } finally {
+      setIsGeneratingRound(false);
+    }
   };
 
   const deleteEvent = async () => {
@@ -885,7 +930,7 @@ export default function EventDetailPage() {
 {eventStatus === "closed" ? (
         <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
       ) : (
-        <ActionButton onClick={generateRound}>次Round生成</ActionButton>
+        <ActionButton onClick={generateRound} disabled={isGeneratingRound || eventStatus === "closed"}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>
       )}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {showCourtWarning && (

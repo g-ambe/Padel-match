@@ -375,9 +375,6 @@ export default function EventDetailPage() {
     await supabase.from("event_participants").insert({ event_id: eventId, guest_name: guestName.trim(), status: "active" });
     setGuestName("");
     await loadAll();
-    } finally {
-      setIsGeneratingRound(false);
-    }
   };
 
   const saveGuestName = async (participantId: string) => {
@@ -409,9 +406,6 @@ export default function EventDetailPage() {
     setEditingGuestId(null);
     setEditingGuestName("");
     await loadAll();
-    } finally {
-      setIsGeneratingRound(false);
-    }
   };
 
   const goTop = async () => {
@@ -442,9 +436,6 @@ export default function EventDetailPage() {
     if (!supabase) return;
     await supabase.from("event_participants").update({ status: isActive ? "active" : "resting" }).eq("id", participantId);
     await loadAll();
-    } finally {
-      setIsGeneratingRound(false);
-    }
   };
 
   const closeEvent = async () => {
@@ -465,9 +456,6 @@ export default function EventDetailPage() {
       .eq("id", eventId);
     setShowCloseModal(false);
     await loadAll();
-    } finally {
-      setIsGeneratingRound(false);
-    }
   };
   const reopenEvent = async () => {
     if (guestMode && eventId) {
@@ -482,9 +470,6 @@ export default function EventDetailPage() {
     if (!supabase || !eventId) return;
     await supabase.from("events").update({ status: "active" }).eq("id", eventId);
     await loadAll();
-    } finally {
-      setIsGeneratingRound(false);
-    }
   };
 
   const saveScore = async (matchId: string) => {
@@ -553,9 +538,6 @@ export default function EventDetailPage() {
     }
 
     await loadAll();
-    } finally {
-      setIsGeneratingRound(false);
-    }
   };
 
 
@@ -828,9 +810,6 @@ export default function EventDetailPage() {
     }
 
     await loadAll();
-    } finally {
-      setIsGeneratingRound(false);
-    }
   };
 
   const deleteEvent = async () => {

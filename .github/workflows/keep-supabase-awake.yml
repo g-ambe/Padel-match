@@ -1,0 +1,31 @@
+name: Keep Supabase Awake
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+    - cron: '0 3 * * 4'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Supabase REST APIへ軽いSELECT
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_ANON_KEY}" ]; then
+            echo "SUPABASE_URL または SUPABASE_ANON_KEY が未設定です。"
+            exit 1
+          fi
+
+          curl -sS --fail \
+            -H "apikey: ${SUPABASE_ANON_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+            "${SUPABASE_URL}/rest/v1/events?select=id&limit=1" \
+            > /dev/null
+
+          echo "Supabase keep-awake ping succeeded."

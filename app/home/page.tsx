@@ -87,6 +87,7 @@ export default function HomePage() {
         .select("club_id, clubs(id,name)")
         .in("player_profile_id", linkedProfileIds)
         .eq("is_active", true)
+        .eq("status", "active")
         .eq("clubs.is_active", true);
       memberships = data ?? [];
     }
@@ -97,6 +98,7 @@ export default function HomePage() {
         .select("club_id, clubs(id,name)")
         .eq("profile_id", userId)
         .eq("is_active", true)
+        .eq("status", "active")
         .eq("clubs.is_active", true);
       memberships = data ?? [];
     }

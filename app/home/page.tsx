@@ -265,13 +265,24 @@ export default function HomePage() {
       .select("id")
       .single();
 
-    setLoading(false);
-
     if (insertError || !data?.id) {
+      setLoading(false);
       setError("開催の作成に失敗しました");
       return;
     }
 
+    if (selectedGroupId) {
+      try {
+        const { addMissingClubMembersToEvent } = await import("@/lib/event-participants");
+        await addMissingClubMembersToEvent(supabase, data.id, selectedGroupId);
+      } catch {
+        setLoading(false);
+        setError("グループメンバーの参加者追加に失敗しました");
+        return;
+      }
+    }
+
+    setLoading(false);
     setName("");
     setCourtCount(2);
     setEventMode("auto");

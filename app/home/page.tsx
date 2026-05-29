@@ -155,7 +155,13 @@ export default function HomePage() {
         memberships = await loadActiveMemberships("profile_id", [userId]);
       }
 
-      const groupIds = Array.from(new Set(memberships.map((m: any) => m.club_id).filter(Boolean)));
+      const groupIds: string[] = Array.from(
+        new Set(
+          memberships
+            .map((m: any) => m.club_id)
+            .filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+        )
+      );
       groupRows = groupIds.length ? await loadActiveClubs(groupIds) : [];
     }
 

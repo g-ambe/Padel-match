@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
+import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
@@ -221,39 +222,7 @@ export default function EventDetailPage() {
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
     if (event?.club_id) {
-      const { data: members } = await supabase
-        .from("club_members")
-        .select("player_profile_id")
-        .eq("club_id", event.club_id)
-        .eq("is_active", true)
-        .eq("status", "active");
-
-      const { data: existingParticipants } = await supabase
-        .from("event_participants")
-        .select("profile_id,player_profile_id")
-        .eq("event_id", eventId);
-
-      const existingProfileIds = new Set((existingParticipants ?? []).map((x: any) => x.player_profile_id ?? x.profile_id).filter(Boolean));
-      const memberProfileIds = (members ?? []).map((m: any) => m.player_profile_id).filter(Boolean);
-      const { data: memberProfiles } = memberProfileIds.length
-        ? await supabase.from("player_profiles").select("id,display_name,is_active").in("id", memberProfileIds)
-        : { data: [] as any[] };
-      const memberNameMap = new Map((memberProfiles ?? []).map((mp: any) => [mp.id, mp.display_name]));
-      const activePlayerProfileIds = new Set((memberProfiles ?? []).filter((mp: any) => mp.is_active !== false).map((mp: any) => mp.id));
-
-      const inserts = (members ?? [])
-        .filter((m: any) => m.player_profile_id && activePlayerProfileIds.has(m.player_profile_id) && !existingProfileIds.has(m.player_profile_id))
-        .map((m: any) => ({
-          event_id: eventId,
-          player_profile_id: m.player_profile_id,
-          guest_name: memberNameMap.get(m.player_profile_id) ?? null,
-          status: "active",
-          participant_type: "member"
-        }));
-
-      if (inserts.length > 0) {
-        await supabase.from("event_participants").insert(inserts);
-      }
+      await addMissingClubMembersToEvent(supabase, eventId, event.club_id);
     }
 
     const { data: pt } = await supabase
@@ -277,24 +246,8 @@ export default function EventDetailPage() {
 
     const activeMemberProfileIds = new Set<string>();
     if (event?.club_id) {
-      const { data: activeMembers } = await supabase
-        .from("club_members")
-        .select("profile_id,player_profile_id")
-        .eq("club_id", event.club_id)
-        .eq("is_active", true)
-        .eq("status", "active");
-      const memberRows = activeMembers ?? [];
-      const activeMemberPlayerProfileIds = memberRows.map((member: any) => member.player_profile_id).filter(Boolean);
-      const { data: activeMemberPlayerProfiles } = activeMemberPlayerProfileIds.length
-        ? await supabase.from("player_profiles").select("id,is_active").in("id", activeMemberPlayerProfileIds)
-        : { data: [] as any[] };
-      const activePlayerProfileIdSet = new Set((activeMemberPlayerProfiles ?? []).filter((profile: any) => profile.is_active !== false).map((profile: any) => profile.id));
-      for (const member of memberRows) {
-        const playerProfileId = (member as any).player_profile_id;
-        const profileId = (member as any).profile_id;
-        if (playerProfileId && activePlayerProfileIdSet.has(playerProfileId)) activeMemberProfileIds.add(playerProfileId);
-        else if (!playerProfileId && profileId) activeMemberProfileIds.add(profileId);
-      }
+      const activeMembers = await fetchActiveClubMemberParticipants(supabase, event.club_id);
+      for (const member of activeMembers) activeMemberProfileIds.add(member.playerProfileId);
     }
 
     setParticipants(

@@ -7,6 +7,7 @@ import { Card } from "@/components/ui";
 import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeData, upsertGuestEvent, type EventMode, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
+type ClubRow = { id?: string | null; name?: string | null; is_active?: boolean | null; is_deleted?: boolean | null };
 type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
 
 export default function HomePage() {
@@ -106,10 +107,10 @@ export default function HomePage() {
         return [];
       }
 
-      return (data ?? [])
-        .filter((club: any) => club.is_active !== false && club.is_deleted !== true)
-        .map((club: any) => ({ id: club.id as string, name: club.name as string }))
-        .filter((club) => club.id && club.name);
+      return ((data ?? []) as ClubRow[])
+        .filter((club) => club.is_active !== false && club.is_deleted !== true)
+        .map((club): Group => ({ id: club.id ?? "", name: club.name ?? "" }))
+        .filter((club): club is Group => Boolean(club.id && club.name));
     };
 
     const loadActiveMemberships = async (column: "player_profile_id" | "profile_id", ids: string[]) => {

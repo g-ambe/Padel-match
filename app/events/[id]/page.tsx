@@ -7,7 +7,7 @@ import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 
-type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
+type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 type HistoryMatch = { round_number: number; court_number: number; players: { participant_id: string; team: "A" | "B" }[] };
 type ScoreInput = { a: number | ""; b: number | "" };
@@ -103,7 +103,8 @@ export default function EventDetailPage() {
   const mvp = useMemo(() => winRanking[0] ?? null, [winRanking]);
 
 
-  const activeParticipantsCount = useMemo(() => participants.filter((p) => p.status === "active").length, [participants]);
+  const candidateParticipants = useMemo(() => participants.filter((p) => p.status === "active" && p.is_member_candidate), [participants]);
+  const activeParticipantsCount = useMemo(() => candidateParticipants.length, [candidateParticipants]);
   const maxPlayableCourts = Math.floor(activeParticipantsCount / 4);
   const showCourtWarning = maxPlayableCourts < courtCount;
 
@@ -129,7 +130,6 @@ export default function EventDetailPage() {
 
 
 
-  const activeParticipants = useMemo(() => participants.filter((p) => p.status === "active"), [participants]);
   const latestRoundNumber = useMemo(() => matches.reduce((max, m) => Math.max(max, m.round_number), 0), [matches]);
   const sortedMatches = useMemo(() => [...matches].sort((a, b) => (b.round_number - a.round_number) || (a.court_number - b.court_number) || ((b.created_at ?? "").localeCompare(a.created_at ?? "")) || a.id.localeCompare(b.id)), [matches]);
   const displayedMatches = useMemo(() => (showAllRounds ? sortedMatches : sortedMatches.slice(0, 5)), [showAllRounds, sortedMatches]);
@@ -144,7 +144,7 @@ export default function EventDetailPage() {
       setEventStatus(ge.status);
       setEventMode(ge.event_mode ?? "auto");
       setStatsMode(ge.stats_mode ?? (ge.event_mode === "manual" ? "undecided" : "official"));
-      setParticipants(ge.participants.map((p) => ({ ...p, profile_id: null, player_profile_id: null, display_name: p.guest_name })));
+      setParticipants(ge.participants.map((p) => ({ ...p, profile_id: null, player_profile_id: null, display_name: p.guest_name, is_member_candidate: true })));
       setMatches(ge.matches as any);
       setScoreInputs(Object.fromEntries(ge.matches.filter((m) => m.result).map((m) => [m.id, { a: m.result!.score_a, b: m.result!.score_b }])));
       return;
@@ -224,7 +224,9 @@ export default function EventDetailPage() {
       const { data: members } = await supabase
         .from("club_members")
         .select("player_profile_id")
-        .eq("club_id", event.club_id);
+        .eq("club_id", event.club_id)
+        .eq("is_active", true)
+        .eq("status", "active");
 
       const { data: existingParticipants } = await supabase
         .from("event_participants")
@@ -234,12 +236,13 @@ export default function EventDetailPage() {
       const existingProfileIds = new Set((existingParticipants ?? []).map((x: any) => x.player_profile_id ?? x.profile_id).filter(Boolean));
       const memberProfileIds = (members ?? []).map((m: any) => m.player_profile_id).filter(Boolean);
       const { data: memberProfiles } = memberProfileIds.length
-        ? await supabase.from("player_profiles").select("id,display_name").in("id", memberProfileIds)
+        ? await supabase.from("player_profiles").select("id,display_name,is_active").in("id", memberProfileIds)
         : { data: [] as any[] };
       const memberNameMap = new Map((memberProfiles ?? []).map((mp: any) => [mp.id, mp.display_name]));
+      const activePlayerProfileIds = new Set((memberProfiles ?? []).filter((mp: any) => mp.is_active !== false).map((mp: any) => mp.id));
 
       const inserts = (members ?? [])
-        .filter((m: any) => m.player_profile_id && !existingProfileIds.has(m.player_profile_id))
+        .filter((m: any) => m.player_profile_id && activePlayerProfileIds.has(m.player_profile_id) && !existingProfileIds.has(m.player_profile_id))
         .map((m: any) => ({
           event_id: eventId,
           player_profile_id: m.player_profile_id,
@@ -263,7 +266,7 @@ export default function EventDetailPage() {
     const profileIds = participantRows.map((r) => r.profile_id).filter(Boolean);
 
     const { data: pps } = playerProfileIds.length
-      ? await supabase.from("player_profiles").select("id,display_name").in("id", playerProfileIds)
+      ? await supabase.from("player_profiles").select("id,display_name,is_active").in("id", playerProfileIds)
       : { data: [] as any[] };
     const { data: ps } = profileIds.length
       ? await supabase.from("profiles").select("id,display_name").in("id", profileIds)
@@ -272,12 +275,36 @@ export default function EventDetailPage() {
     const playerProfileNameMap = new Map((pps ?? []).map((x: any) => [x.id, x.display_name]));
     const profileNameMap = new Map((ps ?? []).map((x: any) => [x.id, x.display_name]));
 
+    const activeMemberProfileIds = new Set<string>();
+    if (event?.club_id) {
+      const { data: activeMembers } = await supabase
+        .from("club_members")
+        .select("profile_id,player_profile_id")
+        .eq("club_id", event.club_id)
+        .eq("is_active", true)
+        .eq("status", "active");
+      const memberRows = activeMembers ?? [];
+      const activeMemberPlayerProfileIds = memberRows.map((member: any) => member.player_profile_id).filter(Boolean);
+      const { data: activeMemberPlayerProfiles } = activeMemberPlayerProfileIds.length
+        ? await supabase.from("player_profiles").select("id,is_active").in("id", activeMemberPlayerProfileIds)
+        : { data: [] as any[] };
+      const activePlayerProfileIdSet = new Set((activeMemberPlayerProfiles ?? []).filter((profile: any) => profile.is_active !== false).map((profile: any) => profile.id));
+      for (const member of memberRows) {
+        const playerProfileId = (member as any).player_profile_id;
+        const profileId = (member as any).profile_id;
+        if (playerProfileId && activePlayerProfileIdSet.has(playerProfileId)) activeMemberProfileIds.add(playerProfileId);
+        else if (!playerProfileId && profileId) activeMemberProfileIds.add(profileId);
+      }
+    }
+
     setParticipants(
       participantRows.map((row) => {
         const resolvedName =
           (row.player_profile_id ? playerProfileNameMap.get(row.player_profile_id) : null) ??
           (row.profile_id ? profileNameMap.get(row.profile_id) : null) ??
           (row.participant_type === "guest" ? row.guest_name : null);
+        const memberProfileId = row.player_profile_id ?? row.profile_id;
+        const isMemberCandidate = row.participant_type === "guest" || !event?.club_id || (memberProfileId ? activeMemberProfileIds.has(memberProfileId) : false);
 
         return {
           id: row.id,
@@ -286,7 +313,8 @@ export default function EventDetailPage() {
           guest_name: row.guest_name,
           status: row.status,
           participant_type: row.participant_type,
-          display_name: resolvedName ?? null
+          display_name: resolvedName ?? null,
+          is_member_candidate: isMemberCandidate
         } as Participant;
       })
     );
@@ -611,7 +639,7 @@ export default function EventDetailPage() {
     if (guestMode && eventId) {
       setIsGeneratingRound(true);
       try {
-      const active = participants.filter((p) => p.status === "active");
+      const active = candidateParticipants;
       if (active.length < 4) return setError("アクティブ参加者が4人未満のためRound生成できません");
       const maxMatches = Math.min(courtCount, Math.floor(active.length / 4));
       const slots = maxMatches * 4;
@@ -637,7 +665,7 @@ export default function EventDetailPage() {
     setIsGeneratingRound(true);
 
     try {
-    const active = participants.filter((p) => p.status === "active");
+    const active = candidateParticipants;
     if (active.length < 4) {
       setError("アクティブ参加者が4人未満のためRound生成できません");
       return;
@@ -844,7 +872,7 @@ export default function EventDetailPage() {
   };
 
   const selectedManualPlayerIds = useMemo(() => manualDrafts.flatMap((d) => [d.teamA1, d.teamA2, d.teamB1, d.teamB2]).filter(Boolean), [manualDrafts]);
-  const manualRestingParticipants = useMemo(() => activeParticipants.filter((p) => !selectedManualPlayerIds.includes(p.id)), [activeParticipants, selectedManualPlayerIds]);
+  const manualRestingParticipants = useMemo(() => candidateParticipants.filter((p) => !selectedManualPlayerIds.includes(p.id)), [candidateParticipants, selectedManualPlayerIds]);
 
   const participantLabel = (p: Participant) => p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定");
   const createEmptyDraft = (index: number): ManualMatchDraft => ({ id: `draft_${Date.now()}_${index}_${Math.random().toString(36).slice(2)}`, court_number: index + 1, teamA1: "", teamA2: "", teamB1: "", teamB2: "" });
@@ -1004,7 +1032,7 @@ export default function EventDetailPage() {
   const renderPlayerSelect = (value: string, onChange: (value: string) => void, usedIds: string[]) => (
     <select className="w-full rounded-xl bg-zinc-700 p-2 text-sm" value={value} onChange={(e) => onChange(e.target.value)} disabled={eventStatus === "closed"}>
       <option value="">選手を選択</option>
-      {activeParticipants.map((p) => {
+      {candidateParticipants.map((p) => {
         const disabled = usedIds.includes(p.id) && p.id !== value;
         return <option key={p.id} value={p.id} disabled={disabled}>{participantLabel(p)}{disabled ? "（選択済み）" : ""}</option>;
       })}

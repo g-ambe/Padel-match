@@ -25,10 +25,11 @@ export default function HomePage() {
   const selectedGroupName = useMemo(() => groups.find((g) => g.id === selectedGroupId)?.name ?? "", [groups, selectedGroupId]);
 
   const loadHomeData = async () => {
-    if (isGuestModeEnabled()) {
+    const showGuestHome = () => {
       setGuestModeState(true);
       const guestEvents = listGuestEvents();
       setGroups([]);
+      setSelectedGroupId("");
       setEvents(
         guestEvents.map((e) => ({
           id: e.id,
@@ -38,31 +39,25 @@ export default function HomePage() {
           club_name: "グループなし"
         }))
       );
-      return;
-    }
+    };
+
     const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
     const supabase = getSupabaseClient();
     if (!supabase) {
+      if (isGuestModeEnabled()) {
+        showGuestHome();
+        return;
+      }
       setError(getSupabaseEnvErrorMessage() ?? "Supabase初期化に失敗しました");
       return;
     }
+
     const { data: sessionRes } = await supabase.auth.getSession();
     if (sessionRes.session) {
       resetGuestModeData();
       setGuestModeState(false);
     } else if (isGuestModeEnabled()) {
-      setGuestModeState(true);
-      const guestEvents = listGuestEvents();
-      setGroups([]);
-      setEvents(
-        guestEvents.map((e) => ({
-          id: e.id,
-          name: `${e.name}（ゲストモード・一時保存）`,
-          court_count: e.court_count,
-          club_id: null,
-          club_name: "グループなし"
-        }))
-      );
+      showGuestHome();
       return;
     }
 
@@ -73,42 +68,98 @@ export default function HomePage() {
       return;
     }
 
-    const { data: linkedProfiles } = await supabase
-      .from("player_profiles")
-      .select("id")
-      .eq("linked_auth_user_id", userId);
+    const isMissingColumnError = (error: any, column: string) => {
+      const message = `${error?.message ?? ""} ${error?.details ?? ""}`;
+      return error?.code === "42703" || message.includes(column);
+    };
 
-    const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
-
-    let memberships: any[] = [];
-    if (linkedProfileIds.length) {
+    const isSuperUser = async () => {
       const { data } = await supabase
-        .from("club_members")
-        .select("club_id, clubs(id,name)")
-        .in("player_profile_id", linkedProfileIds)
-        .eq("is_active", true)
-        .eq("status", "active")
-        .eq("clubs.is_active", true);
-      memberships = data ?? [];
-    }
-
-    if (!memberships.length) {
-      const { data } = await supabase
-        .from("club_members")
-        .select("club_id, clubs(id,name)")
+        .from("app_admins")
+        .select("id")
         .eq("profile_id", userId)
         .eq("is_active", true)
-        .eq("status", "active")
-        .eq("clubs.is_active", true);
-      memberships = data ?? [];
+        .maybeSingle();
+      return !!data;
+    };
+
+    const loadActiveClubs = async (clubIds?: string[]): Promise<Group[]> => {
+      const fetchClubs = async (select: string) => {
+        let query: any = supabase.from("clubs").select(select).order("created_at", { ascending: true });
+        if (clubIds) query = query.in("id", clubIds);
+        return await query;
+      };
+
+      let { data, error } = await fetchClubs("id,name,is_active,is_deleted");
+      if (error && isMissingColumnError(error, "is_deleted")) {
+        const fallback = await fetchClubs("id,name,is_active");
+        data = fallback.data;
+        error = fallback.error;
+      }
+      if (error && isMissingColumnError(error, "is_active")) {
+        const fallback = await fetchClubs("id,name");
+        data = fallback.data;
+        error = fallback.error;
+      }
+      if (error) {
+        setError("グループ取得に失敗しました");
+        return [];
+      }
+
+      return (data ?? [])
+        .filter((club: any) => club.is_active !== false && club.is_deleted !== true)
+        .map((club: any) => ({ id: club.id as string, name: club.name as string }))
+        .filter((club) => club.id && club.name);
+    };
+
+    const loadActiveMemberships = async (column: "player_profile_id" | "profile_id", ids: string[]) => {
+      if (!ids.length) return [] as any[];
+
+      const fetchMemberships = async (withStatus: boolean) => {
+        let query: any = supabase
+          .from("club_members")
+          .select("club_id")
+          .eq("is_active", true);
+        query = ids.length === 1 ? query.eq(column, ids[0]) : query.in(column, ids);
+        if (withStatus) query = query.eq("status", "active");
+        return await query;
+      };
+
+      let { data, error } = await fetchMemberships(true);
+      if (error && isMissingColumnError(error, "status")) {
+        const fallback = await fetchMemberships(false);
+        data = fallback.data;
+        error = fallback.error;
+      }
+      if (error) {
+        setError("所属グループ取得に失敗しました");
+        return [] as any[];
+      }
+      return data ?? [];
+    };
+
+    let groupRows: Group[] = [];
+    if (await isSuperUser()) {
+      groupRows = await loadActiveClubs();
+    } else {
+      const { data: linkedProfiles } = await supabase
+        .from("player_profiles")
+        .select("id")
+        .eq("linked_auth_user_id", userId);
+
+      const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
+      let memberships = await loadActiveMemberships("player_profile_id", linkedProfileIds);
+
+      if (!memberships.length) {
+        memberships = await loadActiveMemberships("profile_id", [userId]);
+      }
+
+      const groupIds = Array.from(new Set(memberships.map((m: any) => m.club_id).filter(Boolean)));
+      groupRows = groupIds.length ? await loadActiveClubs(groupIds) : [];
     }
 
-    const groupRows: Group[] = memberships
-      .map((m: any) => ({ id: m.club_id as string, name: m.clubs?.name as string }))
-      .filter((g) => g.id && g.name);
-
     setGroups(groupRows);
-    if (groupRows.length === 1) setSelectedGroupId(groupRows[0].id);
+    setSelectedGroupId((current) => (current && groupRows.some((g) => g.id === current) ? current : groupRows.length === 1 ? groupRows[0].id : ""));
 
     const groupIds = groupRows.map((g) => g.id);
     if (groupIds.length === 0) {

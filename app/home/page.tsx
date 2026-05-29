@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
-import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeData, upsertGuestEvent, type GuestEvent } from "@/lib/guest-events";
+import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeData, upsertGuestEvent, type EventMode, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
 type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
@@ -13,6 +13,7 @@ export default function HomePage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [courtCount, setCourtCount] = useState(2);
+  const [eventMode, setEventMode] = useState<EventMode>("auto");
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -168,6 +169,8 @@ export default function HomePage() {
         name: name.trim(),
         court_count: courtCount,
         status: "active",
+        event_mode: eventMode,
+        stats_mode: eventMode === "manual" ? "undecided" : "official",
         participants: [],
         matches: [],
         created_at: new Date().toISOString()
@@ -176,6 +179,7 @@ export default function HomePage() {
       setLoading(false);
       setName("");
       setCourtCount(2);
+      setEventMode("auto");
       router.push(`/events/${event.id}`);
       return;
     }
@@ -194,7 +198,9 @@ export default function HomePage() {
         name: name.trim(),
         court_count: courtCount,
         category: "club",
-        club_id: selectedGroupId || null
+        club_id: selectedGroupId || null,
+        event_mode: eventMode,
+        stats_mode: eventMode === "manual" ? "undecided" : "official"
       })
       .select("id")
       .single();
@@ -208,6 +214,7 @@ export default function HomePage() {
 
     setName("");
     setCourtCount(2);
+    setEventMode("auto");
     router.push(`/events/${data.id}`);
   };
 
@@ -242,6 +249,13 @@ export default function HomePage() {
           <select className="w-full rounded-xl bg-zinc-800 p-3" value={courtCount} onChange={(e) => setCourtCount(Number(e.target.value))}>
             {[1,2,3,4,5].map((n) => <option key={n} value={n}>{n}面</option>)}
           </select>
+          <label className="block space-y-1 text-sm">
+            <span className="text-zinc-300">対戦作成方式</span>
+            <select className="w-full rounded-xl bg-zinc-800 p-3" value={eventMode} onChange={(e) => setEventMode(e.target.value as EventMode)}>
+              <option value="auto">自動生成</option>
+              <option value="manual">手動作成</option>
+            </select>
+          </label>
           {error && <p className="text-sm text-red-400">{error}</p>}
           <button type="submit" className="w-full rounded-xl bg-accent py-3 font-semibold text-black" disabled={loading}>
             {loading ? "作成中..." : "作成"}
@@ -274,6 +288,7 @@ export default function HomePage() {
               clearGuestEvents();
               setName("");
               setCourtCount(2);
+              setEventMode("auto");
               router.push("/");
             }}
           >

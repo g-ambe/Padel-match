@@ -5,12 +5,14 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent } from "@/lib/guest-events";
+import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null };
 type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
 type HistoryMatch = { round_number: number; court_number: number; players: { participant_id: string; team: "A" | "B" }[] };
 type ScoreInput = { a: number | ""; b: number | "" };
+type ManualMatchDraft = { id: string; court_number: number; teamA1: string; teamA2: string; teamB1: string; teamB2: string };
+type LineupDraft = { teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
@@ -41,6 +43,11 @@ export default function EventDetailPage() {
   const [canManageShare, setCanManageShare] = useState(false);
   const [canCopyShare, setCanCopyShare] = useState(false);
   const [isGeneratingRound, setIsGeneratingRound] = useState(false);
+  const [eventMode, setEventMode] = useState<EventMode>("auto");
+  const [statsMode, setStatsMode] = useState<StatsMode>("official");
+  const [closeStatsMode, setCloseStatsMode] = useState<StatsMode>("official");
+  const [manualDrafts, setManualDrafts] = useState<ManualMatchDraft[]>([]);
+  const [lineupDrafts, setLineupDrafts] = useState<Record<string, LineupDraft>>({});
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -122,6 +129,7 @@ export default function EventDetailPage() {
 
 
 
+  const activeParticipants = useMemo(() => participants.filter((p) => p.status === "active"), [participants]);
   const latestRoundNumber = useMemo(() => matches.reduce((max, m) => Math.max(max, m.round_number), 0), [matches]);
   const sortedMatches = useMemo(() => [...matches].sort((a, b) => (b.round_number - a.round_number) || (a.court_number - b.court_number) || ((b.created_at ?? "").localeCompare(a.created_at ?? "")) || a.id.localeCompare(b.id)), [matches]);
   const displayedMatches = useMemo(() => (showAllRounds ? sortedMatches : sortedMatches.slice(0, 5)), [showAllRounds, sortedMatches]);
@@ -134,6 +142,8 @@ export default function EventDetailPage() {
       setEventName(ge.name);
       setCourtCount(ge.court_count);
       setEventStatus(ge.status);
+      setEventMode(ge.event_mode ?? "auto");
+      setStatsMode(ge.stats_mode ?? (ge.event_mode === "manual" ? "undecided" : "official"));
       setParticipants(ge.participants.map((p) => ({ ...p, profile_id: null, player_profile_id: null, display_name: p.guest_name })));
       setMatches(ge.matches as any);
       setScoreInputs(Object.fromEntries(ge.matches.filter((m) => m.result).map((m) => [m.id, { a: m.result!.score_a, b: m.result!.score_b }])));
@@ -143,7 +153,7 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
-    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token").eq("id", eventId).single();
+    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token,event_mode,stats_mode").eq("id", eventId).single();
     if (!event) { setError("イベントが見つかりません"); return; }
     if (event.is_deleted) { setIsDeletedEvent(true); setEventName(event.name ?? "-"); return; }
     setIsDeletedEvent(false);
@@ -153,6 +163,8 @@ export default function EventDetailPage() {
     else setEventStatus("active");
     setShareEnabled(!!event?.share_enabled);
     setShareToken(event?.share_token ?? null);
+    setEventMode((event?.event_mode ?? "auto") as EventMode);
+    setStatsMode((event?.stats_mode ?? "official") as StatsMode);
 
     const { data: userRes } = await supabase.auth.getUser();
     const uid = userRes.user?.id;
@@ -341,6 +353,15 @@ export default function EventDetailPage() {
   }, [eventId]);
 
   useEffect(() => {
+    if (eventMode !== "manual") return;
+    setManualDrafts((prev) => {
+      if (prev.length) return prev;
+      return Array.from({ length: Math.max(1, courtCount) }, (_, i) => ({ id: `draft_${Date.now()}_${i}`, court_number: i + 1, teamA1: "", teamA2: "", teamB1: "", teamB2: "" }));
+    });
+  }, [courtCount, eventMode]);
+
+
+  useEffect(() => {
     const checkAuth = async () => {
       if (typeof eventId === "string" && eventId.startsWith("guest_") && isGuestModeEnabled()) return;
       const supabase = getSupabaseClient();
@@ -443,6 +464,8 @@ export default function EventDetailPage() {
       const ge = getGuestEvent(eventId);
       if (!ge) return;
       ge.status = "closed";
+      if ((ge.event_mode ?? "auto") === "manual") ge.stats_mode = closeStatsMode === "record_only" ? "record_only" : "official";
+      else ge.stats_mode = "official";
       upsertGuestEvent(ge);
       setShowCloseModal(false);
       await loadAll();
@@ -452,7 +475,7 @@ export default function EventDetailPage() {
     if (!supabase || !eventId) return;
     await supabase
       .from("events")
-      .update({ status: "closed", closed_at: new Date().toISOString() })
+      .update({ status: "closed", closed_at: new Date().toISOString(), stats_mode: eventMode === "manual" ? closeStatsMode : "official" })
       .eq("id", eventId);
     setShowCloseModal(false);
     await loadAll();
@@ -462,13 +485,14 @@ export default function EventDetailPage() {
       const ge = getGuestEvent(eventId);
       if (!ge) return;
       ge.status = "active";
+      if ((ge.event_mode ?? "auto") === "manual") ge.stats_mode = "undecided";
       upsertGuestEvent(ge);
       await loadAll();
       return;
     }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
-    await supabase.from("events").update({ status: "active" }).eq("id", eventId);
+    await supabase.from("events").update({ status: "active", stats_mode: eventMode === "manual" ? "undecided" : "official" }).eq("id", eventId);
     await loadAll();
   };
 
@@ -503,7 +527,7 @@ export default function EventDetailPage() {
     setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
 
     const match = matches.find((m) => m.id === matchId);
-    if (match) {
+    if (match && statsMode === "official") {
       const winners = match.players.filter((p) => p.team === winner).map((p) => p.participant_id);
       const losers = match.players.filter((p) => p.team !== winner).map((p) => p.participant_id);
 
@@ -575,6 +599,10 @@ export default function EventDetailPage() {
 
   const generateRound = async () => {
     if (isGeneratingRound) return;
+    if (eventMode !== "auto") {
+      setError("手動作成イベントでは手動で試合を作成してください");
+      return;
+    }
     if (eventStatus === "closed") {
       setError("終了済みイベントはRound生成できません");
       return;
@@ -815,6 +843,150 @@ export default function EventDetailPage() {
     }
   };
 
+  const selectedManualPlayerIds = useMemo(() => manualDrafts.flatMap((d) => [d.teamA1, d.teamA2, d.teamB1, d.teamB2]).filter(Boolean), [manualDrafts]);
+  const manualRestingParticipants = useMemo(() => activeParticipants.filter((p) => !selectedManualPlayerIds.includes(p.id)), [activeParticipants, selectedManualPlayerIds]);
+
+  const participantLabel = (p: Participant) => p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定");
+  const createEmptyDraft = (index: number): ManualMatchDraft => ({ id: `draft_${Date.now()}_${index}_${Math.random().toString(36).slice(2)}`, court_number: index + 1, teamA1: "", teamA2: "", teamB1: "", teamB2: "" });
+
+  const updateManualDraft = (draftId: string, field: keyof LineupDraft, value: string) => {
+    setError("");
+    setManualDrafts((prev) => prev.map((d) => d.id === draftId ? { ...d, [field]: value } : d));
+  };
+
+  const addManualDraft = () => setManualDrafts((prev) => [...prev, createEmptyDraft(prev.length)]);
+  const removeManualDraft = (draftId: string) => setManualDrafts((prev) => prev.length <= 1 ? prev : prev.filter((d) => d.id !== draftId).map((d, i) => ({ ...d, court_number: i + 1 })));
+
+  const validateManualDrafts = (drafts: ManualMatchDraft[]) => {
+    const seen = new Set<string>();
+    for (const d of drafts) {
+      const ids = [d.teamA1, d.teamA2, d.teamB1, d.teamB2];
+      if (ids.some((id) => !id)) return "すべての試合で4人を選択してください";
+      if (new Set(ids).size !== ids.length) return "同一試合内で同じ人は選択できません";
+      for (const id of ids) {
+        if (seen.has(id)) return "同一Round内で同じ人を複数試合に出場させることはできません";
+        seen.add(id);
+      }
+    }
+    return "";
+  };
+
+  const createManualRound = async () => {
+    if (eventMode !== "manual") return;
+    if (eventStatus === "closed") return setError("終了済みイベントはRound作成できません");
+    const validationError = validateManualDrafts(manualDrafts);
+    if (validationError) return setError(validationError);
+
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      const nextRound = Math.max(0, ...ge.matches.map((m) => m.round_number)) + 1;
+      const now = new Date().toISOString();
+      const created = manualDrafts.map((d, i) => ({
+        id: `gm_${Date.now()}_${i}`,
+        court_number: d.court_number,
+        round_number: nextRound,
+        created_at: now,
+        completed: false,
+        youtube_url: null,
+        players: [
+          { participant_id: d.teamA1, team: "A" as const },
+          { participant_id: d.teamA2, team: "A" as const },
+          { participant_id: d.teamB1, team: "B" as const },
+          { participant_id: d.teamB2, team: "B" as const }
+        ],
+        result: null
+      }));
+      ge.matches = [...created, ...ge.matches];
+      upsertGuestEvent(ge);
+      setManualDrafts(Array.from({ length: Math.max(1, courtCount) }, (_, i) => createEmptyDraft(i)));
+      await loadAll();
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return;
+    const { data: roundsData } = await supabase.from("rounds").select("id,round_number").eq("event_id", eventId).order("round_number", { ascending: true });
+    const lastRoundNumber = (roundsData ?? []).length ? Math.max(...(roundsData ?? []).map((r: any) => r.round_number as number)) : 0;
+    if (lastRoundNumber !== latestRoundNumber) {
+      setError("他のユーザーが先にRoundを作成しました。画面を更新したので、追加されたRoundをご確認ください。");
+      await loadAll();
+      return;
+    }
+    const { data: round, error: roundInsertError } = await supabase.from("rounds").insert({ event_id: eventId, round_number: lastRoundNumber + 1 }).select("id").single();
+    if (roundInsertError?.code === "23505") {
+      setError("他のユーザーが先にRoundを作成しました。画面を更新したので、追加されたRoundをご確認ください。");
+      await loadAll();
+      return;
+    }
+    if (roundInsertError || !round) return setError("Round作成に失敗しました");
+
+    for (const d of manualDrafts) {
+      const { data: match } = await supabase.from("matches").insert({ event_id: eventId, round_id: round.id, court_number: d.court_number, completed: false }).select("id").single();
+      if (!match) continue;
+      await supabase.from("match_players").insert([
+        { match_id: match.id, participant_id: d.teamA1, team: "A" },
+        { match_id: match.id, participant_id: d.teamA2, team: "A" },
+        { match_id: match.id, participant_id: d.teamB1, team: "B" },
+        { match_id: match.id, participant_id: d.teamB2, team: "B" }
+      ]);
+    }
+    setManualDrafts(Array.from({ length: Math.max(1, courtCount) }, (_, i) => createEmptyDraft(i)));
+    await loadAll();
+  };
+
+  const startLineupEdit = (match: MatchView) => {
+    if (match.completed) return;
+    const a = match.players.filter((p) => p.team === "A");
+    const b = match.players.filter((p) => p.team === "B");
+    setLineupDrafts((prev) => ({ ...prev, [match.id]: { teamA1: a[0]?.participant_id ?? "", teamA2: a[1]?.participant_id ?? "", teamB1: b[0]?.participant_id ?? "", teamB2: b[1]?.participant_id ?? "" } }));
+  };
+
+  const saveLineupEdit = async (matchId: string) => {
+    const draft = lineupDrafts[matchId];
+    if (!draft) return;
+    const validationError = validateManualDrafts([{ id: matchId, court_number: 1, ...draft }]);
+    if (validationError) return setError(validationError);
+    const match = matches.find((m) => m.id === matchId);
+    if (!match || match.completed) return setError("スコア入力済みのため組み合わせは編集できません");
+    const editedIds = [draft.teamA1, draft.teamA2, draft.teamB1, draft.teamB2];
+    const sameRoundOtherIds = matches
+      .filter((m) => m.id !== matchId && m.round_number === match.round_number)
+      .flatMap((m) => m.players.map((p) => p.participant_id));
+    if (editedIds.some((id) => sameRoundOtherIds.includes(id))) {
+      return setError("同一Round内で同じ人を複数試合に出場させることはできません");
+    }
+
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      ge.matches = ge.matches.map((m) => m.id === matchId ? { ...m, players: [
+        { participant_id: draft.teamA1, team: "A" as const },
+        { participant_id: draft.teamA2, team: "A" as const },
+        { participant_id: draft.teamB1, team: "B" as const },
+        { participant_id: draft.teamB2, team: "B" as const }
+      ] } : m);
+      upsertGuestEvent(ge);
+      setLineupDrafts((prev) => { const next = { ...prev }; delete next[matchId]; return next; });
+      await loadAll();
+      return;
+    }
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    await supabase.from("match_players").delete().eq("match_id", matchId);
+    const { error: e } = await supabase.from("match_players").insert([
+      { match_id: matchId, participant_id: draft.teamA1, team: "A" },
+      { match_id: matchId, participant_id: draft.teamA2, team: "A" },
+      { match_id: matchId, participant_id: draft.teamB1, team: "B" },
+      { match_id: matchId, participant_id: draft.teamB2, team: "B" }
+    ]);
+    if (e) return setError("組み合わせの保存に失敗しました");
+    setLineupDrafts((prev) => { const next = { ...prev }; delete next[matchId]; return next; });
+    await loadAll();
+  };
+
+
   const deleteEvent = async () => {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
@@ -827,6 +999,65 @@ export default function EventDetailPage() {
   };
 
   if (isDeletedEvent) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント詳細：{eventName}</h1><Card title="イベント詳細"><p className="text-sm text-zinc-300">このイベントは削除済みです</p><button className="mt-3 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button></Card></main>;
+
+
+  const renderPlayerSelect = (value: string, onChange: (value: string) => void, usedIds: string[]) => (
+    <select className="w-full rounded-xl bg-zinc-700 p-2 text-sm" value={value} onChange={(e) => onChange(e.target.value)} disabled={eventStatus === "closed"}>
+      <option value="">選手を選択</option>
+      {activeParticipants.map((p) => {
+        const disabled = usedIds.includes(p.id) && p.id !== value;
+        return <option key={p.id} value={p.id} disabled={disabled}>{participantLabel(p)}{disabled ? "（選択済み）" : ""}</option>;
+      })}
+    </select>
+  );
+
+  const manualRoundSection = eventMode === "manual" && eventStatus !== "closed" ? (
+    <Card title="手動で試合を作成">
+      <div className="space-y-3">
+        <div className="rounded-xl bg-zinc-800 p-3 text-sm">
+          <p className="font-semibold">Roundを作成：Round {latestRoundNumber + 1}</p>
+          <p className="text-xs text-zinc-400">コート数分の試合作成枠を初期表示しています</p>
+        </div>
+        {manualDrafts.map((d) => {
+          const draftUsed = [d.teamA1, d.teamA2, d.teamB1, d.teamB2].filter(Boolean);
+          const allUsed = selectedManualPlayerIds;
+          const usedForSelect = (current: string) => allUsed.filter((id) => id !== current).concat(draftUsed.filter((id) => id !== current));
+          return (
+            <div key={d.id} className="rounded-xl bg-zinc-800 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="font-semibold">Court{d.court_number}</p>
+                <button type="button" className="rounded border border-zinc-600 px-3 py-1 text-xs" onClick={() => removeManualDraft(d.id)} disabled={manualDrafts.length <= 1}>削除</button>
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <p className="mb-1 text-xs text-zinc-300">チームA: 選手1 / 選手2</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {renderPlayerSelect(d.teamA1, (v) => updateManualDraft(d.id, "teamA1", v), usedForSelect(d.teamA1))}
+                    {renderPlayerSelect(d.teamA2, (v) => updateManualDraft(d.id, "teamA2", v), usedForSelect(d.teamA2))}
+                  </div>
+                </div>
+                <div>
+                  <p className="mb-1 text-xs text-zinc-300">チームB: 選手1 / 選手2</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {renderPlayerSelect(d.teamB1, (v) => updateManualDraft(d.id, "teamB1", v), usedForSelect(d.teamB1))}
+                    {renderPlayerSelect(d.teamB2, (v) => updateManualDraft(d.id, "teamB2", v), usedForSelect(d.teamB2))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div className="rounded-xl bg-zinc-800 p-3 text-sm">
+          <p className="mb-1 font-semibold">このRoundの休み</p>
+          <p className="text-zinc-300">{manualRestingParticipants.length ? manualRestingParticipants.map(participantLabel).join(" / ") : "なし"}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className="rounded-xl border border-zinc-600 py-3 text-sm" onClick={addManualDraft}>試合を追加</button>
+          <button type="button" className="rounded-xl bg-accent py-3 font-semibold text-black" onClick={() => void createManualRound()}>Roundを作成</button>
+        </div>
+      </div>
+    </Card>
+  ) : null;
 
   const resultSummarySection = (
     <Card title="結果サマリー">
@@ -887,6 +1118,25 @@ export default function EventDetailPage() {
               <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
                 <p className="text-sm">Round {m.round_number} / Court{m.court_number}</p>
                 <p className="mb-2 text-base font-semibold">{a} vs {b}</p>
+                {eventMode === "manual" && (lineupDrafts[m.id] ? (
+                  <div className="mb-3 space-y-2 rounded-lg border border-zinc-700 p-2">
+                    <p className="text-xs text-zinc-300">組み合わせ編集</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {renderPlayerSelect(lineupDrafts[m.id].teamA1, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamA1: v } })), [lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB1, lineupDrafts[m.id].teamB2].filter(Boolean))}
+                      {renderPlayerSelect(lineupDrafts[m.id].teamA2, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamA2: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamB1, lineupDrafts[m.id].teamB2].filter(Boolean))}
+                      {renderPlayerSelect(lineupDrafts[m.id].teamB1, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamB1: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB2].filter(Boolean))}
+                      {renderPlayerSelect(lineupDrafts[m.id].teamB2, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamB2: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB1].filter(Boolean))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button className="rounded border border-zinc-500 py-2 text-sm" onClick={() => setLineupDrafts((prev) => { const next = { ...prev }; delete next[m.id]; return next; })}>キャンセル</button>
+                      <button className="rounded bg-accent py-2 text-sm text-black" onClick={() => void saveLineupEdit(m.id)}>保存</button>
+                    </div>
+                  </div>
+                ) : m.completed ? (
+                  <p className="mb-2 text-xs text-zinc-400">スコア入力済みのため組み合わせは編集できません</p>
+                ) : eventStatus !== "closed" ? (
+                  <button className="mb-2 rounded border border-zinc-500 px-3 py-2 text-xs" onClick={() => startLineupEdit(m)}>組み合わせ編集</button>
+                ) : null)}
                 <div className="flex items-center gap-2">
                   <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" value={scoreInputs[m.id]?.a ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: e.target.value === "" ? "" : Number(e.target.value), b: prev[m.id]?.b ?? "" } }))} />
                   <span>-</span>
@@ -912,11 +1162,11 @@ export default function EventDetailPage() {
 
       
 
-{eventStatus === "closed" ? (
+      {eventMode === "manual" ? manualRoundSection : (eventStatus === "closed" ? (
         <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
       ) : (
         <ActionButton onClick={generateRound} disabled={isGeneratingRound}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>
-      )}
+      ))}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {showCourtWarning && (
         <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>
@@ -1003,6 +1253,13 @@ export default function EventDetailPage() {
           <div className="w-full max-w-sm rounded-2xl bg-card p-4">
             <h3 className="mb-2 text-lg font-bold">この開催を終了しますか？</h3>
             <p className="mb-4 text-sm text-zinc-300">終了後も開催履歴から確認できます。</p>
+            {eventMode === "manual" && (
+              <div className="mb-4 space-y-2 rounded-xl bg-zinc-800 p-3 text-sm">
+                <p className="font-semibold">このイベントの結果をグループ戦績に反映しますか？</p>
+                <label className="flex items-center gap-2"><input type="radio" name="stats_mode" checked={closeStatsMode === "official"} onChange={() => setCloseStatsMode("official")} /><span>グループ戦績に反映する</span></label>
+                <label className="flex items-center gap-2"><input type="radio" name="stats_mode" checked={closeStatsMode === "record_only"} onChange={() => setCloseStatsMode("record_only")} /><span>記録用として保存する</span></label>
+              </div>
+            )}
             <div className="flex gap-2">
               <button className="w-1/2 rounded-xl border border-zinc-600 py-3" onClick={() => setShowCloseModal(false)}>キャンセル</button>
               <button className="w-1/2 rounded-xl bg-red-500 py-3 font-semibold text-white" onClick={closeEvent}>終了する</button>

@@ -109,7 +109,7 @@ export default function ProfilePage() {
     const eventIds = [...new Set((participants ?? []).map((p: any) => p.event_id).filter(Boolean))];
 
     const { data: closedEvents } = eventIds.length
-      ? await s.from("events").select("id").in("id", eventIds).eq("status", "closed").eq("is_deleted", false)
+      ? await s.from("events").select("id").in("id", eventIds).eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official")
       : { data: [] as any[] };
     const closedIds = new Set((closedEvents ?? []).map((e: any) => e.id));
 

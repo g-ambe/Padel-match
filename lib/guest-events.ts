@@ -7,6 +7,9 @@ export type GuestParticipant = {
   participant_type: "guest";
 };
 
+export type EventMode = "auto" | "manual";
+export type StatsMode = "official" | "record_only" | "undecided";
+
 export type GuestMatch = {
   id: string;
   court_number: number;
@@ -23,6 +26,8 @@ export type GuestEvent = {
   name: string;
   court_count: number;
   status: "active" | "closed";
+  event_mode: EventMode;
+  stats_mode: StatsMode;
   participants: GuestParticipant[];
   matches: GuestMatch[];
   created_at: string;
@@ -35,7 +40,11 @@ const readAll = (): GuestEvent[] => {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.sessionStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as GuestEvent[]) : [];
+    return raw ? (JSON.parse(raw) as GuestEvent[]).map((event) => ({
+      ...event,
+      event_mode: event.event_mode ?? "auto",
+      stats_mode: event.stats_mode ?? "official"
+    })) : [];
   } catch {
     return [];
   }

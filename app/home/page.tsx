@@ -292,7 +292,17 @@ export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <h1 className="text-xl font-bold">イベント作成・閲覧</h1>
-      <Card title="試合メニュー"><div className="grid grid-cols-2 gap-2"><a href="#random-events" className="rounded-xl bg-zinc-800 p-3 text-center text-sm font-bold">試合（乱数）</a>{!guestMode && <Link href="/official-matches" className="rounded-xl bg-zinc-800 p-3 text-center text-sm font-bold">公式試合</Link>}</div></Card>
+      <Card title="試合メニュー">
+        <div className="space-y-2">
+          <a href="#random-events" className="block rounded-xl bg-zinc-800 p-3 text-center text-sm font-bold">試合（乱数）</a>
+          {!guestMode && (
+            <div className="grid grid-cols-2 gap-2">
+              <Link href="/official-matches/new" className="rounded-xl bg-zinc-800 p-3 text-center text-sm font-bold">公式試合を作成</Link>
+              <Link href="/official-matches" className="rounded-xl bg-zinc-800 p-3 text-center text-sm font-bold">公式試合一覧</Link>
+            </div>
+          )}
+        </div>
+      </Card>
       {guestMode && (
         <Card title="ゲストモード">
           <p className="text-sm text-zinc-300">ゲストモードではデータは一時保存です</p>

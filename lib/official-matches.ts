@@ -29,15 +29,9 @@ async function loadActiveClubs(supabase: SupabaseClient, clubIds?: string[]) {
 
 async function loadMemberships(supabase: SupabaseClient, column: "player_profile_id" | "profile_id", ids: string[]) {
   if (!ids.length) return [] as MembershipRow[];
-  const fetch = async (withStatus: boolean) => {
-    let query: any = supabase.from("club_members").select("club_id,role").eq("is_active", true);
-    query = ids.length === 1 ? query.eq(column, ids[0]) : query.in(column, ids);
-    if (withStatus) query = query.eq("status", "active");
-    return await query;
-  };
-
-  let { data, error } = await fetch(true);
-  if (error && missingColumn(error, "status")) ({ data, error } = await fetch(false));
+  let query: any = supabase.from("club_members").select("club_id,role").eq("is_active", true);
+  query = ids.length === 1 ? query.eq(column, ids[0]) : query.in(column, ids);
+  const { data, error } = await query;
   return error ? [] : ((data ?? []) as MembershipRow[]);
 }
 

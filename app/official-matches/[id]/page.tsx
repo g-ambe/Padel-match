@@ -45,6 +45,15 @@ const autoResult = (ourScore: string, opponentScore: string): ResultValue => {
   return "draw";
 };
 const isYoutubeUrl = (value: string) => /^https:\/\/(www\.)?youtube\.com\/watch\?v=/.test(value) || /^https:\/\/youtu\.be\//.test(value) || /^https:\/\/(www\.)?youtube\.com\/shorts\//.test(value);
+const opponentScore = (opponentId: string, matches: OfficialMatch[]) => matches
+  .filter((match) => match.official_opponent_id === opponentId)
+  .reduce((score, match) => {
+    if (match.result === "win") return { ...score, ourWins: score.ourWins + 1 };
+    if (match.result === "lose") return { ...score, opponentWins: score.opponentWins + 1 };
+    if (match.result === "draw") return { ...score, draws: score.draws + 1 };
+    return score;
+  }, { ourWins: 0, opponentWins: 0, draws: 0 });
+const formatOpponentScore = ({ ourWins, opponentWins, draws }: { ourWins: number; opponentWins: number; draws: number }) => `${ourWins}-${opponentWins}${draws > 0 ? `（引分${draws}）` : ""}`;
 
 export default function OfficialMatchDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -293,14 +302,13 @@ export default function OfficialMatchDetailPage() {
           </div>
         </div>
       </Card>}
-      <Card title="対戦相手">
+      <Card title="戦績">
         <div className="space-y-4">
-          {opponents.length === 0 && <p className="text-sm text-zinc-400">対戦相手はまだ登録されていません</p>}
+          {opponents.length === 0 && <p className="text-sm text-zinc-400">戦績はまだ登録されていません</p>}
           {opponents.map((opponent) => (
             <section key={opponent.id} className="space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/60 p-3">
-              <div><h3 className="font-bold">{event.clubs?.name ?? "自チーム"} vs {opponent.opponent_team_name}</h3>{opponent.memo && <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-400">メモ: {opponent.memo}</p>}</div>
+              <div><h3 className="font-bold">{event.clubs?.name ?? "自チーム"} vs {opponent.opponent_team_name}</h3><p className="mt-1 text-2xl font-black tracking-tight text-accent">{formatOpponentScore(opponentScore(opponent.id, matches))}</p>{opponent.memo && <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-400">メモ: {opponent.memo}</p>}</div>
               <div className="space-y-3">
-                <h4 className="text-sm font-bold">試合カード</h4>
                 {opponentMatches(opponent.id).length === 0 && <p className="text-sm text-zinc-400">試合カードはまだ登録されていません</p>}
                 {opponentMatches(opponent.id).map((match, index) => {
                   const isEditing = editingMatchId === match.id;

@@ -92,7 +92,13 @@ export function GlobalMenu() {
         </button>
         <nav className="space-y-2">
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/profile")}>プロフィール</button>
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/home")}>イベント作成・閲覧</button>
+          <div className="rounded-lg bg-zinc-800">
+            <div className="px-3 py-3 font-medium">イベント作成・閲覧</div>
+            <div className="border-t border-zinc-700">
+              <button className="w-full px-6 py-3 text-left text-sm" onClick={() => moveTo("/home")}>試合（乱数）</button>
+              <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => moveTo("/official-matches/new")}>公式試合</button>
+            </div>
+          </div>
           <div className="rounded-lg bg-zinc-800">
             <button className="flex w-full items-center justify-between px-3 py-3 text-left" onClick={() => setGroupOpen((v) => !v)}>
               <span>グループ</span>

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { OfficialStatsCard } from "@/components/official-stats-card";
 import { Card } from "@/components/ui";
 import { buildOfficialStats } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -57,12 +58,4 @@ export default function SharedOfficialEventPage() {
     <Card title="対戦相手一覧"><div className="space-y-2">{opponents.length === 0 ? <p className="text-sm text-zinc-400">対戦相手はまだ登録されていません</p> : opponents.map((opponent) => <div key={opponent.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{opponent.opponent_team_name}</p>{opponent.memo && <p className="whitespace-pre-wrap text-zinc-300">メモ: {opponent.memo}</p>}</div>)}</div></Card>
     <Card title="試合カード一覧"><div className="space-y-3">{opponents.map((opponent) => <section key={opponent.id} className="space-y-2"><h3 className="font-bold">{event.clubs?.name ?? "自チーム"} vs {opponent.opponent_team_name}</h3>{opponentMatches(opponent.id).map((match) => <div key={match.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">第{match.match_order}試合</p><p>{memberName(match.our_player1_profile_id, match.our_player1_guest_name)} / {memberName(match.our_player2_profile_id, match.our_player2_guest_name)} vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p><p>スコア: {match.our_score ?? "未入力"} - {match.opponent_score ?? "未入力"}</p><p>結果: {resultLabel(match.result)}</p>{match.score_detail && <p className="whitespace-pre-wrap">詳細スコア: {match.score_detail}</p>}{match.memo && <p className="whitespace-pre-wrap">試合メモ: {match.memo}</p>}{match.youtube_url && <a className="mt-2 inline-block rounded border border-zinc-500 px-3 py-1 text-xs" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>}</div>)}</section>)}</div></Card>
   </main>;
-}
-
-function OfficialStatsCard({ stats }: { stats: ReturnType<typeof buildOfficialStats> | null }) {
-  if (!stats) return null;
-  const table = (rows: { name: string; matches: number; wins: number; losses: number; draws: number; winRate: number }[]) => rows.length === 0 ? <p className="text-sm text-zinc-400">公式戦績はまだありません</p> : <div className="space-y-2">{rows.map((row) => <div key={row.name} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{row.name}</p><p>{row.matches}試合 {row.wins}勝 {row.losses}敗 {row.draws}分 / 勝率 {row.winRate}%</p></div>)}</div>;
-  if (!stats.hasMatches) return <Card title="公式戦績"><p className="text-sm text-zinc-400">公式戦績はまだありません</p></Card>;
-  if (stats.countedMatches === 0) return <Card title="公式戦績"><p className="text-sm text-zinc-400">集計対象の試合結果がありません</p></Card>;
-  return <Card title="公式戦績"><div className="space-y-4"><section><h3 className="mb-2 font-bold">公式戦績サマリー</h3><div className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{stats.summary.name}</p><p>所属グループ名: {stats.summary.groupName}</p><p>対戦相手数: {stats.summary.opponentCount}</p><p>{stats.summary.matches}試合 {stats.summary.wins}勝 {stats.summary.losses}敗 {stats.summary.draws}分 / 勝率 {stats.summary.winRate}%</p></div></section><section><h3 className="mb-2 font-bold">対戦相手別成績</h3>{table(stats.opponents)}</section><section><h3 className="mb-2 font-bold">個人公式戦成績</h3>{table(stats.players)}</section><section><h3 className="mb-2 font-bold">ペア公式戦成績</h3>{table(stats.pairs)}</section></div></Card>;
 }

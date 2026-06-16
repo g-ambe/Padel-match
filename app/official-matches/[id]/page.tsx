@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { OfficialStatsCard } from "@/components/official-stats-card";
 import { ActionButton, Card } from "@/components/ui";
 import { fetchActiveClubMemberParticipants } from "@/lib/event-participants";
 import { buildOfficialStats, createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
@@ -398,20 +399,4 @@ function MatchFormView({ title, members, form, onChange, onSave, onCancel }: { t
       </div>
     </div>
   );
-}
-
-
-function OfficialStatsCard({ stats }: { stats: ReturnType<typeof buildOfficialStats> | null }) {
-  if (!stats) return null;
-  const table = (rows: { name: string; matches: number; wins: number; losses: number; draws: number; winRate: number }[]) => rows.length === 0 ? <p className="text-sm text-zinc-400">公式戦績はまだありません</p> : <div className="space-y-2">{rows.map((row) => <div key={row.name} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{row.name}</p><p className="text-zinc-300">{row.matches}試合 {row.wins}勝 {row.losses}敗 {row.draws}分 / 勝率 {row.winRate}%</p></div>)}</div>;
-  if (!stats.hasMatches) return <Card title="公式戦績"><p className="text-sm text-zinc-400">公式戦績はまだありません</p></Card>;
-  if (stats.countedMatches === 0) return <Card title="公式戦績"><p className="text-sm text-zinc-400">集計対象の試合結果がありません</p></Card>;
-  return <Card title="公式戦績">
-    <div className="space-y-4">
-      <section><h3 className="mb-2 font-bold">公式戦績サマリー</h3><div className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{stats.summary.name}</p><p>所属グループ名: {stats.summary.groupName}</p><p>対戦相手数: {stats.summary.opponentCount}</p><p>{stats.summary.matches}試合 {stats.summary.wins}勝 {stats.summary.losses}敗 {stats.summary.draws}分 / 勝率 {stats.summary.winRate}%</p></div></section>
-      <section><h3 className="mb-2 font-bold">対戦相手別成績</h3>{table(stats.opponents)}</section>
-      <section><h3 className="mb-2 font-bold">個人公式戦成績</h3>{table(stats.players)}</section>
-      <section><h3 className="mb-2 font-bold">ペア公式戦成績</h3>{table(stats.pairs)}</section>
-    </div>
-  </Card>;
 }

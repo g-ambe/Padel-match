@@ -6,7 +6,7 @@ import { Card } from "@/components/ui";
 import { createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type OfficialEventRow = { id: string; club_id: string; title: string; event_date: string | null; status: string; share_enabled?: boolean | null; share_token?: string | null };
+type OfficialEventRow = { id: string; club_id: string; title: string; event_date: string | null; status: string; is_deleted?: boolean | null; share_enabled?: boolean | null; share_token?: string | null };
 type OfficialEvent = OfficialEventRow & { clubName: string };
 
 const missingColumn = (error: any, column: string) =>
@@ -23,8 +23,8 @@ const logOfficialEventListError = (error: any) => {
 
 async function fetchOfficialEvents(supabase: ReturnType<typeof getSupabaseClient>, clubIds: string[], clubNameById: Map<string, string>) {
   if (!supabase || !clubIds.length) return { data: [] as OfficialEvent[], error: null as any };
-  const run = async (select: string) => await supabase.from("official_events").select(select).in("club_id", clubIds).order("created_at", { ascending: false });
-  let { data, error } = await run("id,club_id,title,event_date,status,share_enabled,share_token");
+  const run = async (select: string) => await supabase.from("official_events").select(select).in("club_id", clubIds).eq("is_deleted", false).order("created_at", { ascending: false });
+  let { data, error } = await run("id,club_id,title,event_date,status,is_deleted,share_enabled,share_token");
   if (error && (missingColumn(error, "share_enabled") || missingColumn(error, "share_token"))) {
     ({ data, error } = await run("id,club_id,title,event_date,status"));
   }

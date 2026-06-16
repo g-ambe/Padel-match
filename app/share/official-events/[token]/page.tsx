@@ -6,7 +6,7 @@ import { Card } from "@/components/ui";
 import { buildOfficialStats } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type OfficialEvent = { id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; share_enabled: boolean | null; share_token: string | null; club_id: string; clubs?: { name: string } | null };
+type OfficialEvent = { id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; is_deleted?: boolean | null; share_enabled: boolean | null; share_token: string | null; club_id: string; clubs?: { name: string } | null };
 type OfficialOpponent = { id: string; opponent_team_name: string; memo: string | null };
 type OfficialMatch = {
   id: string; official_opponent_id: string; match_order: number; our_player1_profile_id: string | null; our_player2_profile_id: string | null;
@@ -26,7 +26,7 @@ export default function SharedOfficialEventPage() {
 
   useEffect(() => { void (async () => {
     const supabase = getSupabaseClient(); if (!supabase || !token) return;
-    const { data: eventRow } = await supabase.from("official_events").select("id,title,event_date,description,memo,status,share_enabled,share_token,club_id,clubs(name)").eq("share_token", token).maybeSingle();
+    const { data: eventRow } = await supabase.from("official_events").select("id,title,event_date,description,memo,status,is_deleted,share_enabled,share_token,club_id,clubs(name)").eq("share_token", token).eq("is_deleted", false).maybeSingle();
     const officialEvent = eventRow as unknown as OfficialEvent | null;
     if (!officialEvent || !officialEvent.share_enabled || officialEvent.status !== "closed") return setError("この共有リンクは無効です");
     setEvent(officialEvent);

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
 import { fetchActiveClubMemberParticipants } from "@/lib/event-participants";
 import { buildOfficialStats, createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
@@ -10,7 +10,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 type MemberOption = { playerProfileId: string; displayName: string | null };
 type OfficialOpponent = { id: string; official_event_id: string; opponent_team_name: string; memo: string | null };
-type OfficialEvent = { id: string; club_id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; share_enabled?: boolean | null; share_token?: string | null; clubs?: { name: string } | null };
+type OfficialEvent = { id: string; club_id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; is_deleted?: boolean | null; share_enabled?: boolean | null; share_token?: string | null; clubs?: { name: string } | null };
 type OfficialEventRow = OfficialEvent;
 type ResultValue = "win" | "lose" | "draw" | "undecided";
 type OfficialMatch = {
@@ -47,6 +47,7 @@ const isYoutubeUrl = (value: string) => /^https:\/\/(www\.)?youtube\.com\/watch\
 
 export default function OfficialMatchDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [event, setEvent] = useState<OfficialEvent | null>(null);
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [opponents, setOpponents] = useState<OfficialOpponent[]>([]);
@@ -60,6 +61,10 @@ export default function OfficialMatchDetailPage() {
   const [opponentMemo, setOpponentMemo] = useState("");
   const [matchForms, setMatchForms] = useState<Record<string, MatchForm>>({});
   const [openMatchFormId, setOpenMatchFormId] = useState<string | null>(null);
+  const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
+  const [editingMatchForm, setEditingMatchForm] = useState<MatchForm>(emptyMatchForm());
+  const [showDeleteEventConfirm, setShowDeleteEventConfirm] = useState(false);
+  const [deleteEventChecked, setDeleteEventChecked] = useState(false);
 
   const canManageShare = useMemo(() => {
     if (!event) return false;
@@ -86,7 +91,7 @@ export default function OfficialMatchDetailPage() {
     if (!supabase) return;
     const access = await getOfficialAccess(supabase);
     setIsSuperUser(access.superUser);
-    const { data } = await supabase.from("official_events").select("*,clubs(name)").eq("id", id).maybeSingle();
+    const { data } = await supabase.from("official_events").select("*,clubs(name)").eq("id", id).eq("is_deleted", false).maybeSingle();
     const eventRow = data as unknown as OfficialEventRow | null;
     if (!eventRow || (!access.superUser && !access.groups.some((group) => group.id === eventRow.club_id))) {
       setError("この操作を行う権限がありません");
@@ -123,13 +128,22 @@ export default function OfficialMatchDetailPage() {
     });
   };
 
+  const updateEditingMatchForm = (patch: Partial<MatchForm>, syncResult = false) => {
+    setEditingMatchForm((prev) => {
+      const next = { ...prev, ...patch };
+      if (syncResult) next.result = autoResult(next.ourScore, next.opponentScore);
+      return next;
+    });
+  };
+
   const validateMatchForm = (form: MatchForm) => {
     const ourPlayers = [form.our1ProfileId || form.our1GuestName.trim(), form.our2ProfileId || form.our2GuestName.trim()].filter(Boolean);
     if (ourPlayers.length === 2 && ourPlayers[0] === ourPlayers[1]) return "選手1と選手2が重複しています";
     if (form.our1ProfileId && form.our1GuestName.trim()) return "選手1は選択またはゲスト名のどちらかにしてください";
     if (form.our2ProfileId && form.our2GuestName.trim()) return "選手2は選択またはゲスト名のどちらかにしてください";
+    if (form.our1GuestName.trim() && form.our1GuestName.trim() === form.our2GuestName.trim()) return "ゲスト名が重複しています";
     if (form.opponent1Name.trim() && form.opponent1Name.trim() === form.opponent2Name.trim()) return "相手選手1と相手選手2が同一です";
-    if ((form.ourScore && !Number.isInteger(Number(form.ourScore))) || (form.opponentScore && !Number.isInteger(Number(form.opponentScore)))) return "スコアは整数で入力してください";
+    if ((form.ourScore && (!Number.isInteger(Number(form.ourScore)) || Number(form.ourScore) < 0)) || (form.opponentScore && (!Number.isInteger(Number(form.opponentScore)) || Number(form.opponentScore) < 0))) return "スコアは0以上の整数で入力してください";
     if (form.youtubeUrl.trim() && !isYoutubeUrl(form.youtubeUrl.trim())) return "YouTubeのURLを入力してください";
     return "";
   };
@@ -144,17 +158,72 @@ export default function OfficialMatchDetailPage() {
     const supabase = getSupabaseClient(); if (!supabase) return;
     const { error: insertError } = await supabase.from("official_matches").insert({
       official_event_id: id, official_opponent_id: opponentId, match_order: nextOrder,
-      our_player1_profile_id: form.our1ProfileId || null, our_player2_profile_id: form.our2ProfileId || null,
-      our_player1_guest_name: form.our1GuestName.trim() || null, our_player2_guest_name: form.our2GuestName.trim() || null,
-      opponent_player1_name: form.opponent1Name.trim() || null, opponent_player2_name: form.opponent2Name.trim() || null,
-      our_score: form.ourScore.trim() === "" ? null : Number(form.ourScore), opponent_score: form.opponentScore.trim() === "" ? null : Number(form.opponentScore),
-      result: form.result, score_detail: form.scoreDetail.trim() || null, memo: form.memo.trim() || null, youtube_url: form.youtubeUrl.trim() || null
+      ...matchPayload(form)
     });
     if (insertError) return setError("試合カードの追加に失敗しました");
     setMatchForms((prev) => ({ ...prev, [opponentId]: emptyMatchForm() })); setOpenMatchFormId(null); setNotice("試合カードを追加しました");
     await loadDetail();
   };
 
+  const matchToForm = (match: OfficialMatch): MatchForm => ({
+    our1ProfileId: match.our_player1_profile_id ?? "", our2ProfileId: match.our_player2_profile_id ?? "",
+    our1GuestName: match.our_player1_guest_name ?? "", our2GuestName: match.our_player2_guest_name ?? "",
+    opponent1Name: match.opponent_player1_name ?? "", opponent2Name: match.opponent_player2_name ?? "",
+    ourScore: match.our_score === null ? "" : String(match.our_score), opponentScore: match.opponent_score === null ? "" : String(match.opponent_score),
+    result: match.result, scoreDetail: match.score_detail ?? "", memo: match.memo ?? "", youtubeUrl: match.youtube_url ?? ""
+  });
+
+  const matchPayload = (form: MatchForm) => ({
+    our_player1_profile_id: form.our1ProfileId || null, our_player2_profile_id: form.our2ProfileId || null,
+    our_player1_guest_name: form.our1GuestName.trim() || null, our_player2_guest_name: form.our2GuestName.trim() || null,
+    opponent_player1_name: form.opponent1Name.trim() || null, opponent_player2_name: form.opponent2Name.trim() || null,
+    our_score: form.ourScore.trim() === "" ? null : Number(form.ourScore), opponent_score: form.opponentScore.trim() === "" ? null : Number(form.opponentScore),
+    result: form.result, score_detail: form.scoreDetail.trim() || null, memo: form.memo.trim() || null, youtube_url: form.youtubeUrl.trim() || null, updated_at: new Date().toISOString()
+  });
+
+  const updateMatch = async () => {
+    setError(""); setNotice("");
+    if (!canEdit || !editingMatchId) return setError("この操作を行う権限がありません");
+    const validation = validateMatchForm(editingMatchForm);
+    if (validation) return setError(validation);
+    const supabase = getSupabaseClient(); if (!supabase) return;
+    const { error: updateError } = await supabase.from("official_matches").update(matchPayload(editingMatchForm)).eq("id", editingMatchId);
+    if (updateError) return setError("試合カードの更新に失敗しました");
+    setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); setNotice("試合カードを更新しました");
+    await loadDetail();
+  };
+
+  const deleteMatch = async (matchId: string) => {
+    setError(""); setNotice("");
+    if (!canEdit) return setError("この操作を行う権限がありません");
+    if (!window.confirm("試合カードを削除しますか？")) return;
+    const supabase = getSupabaseClient(); if (!supabase) return;
+    const { error: deleteError } = await supabase.from("official_matches").delete().eq("id", matchId);
+    if (deleteError) return setError("試合カードの削除に失敗しました");
+    setNotice("試合カードを削除しました");
+    await loadDetail();
+  };
+
+  const updateEventStatus = async (status: "active" | "closed") => {
+    setError(""); setNotice("");
+    if (!canManageShare) return setError("この操作を行う権限がありません");
+    if (!window.confirm(status === "closed" ? "公式試合を終了しますか？" : "公式試合を再開しますか？")) return;
+    const supabase = getSupabaseClient(); if (!supabase) return;
+    const { error: updateError } = await supabase.from("official_events").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+    if (updateError) return setError(status === "closed" ? "公式試合の終了に失敗しました" : "公式試合の再開に失敗しました");
+    setNotice(status === "closed" ? "公式試合を終了しました" : "公式試合を再開しました");
+    setOpenMatchFormId(null); setEditingMatchId(null); await loadDetail();
+  };
+
+  const deleteEvent = async () => {
+    setError(""); setNotice("");
+    if (!canManageShare) return setError("この操作を行う権限がありません");
+    if (!deleteEventChecked) return setError("削除確認にチェックしてください");
+    const supabase = getSupabaseClient(); if (!supabase) return;
+    const { error: updateError } = await supabase.from("official_events").update({ is_deleted: true, deleted_at: new Date().toISOString(), share_enabled: false, share_token: null, updated_at: new Date().toISOString() }).eq("id", id);
+    if (updateError) return setError("公式試合の削除に失敗しました");
+    router.push("/official-matches");
+  };
 
   const createOrRotateShare = async (rotate = false) => {
     setError(""); setNotice("");
@@ -202,6 +271,13 @@ export default function OfficialMatchDetailPage() {
       </Card>
 
       <OfficialStatsCard stats={officialStats} />
+      <Card title="開催操作">
+        <div className="space-y-3 text-sm">
+          {event.status === "active" && canManageShare && <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => void updateEventStatus("closed")}>公式試合終了</button>}
+          {event.status === "closed" && <><p className="font-bold">公式試合終了済み</p><p className="text-zinc-400">この公式試合は終了しました</p>{canManageShare && <button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={() => void updateEventStatus("active")}>公式試合再開</button>}{canManageShare && (showDeleteEventConfirm ? <div className="space-y-2 rounded-xl border border-red-500/60 p-3"><p>公式試合を削除しますか？</p><label className="flex gap-2 text-xs text-zinc-300"><input type="checkbox" checked={deleteEventChecked} onChange={(e) => setDeleteEventChecked(e.target.checked)} />削除すると元に戻せません。問題ない場合はチェックしてください</label><div className="flex gap-2"><button className="w-1/2 rounded bg-red-600 py-2 font-bold" onClick={() => void deleteEvent()}>公式試合削除</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => { setShowDeleteEventConfirm(false); setDeleteEventChecked(false); }}>キャンセル</button></div></div> : <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => setShowDeleteEventConfirm(true)}>公式試合削除</button>)}</>}
+          {!canManageShare && <p className="text-zinc-400">閲覧のみです</p>}
+        </div>
+      </Card>
       <Card title="共有リンク">
         <div className="space-y-3 text-sm">
           {event.status !== "closed" && <p className="text-zinc-400">終了済みの公式試合のみ共有できます</p>}
@@ -226,6 +302,7 @@ export default function OfficialMatchDetailPage() {
                 {opponentMatches(opponent.id).length === 0 && <p className="text-sm text-zinc-400">試合カードはまだ登録されていません</p>}
                 {opponentMatches(opponent.id).map((match) => (
                   <div key={match.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
+                    {editingMatchId === match.id ? <MatchFormView title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
                     <p className="font-bold">第{match.match_order}試合</p>
                     <p className="mt-1">{memberName(match.our_player1_profile_id, match.our_player1_guest_name)} / {memberName(match.our_player2_profile_id, match.our_player2_guest_name)} vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p>
                     <p className="mt-1">スコア: {match.our_score ?? "未入力"} - {match.opponent_score ?? "未入力"}</p>
@@ -233,10 +310,12 @@ export default function OfficialMatchDetailPage() {
                     {match.score_detail && <p className="whitespace-pre-wrap">詳細スコア: {match.score_detail}</p>}
                     {match.memo && <p className="whitespace-pre-wrap">メモ: {match.memo}</p>}
                     {match.youtube_url && <a className="mt-1 inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>}
+                    {canEdit && <div className="mt-3 grid grid-cols-2 gap-2"><button className="rounded-xl border border-zinc-500 py-2 text-xs font-bold" onClick={() => { setEditingMatchId(match.id); setEditingMatchForm(matchToForm(match)); setOpenMatchFormId(null); }}>試合カードを編集</button><button className="rounded-xl border border-red-500/70 py-2 text-xs font-bold text-red-200" onClick={() => void deleteMatch(match.id)}>試合カードを削除</button></div>}
+                    </>}
                   </div>
                 ))}
               </div>
-              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
+              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView title="試合カードを追加" members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
             </section>
           ))}
           {canEdit && (showOpponentForm ? <div className="space-y-2 rounded-2xl border border-zinc-700 p-3"><input className="w-full rounded bg-zinc-800 p-2" placeholder="相手チーム名" value={opponentName} onChange={(e) => setOpponentName(e.target.value)} /><textarea className="w-full rounded bg-zinc-800 p-2" placeholder="メモ" value={opponentMemo} onChange={(e) => setOpponentMemo(e.target.value)} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-black" onClick={() => void addOpponent()}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => setShowOpponentForm(false)}>キャンセル</button></div></div> : <ActionButton onClick={() => setShowOpponentForm(true)}>対戦相手を追加</ActionButton>)}
@@ -247,9 +326,9 @@ export default function OfficialMatchDetailPage() {
   );
 }
 
-function MatchFormView({ members, form, onChange, onSave, onCancel }: { members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
+function MatchFormView({ title, members, form, onChange, onSave, onCancel }: { title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
   const input = "w-full rounded bg-zinc-800 p-2 text-sm";
-  return <div className="space-y-3 rounded-2xl border border-zinc-700 p-3"><h4 className="font-bold">試合カードを追加</h4><p className="text-xs text-zinc-400">自チーム</p>{[1,2].map((n) => <div key={n} className="grid grid-cols-1 gap-2"><label className="text-xs">選手{n}</label><select className={input} value={n === 1 ? form.our1ProfileId : form.our2ProfileId} onChange={(e) => onChange(n === 1 ? { our1ProfileId: e.target.value } : { our2ProfileId: e.target.value })}><option value="">グループメンバーから選択</option>{members.map((member) => <option key={member.playerProfileId} value={member.playerProfileId}>{member.displayName ?? "名称未設定"}</option>)}</select><input className={input} placeholder="ゲスト名" value={n === 1 ? form.our1GuestName : form.our2GuestName} onChange={(e) => onChange(n === 1 ? { our1GuestName: e.target.value } : { our2GuestName: e.target.value })} /></div>)}<p className="text-xs text-zinc-400">相手チーム</p><input className={input} placeholder="選手1" value={form.opponent1Name} onChange={(e) => onChange({ opponent1Name: e.target.value })} /><input className={input} placeholder="選手2" value={form.opponent2Name} onChange={(e) => onChange({ opponent2Name: e.target.value })} /><p className="text-xs text-zinc-400">スコア</p><div className="grid grid-cols-2 gap-2"><input className={input} inputMode="numeric" placeholder="自チーム得点" value={form.ourScore} onChange={(e) => onChange({ ourScore: e.target.value }, true)} /><input className={input} inputMode="numeric" placeholder="相手チーム得点" value={form.opponentScore} onChange={(e) => onChange({ opponentScore: e.target.value }, true)} /></div><select className={input} value={form.result} onChange={(e) => onChange({ result: e.target.value as ResultValue })}><option value="win">勝ち</option><option value="lose">負け</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><p className="text-xs text-zinc-400">詳細</p><input className={input} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e) => onChange({ scoreDetail: e.target.value })} /><textarea className={input} placeholder="メモ" value={form.memo} onChange={(e) => onChange({ memo: e.target.value })} /><input className={input} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e) => onChange({ youtubeUrl: e.target.value })} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={onCancel}>キャンセル</button></div></div>;
+  return <div className="space-y-3 rounded-2xl border border-zinc-700 p-3"><h4 className="font-bold">{title}</h4><p className="text-xs text-zinc-400">自チーム</p>{[1,2].map((n) => <div key={n} className="grid grid-cols-1 gap-2"><label className="text-xs">選手{n}</label><select className={input} value={n === 1 ? form.our1ProfileId : form.our2ProfileId} onChange={(e) => onChange(n === 1 ? { our1ProfileId: e.target.value } : { our2ProfileId: e.target.value })}><option value="">グループメンバーから選択</option>{members.map((member) => <option key={member.playerProfileId} value={member.playerProfileId}>{member.displayName ?? "名称未設定"}</option>)}</select><input className={input} placeholder="ゲスト名" value={n === 1 ? form.our1GuestName : form.our2GuestName} onChange={(e) => onChange(n === 1 ? { our1GuestName: e.target.value } : { our2GuestName: e.target.value })} /></div>)}<p className="text-xs text-zinc-400">相手チーム</p><input className={input} placeholder="選手1" value={form.opponent1Name} onChange={(e) => onChange({ opponent1Name: e.target.value })} /><input className={input} placeholder="選手2" value={form.opponent2Name} onChange={(e) => onChange({ opponent2Name: e.target.value })} /><p className="text-xs text-zinc-400">スコア</p><div className="grid grid-cols-2 gap-2"><input className={input} inputMode="numeric" placeholder="自チーム得点" value={form.ourScore} onChange={(e) => onChange({ ourScore: e.target.value }, true)} /><input className={input} inputMode="numeric" placeholder="相手チーム得点" value={form.opponentScore} onChange={(e) => onChange({ opponentScore: e.target.value }, true)} /></div><select className={input} value={form.result} onChange={(e) => onChange({ result: e.target.value as ResultValue })}><option value="win">勝ち</option><option value="lose">負け</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><p className="text-xs text-zinc-400">詳細</p><input className={input} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e) => onChange({ scoreDetail: e.target.value })} /><textarea className={input} placeholder="メモ" value={form.memo} onChange={(e) => onChange({ memo: e.target.value })} /><input className={input} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e) => onChange({ youtubeUrl: e.target.value })} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={onCancel}>キャンセル</button></div></div>;
 }
 
 

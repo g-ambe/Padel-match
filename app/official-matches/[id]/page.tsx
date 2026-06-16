@@ -300,9 +300,11 @@ export default function OfficialMatchDetailPage() {
               <div className="space-y-3">
                 <h4 className="text-sm font-bold">試合カード</h4>
                 {opponentMatches(opponent.id).length === 0 && <p className="text-sm text-zinc-400">試合カードはまだ登録されていません</p>}
-                {opponentMatches(opponent.id).map((match) => (
-                  <div key={match.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
-                    {editingMatchId === match.id ? <MatchFormView title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
+                {opponentMatches(opponent.id).map((match) => {
+                  const isEditing = editingMatchId === match.id;
+                  return (
+                  <div key={match.id} className={isEditing ? "text-sm" : "rounded-xl bg-zinc-800 p-3 text-sm"}>
+                    {isEditing ? <MatchFormView title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
                     <p className="font-bold">第{match.match_order}試合</p>
                     <p className="mt-1">{memberName(match.our_player1_profile_id, match.our_player1_guest_name)} / {memberName(match.our_player2_profile_id, match.our_player2_guest_name)} vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p>
                     <p className="mt-1">スコア: {match.our_score ?? "未入力"} - {match.opponent_score ?? "未入力"}</p>
@@ -313,7 +315,8 @@ export default function OfficialMatchDetailPage() {
                     {canEdit && <div className="mt-3 grid grid-cols-2 gap-2"><button className="rounded-xl border border-zinc-500 py-2 text-xs font-bold" onClick={() => { setEditingMatchId(match.id); setEditingMatchForm(matchToForm(match)); setOpenMatchFormId(null); }}>試合カードを編集</button><button className="rounded-xl border border-red-500/70 py-2 text-xs font-bold text-red-200" onClick={() => void deleteMatch(match.id)}>試合カードを削除</button></div>}
                     </>}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               {canEdit && (openMatchFormId === opponent.id ? <MatchFormView title="試合カードを追加" members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
             </section>
@@ -327,8 +330,73 @@ export default function OfficialMatchDetailPage() {
 }
 
 function MatchFormView({ title, members, form, onChange, onSave, onCancel }: { title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
-  const input = "w-full rounded bg-zinc-800 p-2 text-sm";
-  return <div className="space-y-3 rounded-2xl border border-zinc-700 p-3"><h4 className="font-bold">{title}</h4><p className="text-xs text-zinc-400">自チーム</p>{[1,2].map((n) => <div key={n} className="grid grid-cols-1 gap-2"><label className="text-xs">選手{n}</label><select className={input} value={n === 1 ? form.our1ProfileId : form.our2ProfileId} onChange={(e) => onChange(n === 1 ? { our1ProfileId: e.target.value } : { our2ProfileId: e.target.value })}><option value="">グループメンバーから選択</option>{members.map((member) => <option key={member.playerProfileId} value={member.playerProfileId}>{member.displayName ?? "名称未設定"}</option>)}</select><input className={input} placeholder="ゲスト名" value={n === 1 ? form.our1GuestName : form.our2GuestName} onChange={(e) => onChange(n === 1 ? { our1GuestName: e.target.value } : { our2GuestName: e.target.value })} /></div>)}<p className="text-xs text-zinc-400">相手チーム</p><input className={input} placeholder="選手1" value={form.opponent1Name} onChange={(e) => onChange({ opponent1Name: e.target.value })} /><input className={input} placeholder="選手2" value={form.opponent2Name} onChange={(e) => onChange({ opponent2Name: e.target.value })} /><p className="text-xs text-zinc-400">スコア</p><div className="grid grid-cols-2 gap-2"><input className={input} inputMode="numeric" placeholder="自チーム得点" value={form.ourScore} onChange={(e) => onChange({ ourScore: e.target.value }, true)} /><input className={input} inputMode="numeric" placeholder="相手チーム得点" value={form.opponentScore} onChange={(e) => onChange({ opponentScore: e.target.value }, true)} /></div><select className={input} value={form.result} onChange={(e) => onChange({ result: e.target.value as ResultValue })}><option value="win">勝ち</option><option value="lose">負け</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><p className="text-xs text-zinc-400">詳細</p><input className={input} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e) => onChange({ scoreDetail: e.target.value })} /><textarea className={input} placeholder="メモ" value={form.memo} onChange={(e) => onChange({ memo: e.target.value })} /><input className={input} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e) => onChange({ youtubeUrl: e.target.value })} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={onCancel}>キャンセル</button></div></div>;
+  const fieldClass = "w-full rounded-xl border border-zinc-700 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-accent";
+  const labelClass = "text-xs font-bold text-zinc-300";
+  const sectionClass = "space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-3";
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-zinc-700 bg-zinc-900/80 p-4 shadow-lg shadow-black/20">
+      <h4 className="text-base font-bold">{title}</h4>
+
+      <section className={sectionClass}>
+        <p className="text-xs font-bold text-zinc-400">自チーム</p>
+        {[1, 2].map((n) => (
+          <div key={n} className="space-y-2">
+            <label className={labelClass}>選手{n}</label>
+            <select className={fieldClass} value={n === 1 ? form.our1ProfileId : form.our2ProfileId} onChange={(e) => onChange(n === 1 ? { our1ProfileId: e.target.value } : { our2ProfileId: e.target.value })}>
+              <option value="">グループメンバーから選択</option>
+              {members.map((member) => <option key={member.playerProfileId} value={member.playerProfileId}>{member.displayName ?? "名称未設定"}</option>)}
+            </select>
+            <input className={fieldClass} placeholder="ゲスト名" value={n === 1 ? form.our1GuestName : form.our2GuestName} onChange={(e) => onChange(n === 1 ? { our1GuestName: e.target.value } : { our2GuestName: e.target.value })} />
+          </div>
+        ))}
+      </section>
+
+      <section className={sectionClass}>
+        <p className="text-xs font-bold text-zinc-400">相手チーム</p>
+        <div className="space-y-2">
+          <label className={labelClass}>相手選手1</label>
+          <input className={fieldClass} placeholder="相手選手1" value={form.opponent1Name} onChange={(e) => onChange({ opponent1Name: e.target.value })} />
+        </div>
+        <div className="space-y-2">
+          <label className={labelClass}>相手選手2</label>
+          <input className={fieldClass} placeholder="相手選手2" value={form.opponent2Name} onChange={(e) => onChange({ opponent2Name: e.target.value })} />
+        </div>
+      </section>
+
+      <section className={sectionClass}>
+        <p className="text-xs font-bold text-zinc-400">スコア</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className={labelClass}>自チーム得点</label>
+            <input className={fieldClass} inputMode="numeric" placeholder="自チーム得点" value={form.ourScore} onChange={(e) => onChange({ ourScore: e.target.value }, true)} />
+          </div>
+          <div className="space-y-2">
+            <label className={labelClass}>相手チーム得点</label>
+            <input className={fieldClass} inputMode="numeric" placeholder="相手チーム得点" value={form.opponentScore} onChange={(e) => onChange({ opponentScore: e.target.value }, true)} />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className={labelClass}>結果</label>
+          <select className={fieldClass} value={form.result} onChange={(e) => onChange({ result: e.target.value as ResultValue })}>
+            <option value="win">勝ち</option><option value="lose">負け</option><option value="draw">引き分け</option><option value="undecided">未定</option>
+          </select>
+        </div>
+      </section>
+
+      <section className={sectionClass}>
+        <p className="text-xs font-bold text-zinc-400">詳細</p>
+        <div className="space-y-2"><label className={labelClass}>詳細スコア</label><input className={fieldClass} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e) => onChange({ scoreDetail: e.target.value })} /></div>
+        <div className="space-y-2"><label className={labelClass}>メモ</label><textarea className={`${fieldClass} min-h-24`} placeholder="メモ" value={form.memo} onChange={(e) => onChange({ memo: e.target.value })} /></div>
+        <div className="space-y-2"><label className={labelClass}>YouTubeリンク</label><input className={fieldClass} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e) => onChange({ youtubeUrl: e.target.value })} /></div>
+      </section>
+
+      <div className="grid grid-cols-2 gap-2">
+        <button className="rounded-xl bg-accent py-2.5 text-sm font-bold text-black" onClick={onSave}>保存</button>
+        <button className="rounded-xl border border-zinc-500 bg-zinc-900 py-2.5 text-sm font-bold text-zinc-100" onClick={onCancel}>キャンセル</button>
+      </div>
+    </div>
+  );
 }
 
 

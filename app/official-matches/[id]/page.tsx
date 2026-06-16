@@ -60,12 +60,25 @@ export default function OfficialMatchDetailPage() {
   const [matchForms, setMatchForms] = useState<Record<string, MatchForm>>({});
   const [openMatchFormId, setOpenMatchFormId] = useState<string | null>(null);
 
-  const canManageShare = useMemo(() => Boolean(event) && (isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin"), [accessRole, event, isSuperUser]);
-  const shareUrl = useMemo(() => event?.share_enabled && event.share_token ? `${typeof window === "undefined" ? "" : window.location.origin}/share/official-events/${event.share_token}` : "", [event]);
-  const canEdit = useMemo(() => Boolean(event) && event.status !== "closed" && (isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin"), [accessRole, event, isSuperUser]);
+  const canManageShare = useMemo(() => {
+    if (!event) return false;
+    return isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin";
+  }, [accessRole, event, isSuperUser]);
+  const shareUrl = useMemo(() => {
+    if (!event?.share_enabled || !event.share_token) return "";
+    const origin = typeof window === "undefined" ? "" : window.location.origin;
+    return `${origin}/share/official-events/${event.share_token}`;
+  }, [event]);
+  const canEdit = useMemo(() => {
+    if (!event) return false;
+    return event.status !== "closed" && (isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin");
+  }, [accessRole, event, isSuperUser]);
   const memberName = (profileId: string | null, guestName: string | null) => guestName || members.find((m) => m.playerProfileId === profileId)?.displayName || "未入力";
   const opponentMatches = (opponentId: string) => matches.filter((match) => match.official_opponent_id === opponentId).sort((a, b) => a.match_order - b.match_order);
-  const officialStats = useMemo(() => event ? buildOfficialStats({ eventTitle: event.title, groupName: event.clubs?.name ?? "名称未設定", opponents, matches, memberName }) : null, [event, opponents, matches, members]);
+  const officialStats = useMemo(() => {
+    if (!event) return null;
+    return buildOfficialStats({ eventTitle: event.title, groupName: event.clubs?.name ?? "名称未設定", opponents, matches, memberName });
+  }, [event, opponents, matches, members]);
 
   const loadDetail = async () => {
     const supabase = getSupabaseClient();

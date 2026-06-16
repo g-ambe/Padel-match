@@ -6,6 +6,7 @@ import { Card } from "@/components/ui";
 import { buildOfficialStats } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 
+type OfficialEvent = { id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; share_enabled: boolean | null; share_token: string | null; club_id: string; clubs?: { name: string } | null };
 type OfficialOpponent = { id: string; opponent_team_name: string; memo: string | null };
 type OfficialMatch = {
   id: string; official_opponent_id: string; match_order: number; our_player1_profile_id: string | null; our_player2_profile_id: string | null;
@@ -17,7 +18,7 @@ const resultLabel = (result: string) => ({ win: "勝ち", lose: "負け", draw: 
 
 export default function SharedOfficialEventPage() {
   const { token } = useParams<{ token: string }>();
-  const [event, setEvent] = useState<any>(null);
+  const [event, setEvent] = useState<OfficialEvent | null>(null);
   const [opponents, setOpponents] = useState<OfficialOpponent[]>([]);
   const [matches, setMatches] = useState<OfficialMatch[]>([]);
   const [names, setNames] = useState<Map<string, string>>(new Map());
@@ -27,7 +28,7 @@ export default function SharedOfficialEventPage() {
     const supabase = getSupabaseClient(); if (!supabase || !token) return;
     const { data: eventRow } = await supabase.from("official_events").select("id,title,event_date,description,memo,status,share_enabled,share_token,club_id,clubs(name)").eq("share_token", token).maybeSingle();
     if (!eventRow || !eventRow.share_enabled || eventRow.status !== "closed") return setError("この共有リンクは無効です");
-    setEvent(eventRow);
+    setEvent(eventRow as unknown as OfficialEvent);
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,opponent_team_name,memo").eq("official_event_id", eventRow.id).order("created_at");
     const { data: matchRows } = await supabase.from("official_matches").select("id,official_opponent_id,match_order,our_player1_profile_id,our_player2_profile_id,our_player1_guest_name,our_player2_guest_name,opponent_player1_name,opponent_player2_name,our_score,opponent_score,result,score_detail,memo,youtube_url").eq("official_event_id", eventRow.id).order("match_order");
     const rows = (matchRows ?? []) as OfficialMatch[];
@@ -39,7 +40,10 @@ export default function SharedOfficialEventPage() {
   })(); }, [token]);
 
   const memberName = (profileId: string | null, guestName: string | null) => guestName || (profileId ? names.get(profileId) : null) || "未入力";
-  const stats = useMemo(() => event ? buildOfficialStats({ eventTitle: event.title, groupName: event.clubs?.name ?? "名称未設定", opponents, matches, memberName }) : null, [event, opponents, matches, names]);
+  const stats = useMemo(() => {
+    if (!event) return null;
+    return buildOfficialStats({ eventTitle: event.title, groupName: event.clubs?.name ?? "名称未設定", opponents, matches, memberName });
+  }, [event, opponents, matches, names]);
   const opponentMatches = (opponentId: string) => matches.filter((match) => match.official_opponent_id === opponentId).sort((a, b) => a.match_order - b.match_order);
 
   if (error) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100"><p className="text-sm text-red-400">{error}</p></main>;

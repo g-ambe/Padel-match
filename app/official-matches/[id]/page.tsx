@@ -14,7 +14,7 @@ type OfficialEvent = { id: string; club_id: string; title: string; event_date: s
 type OfficialEventRow = OfficialEvent;
 type ResultValue = "win" | "lose" | "draw" | "undecided";
 type OfficialMatch = {
-  id: string; official_opponent_id: string; match_order: number;
+  id: string; official_opponent_id: string; match_order: number; created_at?: string | null;
   our_player1_profile_id: string | null; our_player2_profile_id: string | null;
   our_player1_guest_name: string | null; our_player2_guest_name: string | null;
   opponent_player1_name: string | null; opponent_player2_name: string | null;
@@ -71,7 +71,7 @@ export default function OfficialMatchDetailPage() {
     return isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin";
   }, [accessRole, event, isSuperUser]);
   const shareUrl = useMemo(() => {
-    if (!event?.share_enabled || !event.share_token) return "";
+    if (event?.status !== "closed" || !event.share_enabled || !event.share_token) return "";
     const origin = typeof window === "undefined" ? "" : window.location.origin;
     return `${origin}/share/official-events/${event.share_token}`;
   }, [event]);
@@ -80,7 +80,9 @@ export default function OfficialMatchDetailPage() {
     return event.status !== "closed" && (isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin");
   }, [accessRole, event, isSuperUser]);
   const memberName = (profileId: string | null, guestName: string | null) => guestName || members.find((m) => m.playerProfileId === profileId)?.displayName || "未入力";
-  const opponentMatches = (opponentId: string) => matches.filter((match) => match.official_opponent_id === opponentId).sort((a, b) => a.match_order - b.match_order);
+  const opponentMatches = (opponentId: string) => matches
+    .filter((match) => match.official_opponent_id === opponentId)
+    .sort((a, b) => a.match_order - b.match_order || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
   const officialStats = useMemo(() => {
     if (!event) return null;
     return buildOfficialStats({ eventTitle: event.title, groupName: event.clubs?.name ?? "名称未設定", opponents, matches, memberName });
@@ -103,7 +105,7 @@ export default function OfficialMatchDetailPage() {
     setMembers(await fetchActiveClubMemberParticipants(supabase, eventRow.club_id));
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,official_event_id,opponent_team_name,memo").eq("official_event_id", id).order("created_at");
     setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
-    const { data: matchRows } = await supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order");
+    const { data: matchRows } = await supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
     setMatches((matchRows ?? []) as unknown as OfficialMatch[]);
   };
 
@@ -278,19 +280,18 @@ export default function OfficialMatchDetailPage() {
           {!canManageShare && <p className="text-zinc-400">閲覧のみです</p>}
         </div>
       </Card>
-      <Card title="共有リンク">
+      {event.status === "closed" && <Card title="共有リンク">
         <div className="space-y-3 text-sm">
-          {event.status !== "closed" && <p className="text-zinc-400">終了済みの公式試合のみ共有できます</p>}
-          {event.status === "closed" && !shareUrl && <p className="text-zinc-400">この公式試合は共有されていません</p>}
+          {!shareUrl && <p className="text-zinc-400">この公式試合は共有されていません</p>}
           {shareUrl && <p className="break-all rounded-xl bg-zinc-800 p-3 text-xs">{shareUrl}</p>}
           <div className="grid grid-cols-1 gap-2">
-            {event.status === "closed" && !shareUrl && canManageShare && <button className="rounded-xl bg-accent py-2 font-bold text-black" onClick={() => void createOrRotateShare(false)}>共有リンクを作成</button>}
+            {!shareUrl && canManageShare && <button className="rounded-xl bg-accent py-2 font-bold text-black" onClick={() => void createOrRotateShare(false)}>共有リンクを作成</button>}
             {shareUrl && <button className="rounded-xl border border-zinc-500 py-2 font-bold" onClick={() => void copyShare()}>共有リンクをコピー</button>}
             {shareUrl && canManageShare && <button className="rounded-xl border border-zinc-500 py-2 font-bold" onClick={() => void createOrRotateShare(true)}>共有リンクを再発行</button>}
             {shareUrl && canManageShare && <button className="rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => void stopShare()}>共有を停止</button>}
           </div>
         </div>
-      </Card>
+      </Card>}
       <Card title="対戦相手">
         <div className="space-y-4">
           {opponents.length === 0 && <p className="text-sm text-zinc-400">対戦相手はまだ登録されていません</p>}
@@ -300,12 +301,12 @@ export default function OfficialMatchDetailPage() {
               <div className="space-y-3">
                 <h4 className="text-sm font-bold">試合カード</h4>
                 {opponentMatches(opponent.id).length === 0 && <p className="text-sm text-zinc-400">試合カードはまだ登録されていません</p>}
-                {opponentMatches(opponent.id).map((match) => {
+                {opponentMatches(opponent.id).map((match, index) => {
                   const isEditing = editingMatchId === match.id;
                   return (
                   <div key={match.id} className={isEditing ? "text-sm" : "rounded-xl bg-zinc-800 p-3 text-sm"}>
                     {isEditing ? <MatchFormView title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
-                    <p className="font-bold">第{match.match_order}試合</p>
+                    <p className="font-bold">第{index + 1}試合</p>
                     <p className="mt-1">{memberName(match.our_player1_profile_id, match.our_player1_guest_name)} / {memberName(match.our_player2_profile_id, match.our_player2_guest_name)} vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p>
                     <p className="mt-1">スコア: {match.our_score ?? "未入力"} - {match.opponent_score ?? "未入力"}</p>
                     <p>結果: {resultLabel(match.result)}</p>

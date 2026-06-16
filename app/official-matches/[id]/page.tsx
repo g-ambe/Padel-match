@@ -11,6 +11,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 type MemberOption = { playerProfileId: string; displayName: string | null };
 type OfficialOpponent = { id: string; official_event_id: string; opponent_team_name: string; memo: string | null };
 type OfficialEvent = { id: string; club_id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; share_enabled?: boolean | null; share_token?: string | null; clubs?: { name: string } | null };
+type OfficialEventRow = OfficialEvent;
 type ResultValue = "win" | "lose" | "draw" | "undecided";
 type OfficialMatch = {
   id: string; official_opponent_id: string; match_order: number;
@@ -86,18 +87,19 @@ export default function OfficialMatchDetailPage() {
     const access = await getOfficialAccess(supabase);
     setIsSuperUser(access.superUser);
     const { data } = await supabase.from("official_events").select("*,clubs(name)").eq("id", id).maybeSingle();
-    if (!data || (!access.superUser && !access.groups.some((group) => group.id === data.club_id))) {
+    const eventRow = data as unknown as OfficialEventRow | null;
+    if (!eventRow || (!access.superUser && !access.groups.some((group) => group.id === eventRow.club_id))) {
       setError("この操作を行う権限がありません");
       return;
     }
-    const group = access.groups.find((g) => g.id === data.club_id);
+    const group = access.groups.find((g) => g.id === eventRow.club_id);
     setAccessRole(group?.role ?? "member");
-    setEvent(data);
-    setMembers(await fetchActiveClubMemberParticipants(supabase, data.club_id));
+    setEvent(eventRow);
+    setMembers(await fetchActiveClubMemberParticipants(supabase, eventRow.club_id));
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,official_event_id,opponent_team_name,memo").eq("official_event_id", id).order("created_at");
-    setOpponents((opponentRows ?? []) as OfficialOpponent[]);
+    setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
     const { data: matchRows } = await supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order");
-    setMatches((matchRows ?? []) as OfficialMatch[]);
+    setMatches((matchRows ?? []) as unknown as OfficialMatch[]);
   };
 
   useEffect(() => { void loadDetail(); }, [id]);

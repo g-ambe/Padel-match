@@ -27,15 +27,16 @@ export default function SharedOfficialEventPage() {
   useEffect(() => { void (async () => {
     const supabase = getSupabaseClient(); if (!supabase || !token) return;
     const { data: eventRow } = await supabase.from("official_events").select("id,title,event_date,description,memo,status,share_enabled,share_token,club_id,clubs(name)").eq("share_token", token).maybeSingle();
-    if (!eventRow || !eventRow.share_enabled || eventRow.status !== "closed") return setError("この共有リンクは無効です");
-    setEvent(eventRow as unknown as OfficialEvent);
-    const { data: opponentRows } = await supabase.from("official_opponents").select("id,opponent_team_name,memo").eq("official_event_id", eventRow.id).order("created_at");
-    const { data: matchRows } = await supabase.from("official_matches").select("id,official_opponent_id,match_order,our_player1_profile_id,our_player2_profile_id,our_player1_guest_name,our_player2_guest_name,opponent_player1_name,opponent_player2_name,our_score,opponent_score,result,score_detail,memo,youtube_url").eq("official_event_id", eventRow.id).order("match_order");
-    const rows = (matchRows ?? []) as OfficialMatch[];
+    const officialEvent = eventRow as unknown as OfficialEvent | null;
+    if (!officialEvent || !officialEvent.share_enabled || officialEvent.status !== "closed") return setError("この共有リンクは無効です");
+    setEvent(officialEvent);
+    const { data: opponentRows } = await supabase.from("official_opponents").select("id,opponent_team_name,memo").eq("official_event_id", officialEvent.id).order("created_at");
+    const { data: matchRows } = await supabase.from("official_matches").select("id,official_opponent_id,match_order,our_player1_profile_id,our_player2_profile_id,our_player1_guest_name,our_player2_guest_name,opponent_player1_name,opponent_player2_name,our_score,opponent_score,result,score_detail,memo,youtube_url").eq("official_event_id", officialEvent.id).order("match_order");
+    const rows = (matchRows ?? []) as unknown as OfficialMatch[];
     const profileIds = [...new Set(rows.flatMap((match) => [match.our_player1_profile_id, match.our_player2_profile_id]).filter(Boolean) as string[])];
     const { data: profileRows } = profileIds.length ? await supabase.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[] };
     setNames(new Map((profileRows ?? []).map((profile: any) => [profile.id, profile.display_name ?? "名称未設定"])));
-    setOpponents((opponentRows ?? []) as OfficialOpponent[]);
+    setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
     setMatches(rows);
   })(); }, [token]);
 

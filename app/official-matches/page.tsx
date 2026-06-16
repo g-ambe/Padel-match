@@ -6,7 +6,8 @@ import { Card } from "@/components/ui";
 import { createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 
-type OfficialEvent = { id: string; club_id: string; clubName: string; title: string; event_date: string | null; status: string; share_enabled?: boolean | null; share_token?: string | null };
+type OfficialEventRow = { id: string; club_id: string; title: string; event_date: string | null; status: string; share_enabled?: boolean | null; share_token?: string | null };
+type OfficialEvent = OfficialEventRow & { clubName: string };
 
 const missingColumn = (error: any, column: string) =>
   error?.code === "42703" || `${error?.message ?? ""} ${error?.details ?? ""}`.includes(column);
@@ -28,8 +29,9 @@ async function fetchOfficialEvents(supabase: ReturnType<typeof getSupabaseClient
     ({ data, error } = await run("id,club_id,title,event_date,status"));
   }
   if (error) return { data: [] as OfficialEvent[], error };
+  const rows = (data ?? []) as unknown as OfficialEventRow[];
   return {
-    data: ((data ?? []) as Omit<OfficialEvent, "clubName">[]).map((event) => ({ ...event, clubName: clubNameById.get(event.club_id) ?? "名称未設定" })),
+    data: rows.map((event) => ({ ...event, clubName: clubNameById.get(event.club_id) ?? "名称未設定" })),
     error: null as any
   };
 }

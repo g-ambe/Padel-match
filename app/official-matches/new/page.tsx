@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { OfficialMatchList } from "@/components/official-match-list";
 import { ActionButton, Card } from "@/components/ui";
 import { getOfficialAccess, type OfficialGroup } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -47,8 +48,8 @@ export default function NewOfficialMatchPage() {
   };
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-md p-4">
-      <h1 className="mb-4 text-xl font-bold">公式試合を作成</h1>
+    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
+      <h1 className="text-xl font-bold">公式試合</h1>
       <Card title="基本情報">
         <form className="space-y-3" onSubmit={createOfficialMatch}>
           <label className="block text-sm text-zinc-300">大会/リーグ名<input className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
@@ -60,6 +61,7 @@ export default function NewOfficialMatchPage() {
           <ActionButton disabled={!groups.length || loading}>{loading ? "作成中..." : "作成"}</ActionButton>
         </form>
       </Card>
+      <OfficialMatchList />
     </main>
   );
 }

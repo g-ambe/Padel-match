@@ -106,3 +106,130 @@ create policy "official_events_insert"
       )
     )
   );
+
+-- Allow creators to update/delete their own no-group rows while keeping group-admin update access.
+drop policy if exists "events_update_creator_or_group_admin" on events;
+create policy "events_update_creator_or_group_admin"
+  on events for update to authenticated
+  using (
+    exists (select 1 from app_admins where profile_id = auth.uid() and is_active = true)
+    or (club_id is null and created_by_auth_user_id = auth.uid())
+    or exists (
+      select 1 from club_members cm
+      join player_profiles pp on pp.id = cm.player_profile_id
+      where cm.club_id = events.club_id
+        and pp.linked_auth_user_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+    or exists (
+      select 1 from club_members cm
+      where cm.club_id = events.club_id
+        and cm.profile_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+  )
+  with check (
+    exists (select 1 from app_admins where profile_id = auth.uid() and is_active = true)
+    or (club_id is null and created_by_auth_user_id = auth.uid())
+    or exists (
+      select 1 from club_members cm
+      join player_profiles pp on pp.id = cm.player_profile_id
+      where cm.club_id = events.club_id
+        and pp.linked_auth_user_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+    or exists (
+      select 1 from club_members cm
+      where cm.club_id = events.club_id
+        and cm.profile_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+  );
+
+drop policy if exists "official_events_update_operations" on official_events;
+create policy "official_events_update_operations"
+  on official_events for update to authenticated
+  using (
+    exists (select 1 from app_admins where profile_id = auth.uid() and is_active = true)
+    or (club_id is null and created_by_auth_user_id = auth.uid())
+    or exists (
+      select 1 from club_members cm
+      join player_profiles pp on pp.id = cm.player_profile_id
+      where cm.club_id = official_events.club_id
+        and pp.linked_auth_user_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+    or exists (
+      select 1 from club_members cm
+      where cm.club_id = official_events.club_id
+        and cm.profile_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+  )
+  with check (
+    exists (select 1 from app_admins where profile_id = auth.uid() and is_active = true)
+    or (club_id is null and created_by_auth_user_id = auth.uid())
+    or exists (
+      select 1 from club_members cm
+      join player_profiles pp on pp.id = cm.player_profile_id
+      where cm.club_id = official_events.club_id
+        and pp.linked_auth_user_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+    or exists (
+      select 1 from club_members cm
+      where cm.club_id = official_events.club_id
+        and cm.profile_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+  );
+
+drop policy if exists "official_events_update_share" on official_events;
+create policy "official_events_update_share"
+  on official_events for update to authenticated
+  using (
+    exists (select 1 from app_admins where profile_id = auth.uid() and is_active = true)
+    or (club_id is null and created_by_auth_user_id = auth.uid())
+    or exists (
+      select 1 from club_members cm
+      join player_profiles pp on pp.id = cm.player_profile_id
+      where cm.club_id = official_events.club_id
+        and pp.linked_auth_user_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+    or exists (
+      select 1 from club_members cm
+      where cm.club_id = official_events.club_id
+        and cm.profile_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+  )
+  with check (
+    exists (select 1 from app_admins where profile_id = auth.uid() and is_active = true)
+    or (club_id is null and created_by_auth_user_id = auth.uid())
+    or exists (
+      select 1 from club_members cm
+      join player_profiles pp on pp.id = cm.player_profile_id
+      where cm.club_id = official_events.club_id
+        and pp.linked_auth_user_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+    or exists (
+      select 1 from club_members cm
+      where cm.club_id = official_events.club_id
+        and cm.profile_id = auth.uid()
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+    )
+  );

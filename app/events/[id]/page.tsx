@@ -154,7 +154,7 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
-    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token,event_mode,stats_mode").eq("id", eventId).single();
+    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token,event_mode,stats_mode,created_by_auth_user_id").eq("id", eventId).single();
     if (!event) { setError("イベントが見つかりません"); return; }
     if (event.is_deleted) { setIsDeletedEvent(true); setEventName(event.name ?? "-"); return; }
     setIsDeletedEvent(false);
@@ -171,7 +171,7 @@ export default function EventDetailPage() {
     const uid = userRes.user?.id;
     const { data: adminRow } = uid ? await supabase.from("app_admins").select("id").eq("profile_id", uid).eq("is_active", true).maybeSingle() : { data: null as any };
     const superUser = !!adminRow;
-    let canDelete = superUser;
+    let canDelete = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
     if (!canDelete && uid && event?.club_id) {
       const { data: linkedProfiles } = await supabase
         .from("player_profiles")

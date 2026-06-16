@@ -11,7 +11,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 type MemberOption = { playerProfileId: string; displayName: string | null };
 type OfficialOpponent = { id: string; official_event_id: string; opponent_team_name: string; memo: string | null };
-type OfficialEvent = { id: string; club_id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; is_deleted?: boolean | null; share_enabled?: boolean | null; share_token?: string | null; clubs?: { name: string } | null };
+type OfficialEvent = { id: string; club_id: string | null; created_by_auth_user_id?: string | null; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; is_deleted?: boolean | null; share_enabled?: boolean | null; share_token?: string | null; clubs?: { name: string } | null };
 type OfficialEventRow = OfficialEvent;
 type ResultValue = "win" | "lose" | "draw" | "undecided";
 type OfficialMatch = {
@@ -64,6 +64,7 @@ export default function OfficialMatchDetailPage() {
   const [matches, setMatches] = useState<OfficialMatch[]>([]);
   const [accessRole, setAccessRole] = useState<"main_admin" | "sub_admin" | "member">("member");
   const [isSuperUser, setIsSuperUser] = useState(false);
+  const [isCreator, setIsCreator] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [showOpponentForm, setShowOpponentForm] = useState(false);
@@ -78,8 +79,8 @@ export default function OfficialMatchDetailPage() {
 
   const canManageShare = useMemo(() => {
     if (!event) return false;
-    return isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin";
-  }, [accessRole, event, isSuperUser]);
+    return isSuperUser || isCreator || accessRole === "main_admin" || accessRole === "sub_admin";
+  }, [accessRole, event, isCreator, isSuperUser]);
   const shareUrl = useMemo(() => {
     if (event?.status !== "closed" || !event.share_enabled || !event.share_token) return "";
     const origin = typeof window === "undefined" ? "" : window.location.origin;
@@ -87,8 +88,8 @@ export default function OfficialMatchDetailPage() {
   }, [event]);
   const canEdit = useMemo(() => {
     if (!event) return false;
-    return event.status !== "closed" && (isSuperUser || accessRole === "main_admin" || accessRole === "sub_admin");
-  }, [accessRole, event, isSuperUser]);
+    return event.status !== "closed" && (isSuperUser || isCreator || accessRole === "main_admin" || accessRole === "sub_admin");
+  }, [accessRole, event, isCreator, isSuperUser]);
   const memberName = (profileId: string | null, guestName: string | null) => guestName || members.find((m) => m.playerProfileId === profileId)?.displayName || "未入力";
   const opponentMatches = (opponentId: string) => matches
     .filter((match) => match.official_opponent_id === opponentId)
@@ -105,14 +106,16 @@ export default function OfficialMatchDetailPage() {
     setIsSuperUser(access.superUser);
     const { data } = await supabase.from("official_events").select("*,clubs(name)").eq("id", id).eq("is_deleted", false).maybeSingle();
     const eventRow = data as unknown as OfficialEventRow | null;
-    if (!eventRow || (!access.superUser && !access.groups.some((group) => group.id === eventRow.club_id))) {
+    const creator = !!access.uid && eventRow?.created_by_auth_user_id === access.uid;
+    if (!eventRow || (!access.superUser && !creator && !access.groups.some((group) => group.id === eventRow.club_id))) {
       setError("この操作を行う権限がありません");
       return;
     }
     const group = access.groups.find((g) => g.id === eventRow.club_id);
     setAccessRole(group?.role ?? "member");
+    setIsCreator(creator);
     setEvent(eventRow);
-    setMembers(await fetchActiveClubMemberParticipants(supabase, eventRow.club_id));
+    setMembers(eventRow.club_id ? await fetchActiveClubMemberParticipants(supabase, eventRow.club_id) : []);
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,official_event_id,opponent_team_name,memo").eq("official_event_id", id).order("created_at");
     setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
     const { data: matchRows } = await supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });

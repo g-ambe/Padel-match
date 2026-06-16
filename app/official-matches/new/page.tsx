@@ -25,22 +25,26 @@ export default function NewOfficialMatchPage() {
       const access = await getOfficialAccess(supabase);
       const editableGroups = access.groups.filter((group) => access.superUser || group.role !== "member");
       setGroups(editableGroups);
-      setClubId(editableGroups[0]?.id ?? "");
-      if (!editableGroups.length) setError("この操作を行う権限がありません");
+      setClubId("");
     })();
   }, []);
 
   const createOfficialMatch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!title.trim() || !clubId) return setError("大会/リーグ名と所属グループを入力してください");
+    if (!title.trim()) return setError("大会/リーグ名を入力してください");
     const supabase = getSupabaseClient();
     if (!supabase) return;
     setLoading(true);
     const { data: userResult } = await supabase.auth.getUser();
+    const creatorUserId = userResult.user?.id;
+    if (!creatorUserId) {
+      setLoading(false);
+      return setError("ログイン情報を確認できません");
+    }
     const { data, error: insertError } = await supabase.from("official_events").insert({
-      title: title.trim(), club_id: clubId, event_date: eventDate || null,
+      title: title.trim(), club_id: clubId || null, event_date: eventDate || null,
       description: description.trim() || null, memo: memo.trim() || null,
-      created_by_auth_user_id: userResult.user?.id ?? null
+      created_by_auth_user_id: creatorUserId
     }).select("id").single();
     setLoading(false);
     if (insertError || !data) return setError("公式試合の作成に失敗しました");
@@ -58,7 +62,7 @@ export default function NewOfficialMatchPage() {
           <label className="block text-sm text-zinc-300">説明<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
           <label className="block text-sm text-zinc-300">メモ<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={memo} onChange={(e) => setMemo(e.target.value)} /></label>
           {error && <p className="text-sm text-red-400">{error}</p>}
-          <ActionButton disabled={!groups.length || loading}>{loading ? "作成中..." : "作成"}</ActionButton>
+          <ActionButton disabled={loading}>{loading ? "作成中..." : "作成"}</ActionButton>
         </form>
       </Card>
       <OfficialMatchList />

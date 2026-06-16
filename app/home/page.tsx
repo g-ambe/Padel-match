@@ -10,6 +10,15 @@ type Group = { id: string; name: string };
 type ClubRow = { id?: string | null; name?: string | null; is_active?: boolean | null; is_deleted?: boolean | null };
 type EventRow = { id: string; name: string; court_count: number; club_id: string | null; club_name: string };
 
+const logEventListError = (error: any) => {
+  console.error("events list load failed", {
+    message: error?.message,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint
+  });
+};
+
 export default function HomePage() {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -139,8 +148,9 @@ export default function HomePage() {
       return data ?? [];
     };
 
+    const superUser = await isSuperUser();
     let groupRows: Group[] = [];
-    if (await isSuperUser()) {
+    if (superUser) {
       groupRows = await loadActiveClubs();
     } else {
       const { data: linkedProfiles } = await supabase
@@ -169,18 +179,30 @@ export default function HomePage() {
     setSelectedGroupId((current) => (current && groupRows.some((g) => g.id === current) ? current : groupRows.length === 1 ? groupRows[0].id : ""));
 
     const groupIds = groupRows.map((g) => g.id);
-    if (groupIds.length === 0) {
-      setEvents([]);
-      return;
-    }
-
-    const { data: ev } = await supabase
+    const clubNameById = new Map(groupRows.map((group) => [group.id, group.name]));
+    const eventSelect = "id,name,court_count,club_id,clubs(name)";
+    let eventQuery: any = supabase
       .from("events")
-      .select("id,name,court_count,club_id,clubs(name)")
-      .in("club_id", groupIds)
+      .select(eventSelect)
       .eq("is_deleted", false)
       .order("created_at", { ascending: false })
       .limit(20);
+
+    if (superUser) {
+      // super_user は既存仕様どおり取得可能なイベントを全件表示します。
+    } else if (groupIds.length > 0) {
+      eventQuery = eventQuery.or(`club_id.in.(${groupIds.join(",")}),and(club_id.is.null,created_by_auth_user_id.eq.${userId})`);
+    } else {
+      eventQuery = eventQuery.is("club_id", null).eq("created_by_auth_user_id", userId);
+    }
+
+    const { data: ev, error: eventError } = await eventQuery;
+    if (eventError) {
+      logEventListError(eventError);
+      setError("開催一覧の取得に失敗しました");
+      setEvents([]);
+      return;
+    }
 
     setEvents(
       (ev ?? []).map((e: any) => ({
@@ -188,7 +210,7 @@ export default function HomePage() {
         name: e.name,
         court_count: e.court_count,
         club_id: e.club_id,
-        club_name: e.clubs?.name ?? "グループなし"
+        club_name: e.clubs?.name ?? (e.club_id ? clubNameById.get(e.club_id) ?? "名称未設定" : "グループなし")
       }))
     );
   };
@@ -252,6 +274,14 @@ export default function HomePage() {
       return;
     }
 
+    const { data: userResult } = await supabase.auth.getUser();
+    const creatorUserId = userResult.user?.id;
+    if (!creatorUserId) {
+      setLoading(false);
+      setError("ログイン情報を確認できません");
+      return;
+    }
+
     const { data, error: insertError } = await supabase
       .from("events")
       .insert({
@@ -260,7 +290,8 @@ export default function HomePage() {
         category: "club",
         club_id: selectedGroupId || null,
         event_mode: eventMode,
-        stats_mode: eventMode === "manual" ? "undecided" : "official"
+        stats_mode: eventMode === "manual" ? "undecided" : "official",
+        created_by_auth_user_id: creatorUserId
       })
       .select("id")
       .single();

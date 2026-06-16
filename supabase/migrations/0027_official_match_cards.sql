@@ -38,6 +38,15 @@ create unique index if not exists official_matches_opponent_order_unique on offi
 alter table official_opponents enable row level security;
 alter table official_matches enable row level security;
 
+-- Keep this migration rerunnable for environments where policy creation was partially applied.
+-- club_members.status is intentionally not referenced; active membership is determined by is_active only.
+drop policy if exists "official_opponents_select" on official_opponents;
+drop policy if exists "official_opponents_insert" on official_opponents;
+drop policy if exists "official_opponents_update" on official_opponents;
+drop policy if exists "official_matches_select" on official_matches;
+drop policy if exists "official_matches_insert" on official_matches;
+drop policy if exists "official_matches_update" on official_matches;
+
 create policy "official_opponents_select"
   on official_opponents for select to authenticated
   using (
@@ -50,12 +59,12 @@ create policy "official_opponents_select"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active'
+              and cm.is_active = true
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active'
+              and cm.is_active = true
           )
         )
     )
@@ -73,12 +82,12 @@ create policy "official_opponents_insert"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
         )
     )
@@ -96,12 +105,12 @@ create policy "official_opponents_update"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
         )
     )
@@ -116,12 +125,12 @@ create policy "official_opponents_update"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
         )
     )
@@ -139,12 +148,12 @@ create policy "official_matches_select"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active'
+              and cm.is_active = true
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active'
+              and cm.is_active = true
           )
         )
     )
@@ -165,12 +174,12 @@ create policy "official_matches_insert"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
         )
     )
@@ -188,12 +197,12 @@ create policy "official_matches_update"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
         )
     )
@@ -208,12 +217,12 @@ create policy "official_matches_update"
             select 1 from club_members cm
             join player_profiles pp on pp.id = cm.player_profile_id
             where cm.club_id = oe.club_id and pp.linked_auth_user_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
           or exists (
             select 1 from club_members cm
             where cm.club_id = oe.club_id and cm.profile_id = auth.uid()
-              and cm.is_active = true and cm.status = 'active' and cm.role in ('main_admin','sub_admin')
+              and cm.is_active = true and cm.role in ('main_admin','sub_admin')
           )
         )
     )

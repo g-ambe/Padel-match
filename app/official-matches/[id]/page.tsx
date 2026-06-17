@@ -62,6 +62,7 @@ export default function OfficialMatchDetailPage() {
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [opponents, setOpponents] = useState<OfficialOpponent[]>([]);
   const [matches, setMatches] = useState<OfficialMatch[]>([]);
+  const [videoClickCounts, setVideoClickCounts] = useState<Record<string, number>>({});
   const [accessRole, setAccessRole] = useState<"main_admin" | "sub_admin" | "member">("member");
   const [isSuperUser, setIsSuperUser] = useState(false);
   const [isCreator, setIsCreator] = useState(false);
@@ -90,6 +91,7 @@ export default function OfficialMatchDetailPage() {
     if (!event) return false;
     return event.status !== "closed" && (isSuperUser || isCreator || accessRole === "main_admin" || accessRole === "sub_admin");
   }, [accessRole, event, isCreator, isSuperUser]);
+  const canViewVideoClickCounts = useMemo(() => isSuperUser || accessRole === "main_admin", [accessRole, isSuperUser]);
   const memberName = (profileId: string | null, guestName: string | null) => guestName || members.find((m) => m.playerProfileId === profileId)?.displayName || "未入力";
   const opponentMatches = (opponentId: string) => matches
     .filter((match) => match.official_opponent_id === opponentId)
@@ -112,7 +114,8 @@ export default function OfficialMatchDetailPage() {
       return;
     }
     const group = access.groups.find((g) => g.id === eventRow.club_id);
-    setAccessRole(group?.role ?? "member");
+    const nextAccessRole = group?.role ?? "member";
+    setAccessRole(nextAccessRole);
     setIsCreator(creator);
     setEvent(eventRow);
     setMembers(eventRow.club_id ? await fetchActiveClubMemberParticipants(supabase, eventRow.club_id) : []);
@@ -120,6 +123,17 @@ export default function OfficialMatchDetailPage() {
     setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
     const { data: matchRows } = await supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
     setMatches((matchRows ?? []) as unknown as OfficialMatch[]);
+    if (access.superUser || nextAccessRole === "main_admin") {
+      const { data: clickRows, error: clickError } = await supabase.rpc("get_official_video_click_counts", { p_event_id: id });
+      if (clickError) {
+        console.warn("公式試合動画クリック数の取得に失敗しました", { message: clickError.message, code: clickError.code, details: clickError.details, hint: clickError.hint });
+        setVideoClickCounts({});
+      } else {
+        setVideoClickCounts(Object.fromEntries(((clickRows ?? []) as any[]).map((row) => [row.official_match_id, Number(row.click_count ?? 0)])));
+      }
+    } else {
+      setVideoClickCounts({});
+    }
   };
 
   useEffect(() => { void loadDetail(); }, [id]);
@@ -324,7 +338,7 @@ export default function OfficialMatchDetailPage() {
                     <p>結果: {resultLabel(match.result)}</p>
                     {match.score_detail && <p className="whitespace-pre-wrap">詳細スコア: {match.score_detail}</p>}
                     {match.memo && <p className="whitespace-pre-wrap">メモ: {match.memo}</p>}
-                    {match.youtube_url && <a className="mt-1 inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>}
+                    {match.youtube_url && <div className="mt-1 space-y-1"><a className="inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[match.id] ?? 0}回</p>}</div>}
                     {canEdit && <div className="mt-3 grid grid-cols-2 gap-2"><button className="rounded-xl border border-zinc-500 py-2 text-xs font-bold" onClick={() => { setEditingMatchId(match.id); setEditingMatchForm(matchToForm(match)); setOpenMatchFormId(null); }}>試合カードを編集</button><button className="rounded-xl border border-red-500/70 py-2 text-xs font-bold text-red-200" onClick={() => void deleteMatch(match.id)}>試合カードを削除</button></div>}
                     </>}
                   </div>

@@ -71,11 +71,18 @@ export default function SharedOfficialEventPage() {
   const recordVideoClick = (matchId: string) => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
-    void supabase.rpc("record_official_video_click", {
-      match_id: matchId,
-      user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
-      referrer: typeof document === "undefined" ? null : document.referrer
-    }).then(({ error }) => { if (error) logClickError(error); }).catch(logClickError);
+    void (async () => {
+      try {
+        const { error } = await supabase.rpc("record_official_video_click", {
+          match_id: matchId,
+          user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
+          referrer: typeof document === "undefined" ? null : document.referrer
+        });
+        if (error) logClickError(error);
+      } catch (err) {
+        logClickError(err);
+      }
+    })();
   };
 
   if (error) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100"><p className="text-sm text-red-400">{error}</p></main>;

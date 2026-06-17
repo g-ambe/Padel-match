@@ -59,6 +59,32 @@ export default function SharedOfficialEventPage() {
     .filter((match) => match.official_opponent_id === opponentId)
     .sort((a, b) => a.match_order - b.match_order || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
 
+  const logClickError = (error: any) => {
+    console.warn("公式試合動画クリックの記録に失敗しました", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint
+    });
+  };
+
+  const recordVideoClick = (matchId: string) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    void (async () => {
+      try {
+        const { error } = await supabase.rpc("record_official_video_click", {
+          match_id: matchId,
+          user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
+          referrer: typeof document === "undefined" ? null : document.referrer
+        });
+        if (error) logClickError(error);
+      } catch (err) {
+        logClickError(err);
+      }
+    })();
+  };
+
   if (error) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100"><p className="text-sm text-red-400">{error}</p></main>;
   if (!event) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100">読み込み中...</main>;
 
@@ -76,7 +102,7 @@ export default function SharedOfficialEventPage() {
     <OfficialStatsCard stats={stats} />
     <Card title="戦績"><div className="space-y-4">{opponents.length === 0 ? <p className="text-sm text-zinc-400">戦績はまだ登録されていません</p> : opponents.map((opponent) => {
       const sortedMatches = opponentMatches(opponent.id);
-      return <section key={opponent.id} className="space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/60 p-3"><div><h3 className="font-bold">{event.clubs?.name ?? "自チーム"} vs {opponent.opponent_team_name}</h3><p className="mt-1 text-2xl font-black tracking-tight text-accent">{formatOpponentScore(opponentScore(opponent.id, matches))}</p>{opponent.memo && <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-400">メモ: {opponent.memo}</p>}</div><div className="space-y-3">{sortedMatches.length === 0 && <p className="text-sm text-zinc-400">試合カードはまだ登録されていません</p>}{sortedMatches.map((match, index) => <div key={match.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">第{index + 1}試合</p><p className="mt-1">{memberName(match.our_player1_profile_id, match.our_player1_guest_name)} / {memberName(match.our_player2_profile_id, match.our_player2_guest_name)} vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p><p className="mt-1">スコア: {match.our_score ?? "未入力"} - {match.opponent_score ?? "未入力"}</p><p>結果: {resultLabel(match.result)}</p>{match.score_detail && <p className="whitespace-pre-wrap">詳細スコア: {match.score_detail}</p>}{match.memo && <p className="whitespace-pre-wrap">メモ: {match.memo}</p>}{match.youtube_url && <a className="mt-1 inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>}</div>)}</div></section>;
+      return <section key={opponent.id} className="space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/60 p-3"><div><h3 className="font-bold">{event.clubs?.name ?? "自チーム"} vs {opponent.opponent_team_name}</h3><p className="mt-1 text-2xl font-black tracking-tight text-accent">{formatOpponentScore(opponentScore(opponent.id, matches))}</p>{opponent.memo && <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-400">メモ: {opponent.memo}</p>}</div><div className="space-y-3">{sortedMatches.length === 0 && <p className="text-sm text-zinc-400">試合カードはまだ登録されていません</p>}{sortedMatches.map((match, index) => <div key={match.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">第{index + 1}試合</p><p className="mt-1">{memberName(match.our_player1_profile_id, match.our_player1_guest_name)} / {memberName(match.our_player2_profile_id, match.our_player2_guest_name)} vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p><p className="mt-1">スコア: {match.our_score ?? "未入力"} - {match.opponent_score ?? "未入力"}</p><p>結果: {resultLabel(match.result)}</p>{match.score_detail && <p className="whitespace-pre-wrap">詳細スコア: {match.score_detail}</p>}{match.memo && <p className="whitespace-pre-wrap">メモ: {match.memo}</p>}{match.youtube_url && <a className="mt-1 inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer" onClick={() => recordVideoClick(match.id)}>動画を見る</a>}</div>)}</div></section>;
     })}</div></Card>
   </main>;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
@@ -14,6 +14,22 @@ type HistoryMatch = { round_number: number; court_number: number; players: { par
 type ScoreInput = { a: number | ""; b: number | "" };
 type ManualMatchDraft = { id: string; court_number: number; teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type LineupDraft = { teamA1: string; teamA2: string; teamB1: string; teamB2: string };
+type SummaryRankingSectionKey = "wins" | "winRate" | "diff" | "mvp";
+
+const summaryRankingButtonClass = "flex min-h-12 w-full items-center rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-3 text-left text-sm font-bold text-zinc-100 shadow-sm shadow-black/20 active:bg-zinc-800";
+
+function SummaryRankingSection({ title, isOpen, onToggle, children }: { title: string; isOpen: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <button type="button" className={summaryRankingButtonClass} onClick={onToggle} aria-expanded={isOpen}>
+        <span className="mr-2 text-accent">{isOpen ? "▼" : "◀"}</span>
+        <span>{title}</span>
+      </button>
+      {isOpen && <div>{children}</div>}
+    </section>
+  );
+}
+
 
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
@@ -49,6 +65,7 @@ export default function EventDetailPage() {
   const [closeStatsMode, setCloseStatsMode] = useState<StatsMode>("official");
   const [manualDrafts, setManualDrafts] = useState<ManualMatchDraft[]>([]);
   const [lineupDrafts, setLineupDrafts] = useState<Record<string, LineupDraft>>({});
+  const [openSummaryRankingSections, setOpenSummaryRankingSections] = useState<Record<SummaryRankingSectionKey, boolean>>({ wins: false, winRate: false, diff: false, mvp: false });
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -102,6 +119,7 @@ export default function EventDetailPage() {
   const winRateRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.winRate - a.winRate), [summaryRankingRows]);
   const diffRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.diff - a.diff), [summaryRankingRows]);
   const mvp = useMemo(() => winRanking[0] ?? null, [winRanking]);
+  const toggleSummaryRankingSection = (key: SummaryRankingSectionKey) => setOpenSummaryRankingSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
 
   const candidateParticipants = useMemo(() => participants.filter((p) => p.status === "active" && p.is_member_candidate), [participants]);
@@ -1048,24 +1066,18 @@ export default function EventDetailPage() {
           <p>総試合数：{totalMatches}</p>
           <p>参加者数：{participants.length}</p>
         </div>
-        {hasSummaryResults ? <>
-        <div className="rounded-xl bg-zinc-800 p-3">
-          <p className="mb-1 font-semibold">勝利数ランキング</p>
-          <ol className="space-y-1">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝</li>)}</ol>
-        </div>
-        <div className="rounded-xl bg-zinc-800 p-3">
-          <p className="mb-1 font-semibold">勝率ランキング</p>
-          <ol className="space-y-1">{winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol>
-        </div>
-        <div className="rounded-xl bg-zinc-800 p-3">
-          <p className="mb-1 font-semibold">得失点差ランキング</p>
-          <ol className="space-y-1">{diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol>
-        </div>
-        <div className="rounded-xl bg-zinc-800 p-3">
-          <p className="font-semibold">MVP</p>
-          <p className="mt-1">{mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p>
-        </div>
-        </> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+        <SummaryRankingSection title="勝利数ランキング" isOpen={openSummaryRankingSections.wins} onToggle={() => toggleSummaryRankingSection("wins")}>
+          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+        </SummaryRankingSection>
+        <SummaryRankingSection title="勝率ランキング" isOpen={openSummaryRankingSections.winRate} onToggle={() => toggleSummaryRankingSection("winRate")}>
+          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+        </SummaryRankingSection>
+        <SummaryRankingSection title="得失点差ランキング" isOpen={openSummaryRankingSections.diff} onToggle={() => toggleSummaryRankingSection("diff")}>
+          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+        </SummaryRankingSection>
+        <SummaryRankingSection title="MVP" isOpen={openSummaryRankingSections.mvp} onToggle={() => toggleSummaryRankingSection("mvp")}>
+          <div className="rounded-xl bg-zinc-800 p-3"><p>{hasSummaryResults && mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p></div>
+        </SummaryRankingSection>
       </div>
     </Card>
   );

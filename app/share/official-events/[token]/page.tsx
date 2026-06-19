@@ -60,7 +60,7 @@ export default function SharedOfficialEventPage() {
     .sort((a, b) => a.match_order - b.match_order || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
 
   const logClickError = (error: any) => {
-    console.warn("公式試合動画クリックの記録に失敗しました", {
+    console.warn("オフィシャルチームマッチ動画クリックの記録に失敗しました", {
       message: error?.message,
       code: error?.code,
       details: error?.details,
@@ -89,7 +89,7 @@ export default function SharedOfficialEventPage() {
   if (!event) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100">読み込み中...</main>;
 
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
-    <h1 className="text-xl font-bold">公式試合共有</h1>
+    <h1 className="text-xl font-bold">オフィシャルチームマッチ共有</h1>
     <Card title={event.title}>
       <dl className="space-y-3 text-sm">
         <div><dt className="text-zinc-400">所属グループ</dt><dd>{event.clubs?.name ?? "名称未設定"}</dd></div>

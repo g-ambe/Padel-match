@@ -126,7 +126,7 @@ export default function OfficialMatchDetailPage() {
     if (access.superUser || nextAccessRole === "main_admin") {
       const { data: clickRows, error: clickError } = await supabase.rpc("get_official_video_click_counts", { p_event_id: id });
       if (clickError) {
-        console.warn("公式試合動画クリック数の取得に失敗しました", { message: clickError.message, code: clickError.code, details: clickError.details, hint: clickError.hint });
+        console.warn("オフィシャルチームマッチ動画クリック数の取得に失敗しました", { message: clickError.message, code: clickError.code, details: clickError.details, hint: clickError.hint });
         setVideoClickCounts({});
       } else {
         setVideoClickCounts(Object.fromEntries(((clickRows ?? []) as any[]).map((row) => [row.official_match_id, Number(row.click_count ?? 0)])));
@@ -236,11 +236,11 @@ export default function OfficialMatchDetailPage() {
   const updateEventStatus = async (status: "active" | "closed") => {
     setError(""); setNotice("");
     if (!canManageShare) return setError("この操作を行う権限がありません");
-    if (!window.confirm(status === "closed" ? "公式試合を終了しますか？" : "公式試合を再開しますか？")) return;
+    if (!window.confirm(status === "closed" ? "オフィシャルチームマッチを終了しますか？" : "オフィシャルチームマッチを再開しますか？")) return;
     const supabase = getSupabaseClient(); if (!supabase) return;
     const { error: updateError } = await supabase.from("official_events").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
-    if (updateError) return setError(status === "closed" ? "公式試合の終了に失敗しました" : "公式試合の再開に失敗しました");
-    setNotice(status === "closed" ? "公式試合を終了しました" : "公式試合を再開しました");
+    if (updateError) return setError(status === "closed" ? "オフィシャルチームマッチの終了に失敗しました" : "オフィシャルチームマッチの再開に失敗しました");
+    setNotice(status === "closed" ? "オフィシャルチームマッチを終了しました" : "オフィシャルチームマッチを再開しました");
     setOpenMatchFormId(null); setEditingMatchId(null); await loadDetail();
   };
 
@@ -250,13 +250,13 @@ export default function OfficialMatchDetailPage() {
     if (!deleteEventChecked) return setError("削除確認にチェックしてください");
     const supabase = getSupabaseClient(); if (!supabase) return;
     const { error: updateError } = await supabase.from("official_events").update({ is_deleted: true, deleted_at: new Date().toISOString(), share_enabled: false, share_token: null, updated_at: new Date().toISOString() }).eq("id", id);
-    if (updateError) return setError("公式試合の削除に失敗しました");
+    if (updateError) return setError("オフィシャルチームマッチの削除に失敗しました");
     router.push("/official-matches");
   };
 
   const createOrRotateShare = async (rotate = false) => {
     setError(""); setNotice("");
-    if (!event || event.status !== "closed") return setError("終了済みの公式試合のみ共有できます");
+    if (!event || event.status !== "closed") return setError("終了済みのオフィシャルチームマッチのみ共有できます");
     if (!canManageShare) return setError("この操作を行う権限がありません");
     const supabase = getSupabaseClient(); if (!supabase) return;
     const { error: updateError } = await supabase.from("official_events").update({ share_enabled: true, share_token: createShareToken(), share_token_updated_at: new Date().toISOString() }).eq("id", id);
@@ -277,7 +277,7 @@ export default function OfficialMatchDetailPage() {
 
   const copyShare = async () => {
     setError(""); setNotice("");
-    if (!shareUrl) return setError("この公式試合は共有されていません");
+    if (!shareUrl) return setError("このオフィシャルチームマッチは共有されていません");
     await navigator.clipboard.writeText(shareUrl);
     setNotice("共有リンクをコピーしました");
   };
@@ -286,7 +286,7 @@ export default function OfficialMatchDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
-      <h1 className="text-xl font-bold">公式試合詳細</h1>
+      <h1 className="text-xl font-bold">オフィシャルチームマッチ詳細</h1>
       {error && <p className="rounded-xl border border-red-500/60 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
       {notice && <p className="rounded-xl border border-emerald-500/60 bg-emerald-950/40 p-3 text-sm text-emerald-200">{notice}</p>}
       <Card title={event.title}>
@@ -302,14 +302,14 @@ export default function OfficialMatchDetailPage() {
       <OfficialStatsCard stats={officialStats} />
       <Card title="開催操作">
         <div className="space-y-3 text-sm">
-          {event.status === "active" && canManageShare && <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => void updateEventStatus("closed")}>公式試合終了</button>}
-          {event.status === "closed" && <><p className="font-bold">公式試合終了済み</p><p className="text-zinc-400">この公式試合は終了しました</p>{canManageShare && <button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={() => void updateEventStatus("active")}>公式試合再開</button>}{canManageShare && (showDeleteEventConfirm ? <div className="space-y-2 rounded-xl border border-red-500/60 p-3"><p>公式試合を削除しますか？</p><label className="flex gap-2 text-xs text-zinc-300"><input type="checkbox" checked={deleteEventChecked} onChange={(e) => setDeleteEventChecked(e.target.checked)} />削除すると元に戻せません。問題ない場合はチェックしてください</label><div className="flex gap-2"><button className="w-1/2 rounded bg-red-600 py-2 font-bold" onClick={() => void deleteEvent()}>公式試合削除</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => { setShowDeleteEventConfirm(false); setDeleteEventChecked(false); }}>キャンセル</button></div></div> : <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => setShowDeleteEventConfirm(true)}>公式試合削除</button>)}</>}
+          {event.status === "active" && canManageShare && <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => void updateEventStatus("closed")}>オフィシャルチームマッチ終了</button>}
+          {event.status === "closed" && <><p className="font-bold">オフィシャルチームマッチ終了済み</p><p className="text-zinc-400">このオフィシャルチームマッチは終了しました</p>{canManageShare && <button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={() => void updateEventStatus("active")}>オフィシャルチームマッチ再開</button>}{canManageShare && (showDeleteEventConfirm ? <div className="space-y-2 rounded-xl border border-red-500/60 p-3"><p>オフィシャルチームマッチを削除しますか？</p><label className="flex gap-2 text-xs text-zinc-300"><input type="checkbox" checked={deleteEventChecked} onChange={(e) => setDeleteEventChecked(e.target.checked)} />削除すると元に戻せません。問題ない場合はチェックしてください</label><div className="flex gap-2"><button className="w-1/2 rounded bg-red-600 py-2 font-bold" onClick={() => void deleteEvent()}>オフィシャルチームマッチ削除</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => { setShowDeleteEventConfirm(false); setDeleteEventChecked(false); }}>キャンセル</button></div></div> : <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => setShowDeleteEventConfirm(true)}>オフィシャルチームマッチ削除</button>)}</>}
           {!canManageShare && <p className="text-zinc-400">閲覧のみです</p>}
         </div>
       </Card>
       {event.status === "closed" && <Card title="共有リンク">
         <div className="space-y-3 text-sm">
-          {!shareUrl && <p className="text-zinc-400">この公式試合は共有されていません</p>}
+          {!shareUrl && <p className="text-zinc-400">このオフィシャルチームマッチは共有されていません</p>}
           {shareUrl && <p className="break-all rounded-xl bg-zinc-800 p-3 text-xs">{shareUrl}</p>}
           <div className="grid grid-cols-1 gap-2">
             {!shareUrl && canManageShare && <button className="rounded-xl bg-accent py-2 font-bold text-black" onClick={() => void createOrRotateShare(false)}>共有リンクを作成</button>}
@@ -351,7 +351,7 @@ export default function OfficialMatchDetailPage() {
           {canEdit && (showOpponentForm ? <div className="space-y-2 rounded-2xl border border-zinc-700 p-3"><input className="w-full rounded bg-zinc-800 p-2" placeholder="相手チーム名" value={opponentName} onChange={(e) => setOpponentName(e.target.value)} /><textarea className="w-full rounded bg-zinc-800 p-2" placeholder="メモ" value={opponentMemo} onChange={(e) => setOpponentMemo(e.target.value)} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-black" onClick={() => void addOpponent()}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => setShowOpponentForm(false)}>キャンセル</button></div></div> : <ActionButton onClick={() => setShowOpponentForm(true)}>対戦相手を追加</ActionButton>)}
         </div>
       </Card>
-      <Link href="/official-matches/new" className="text-center text-sm underline">公式試合へ戻る</Link>
+      <Link href="/official-matches/new" className="text-center text-sm underline">オフィシャルチームマッチへ戻る</Link>
     </main>
   );
 }

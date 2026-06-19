@@ -47,13 +47,13 @@ export default function NewOfficialMatchPage() {
       created_by_auth_user_id: creatorUserId
     }).select("id").single();
     setLoading(false);
-    if (insertError || !data) return setError("公式試合の作成に失敗しました");
+    if (insertError || !data) return setError("オフィシャルチームマッチの作成に失敗しました");
     router.push(`/official-matches/${data.id}`);
   };
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
-      <h1 className="text-xl font-bold">公式試合</h1>
+      <h1 className="text-xl font-bold">オフィシャルチームマッチ</h1>
       <Card title="基本情報">
         <form className="space-y-3" onSubmit={createOfficialMatch}>
           <label className="block text-sm text-zinc-300">大会/リーグ名<input className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={title} onChange={(e) => setTitle(e.target.value)} /></label>

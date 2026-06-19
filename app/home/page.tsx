@@ -329,7 +329,7 @@ export default function HomePage() {
           <p className="mt-1 text-xs text-zinc-400">ログインするとイベントや戦績を保存できます</p>
         </Card>
       )}
-      <div id="random-events"><Card title="試合（乱数）を作成">
+      <div id="random-events"><Card title="フレンドリーマッチを作成">
         <form className="space-y-3" onSubmit={createEvent}>
           {!guestMode && (
             <>
@@ -365,7 +365,7 @@ export default function HomePage() {
         </form>
       </Card></div>
 
-      <Card title="試合（乱数）一覧">
+      <Card title="フレンドリーマッチ一覧">
         <div className={`space-y-2 ${showAllEvents ? "max-h-80 overflow-y-auto pr-1" : ""}`}>
           {events.length === 0 ? (
             <p className="rounded-xl bg-zinc-800 p-3 text-sm text-zinc-300">開催がありません</p>

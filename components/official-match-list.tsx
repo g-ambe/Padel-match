@@ -68,7 +68,7 @@ export function OfficialMatchList({ showCreateLink = false, showBackLink = false
     const { data, error: loadError } = await fetchOfficialEvents(supabase, clubIds, clubNameById, access.uid, access.superUser);
     if (loadError) {
       logOfficialEventListError(loadError);
-      setError("公式試合一覧の取得に失敗しました");
+      setError("オフィシャルチームマッチ一覧の取得に失敗しました");
       return;
     }
     setError("");
@@ -79,7 +79,7 @@ export function OfficialMatchList({ showCreateLink = false, showBackLink = false
   const canManageEvent = (event: OfficialEvent) => !!event.club_id && manageableClubIds.includes(event.club_id);
   const updateShare = async (event: OfficialEvent, action: "create" | "stop" | "rotate") => {
     setError(""); setNotice("");
-    if (action !== "stop" && event.status !== "closed") return setError("終了済みの公式試合のみ共有できます");
+    if (action !== "stop" && event.status !== "closed") return setError("終了済みのオフィシャルチームマッチのみ共有できます");
     if (!canManageEvent(event)) return setError("この操作を行う権限がありません");
     const supabase = getSupabaseClient(); if (!supabase) return;
     const patch = action === "stop" ? { share_enabled: false, share_token: null, share_token_updated_at: new Date().toISOString() } : { share_enabled: true, share_token: createShareToken(), share_token_updated_at: new Date().toISOString() };
@@ -92,18 +92,18 @@ export function OfficialMatchList({ showCreateLink = false, showBackLink = false
   const copyShare = async (event: OfficialEvent) => {
     setError(""); setNotice("");
     const url = shareUrl(event);
-    if (!url) return setError("この公式試合は共有されていません");
+    if (!url) return setError("このオフィシャルチームマッチは共有されていません");
     await navigator.clipboard.writeText(url);
     setNotice("共有リンクをコピーしました");
   };
 
   return (
     <>
-      {showCreateLink && canCreate && <Link href="/official-matches/new" className="rounded-xl bg-accent p-3 text-center font-bold text-black">公式試合を作成</Link>}
+      {showCreateLink && canCreate && <Link href="/official-matches/new" className="rounded-xl bg-accent p-3 text-center font-bold text-black">オフィシャルチームマッチを作成</Link>}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {notice && <p className="text-sm text-emerald-300">{notice}</p>}
-      <Card title="公式試合一覧">
-        {events.length === 0 ? <p className="text-sm text-zinc-400">公式試合はまだありません</p> : (
+      <Card title="オフィシャルチームマッチ一覧">
+        {events.length === 0 ? <p className="text-sm text-zinc-400">オフィシャルチームマッチはまだありません</p> : (
           <div className="space-y-3">
             {events.map((event) => (
               <div key={event.id} className="rounded-xl bg-zinc-800 p-3">

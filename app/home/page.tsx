@@ -302,15 +302,17 @@ export default function HomePage() {
       return;
     }
 
-    if (selectedGroupId) {
-      try {
-        const { addMissingClubMembersToEvent } = await import("@/lib/event-participants");
+    try {
+      const { addCreatorToNoGroupEvent, addMissingClubMembersToEvent } = await import("@/lib/event-participants");
+      if (selectedGroupId) {
         await addMissingClubMembersToEvent(supabase, data.id, selectedGroupId);
-      } catch {
-        setLoading(false);
-        setError("グループメンバーの参加者追加に失敗しました");
-        return;
+      } else {
+        await addCreatorToNoGroupEvent(supabase, data.id, creatorUserId);
       }
+    } catch {
+      setLoading(false);
+      setError(selectedGroupId ? "グループメンバーの参加者追加に失敗しました" : "作成者の参加者追加に失敗しました");
+      return;
     }
 
     setLoading(false);

@@ -12,6 +12,11 @@ type PlayerProfileRow = {
   is_active?: boolean | null;
 };
 
+type AccountProfileRow = {
+  id: string;
+  display_name?: string | null;
+};
+
 type ActiveClubMemberParticipant = {
   playerProfileId: string;
   displayName: string | null;
@@ -123,4 +128,57 @@ export async function addMissingClubMembersToEvent(supabase: SupabaseClient, eve
   const { error: insertError } = await supabase.from("event_participants").insert(inserts);
   if (insertError) throw insertError;
   return { insertedCount: inserts.length };
+}
+
+export async function addCreatorToNoGroupEvent(supabase: SupabaseClient, eventId: string, creatorAuthUserId: string) {
+  const { data: playerProfile, error: playerProfileError } = await supabase
+    .from("player_profiles")
+    .select("id,display_name,is_active")
+    .eq("linked_auth_user_id", creatorAuthUserId)
+    .eq("is_active", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (playerProfileError) throw playerProfileError;
+
+  const { data: accountProfile, error: accountProfileError } = await supabase
+    .from("profiles")
+    .select("id,display_name")
+    .eq("id", creatorAuthUserId)
+    .maybeSingle();
+  if (accountProfileError) throw accountProfileError;
+
+  const playerProfileRow = playerProfile as PlayerProfileRow | null;
+  const accountProfileRow = accountProfile as AccountProfileRow | null;
+  const playerProfileId = playerProfileRow?.id ?? null;
+  const profileId = playerProfileId ? null : accountProfileRow?.id ?? creatorAuthUserId;
+
+  const { data: existingParticipants, error: existingError } = await supabase
+    .from("event_participants")
+    .select("id,profile_id,player_profile_id")
+    .eq("event_id", eventId);
+  if (existingError) throw existingError;
+
+  const alreadyParticipant = (existingParticipants ?? []).some((participant: any) => (
+    (playerProfileId && participant.player_profile_id === playerProfileId) ||
+    (profileId && participant.profile_id === profileId)
+  ));
+  if (alreadyParticipant) return { insertedCount: 0 };
+
+  const displayName =
+    accountProfileRow?.display_name?.trim() ||
+    playerProfileRow?.display_name?.trim() ||
+    "名称未設定";
+
+  const { error: insertError } = await supabase.from("event_participants").insert({
+    event_id: eventId,
+    profile_id: profileId,
+    player_profile_id: playerProfileId,
+    guest_name: displayName,
+    status: "active",
+    participant_type: "member"
+  });
+  if (insertError) throw insertError;
+
+  return { insertedCount: 1 };
 }

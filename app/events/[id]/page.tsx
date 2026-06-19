@@ -54,6 +54,8 @@ export default function EventDetailPage() {
   const [editingGuestName, setEditingGuestName] = useState("");
   const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
   const [editingYoutubeIds, setEditingYoutubeIds] = useState<Record<string, boolean>>({});
+  const [videoClickCounts, setVideoClickCounts] = useState<Record<string, number>>({});
+  const [canViewVideoClickCounts, setCanViewVideoClickCounts] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
   const [shareEnabled, setShareEnabled] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
@@ -166,6 +168,8 @@ export default function EventDetailPage() {
       setParticipants(ge.participants.map((p) => ({ ...p, profile_id: null, player_profile_id: null, display_name: p.guest_name, is_member_candidate: true })));
       setMatches(ge.matches as any);
       setScoreInputs(Object.fromEntries(ge.matches.filter((m) => m.result).map((m) => [m.id, { a: m.result!.score_a, b: m.result!.score_b }])));
+      setVideoClickCounts({});
+      setCanViewVideoClickCounts(false);
       return;
     }
     setGuestMode(false);
@@ -189,6 +193,7 @@ export default function EventDetailPage() {
     const uid = userRes.user?.id;
     const { data: adminRow } = uid ? await supabase.from("app_admins").select("id").eq("profile_id", uid).eq("is_active", true).maybeSingle() : { data: null as any };
     const superUser = !!adminRow;
+    let allowViewVideoClickCounts = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
     let canDelete = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
     if (!canDelete && uid && event?.club_id) {
       const { data: linkedProfiles } = await supabase
@@ -204,6 +209,7 @@ export default function EventDetailPage() {
           .in("player_profile_id", linkedProfileIds)
           .eq("is_active", true);
         canDelete = (myMembers ?? []).some((m: any) => m.role === "main_admin");
+        allowViewVideoClickCounts = allowViewVideoClickCounts || (myMembers ?? []).some((m: any) => m.role === "main_admin");
       }
       if (!canDelete) {
         const { data: myMember } = await supabase
@@ -214,6 +220,7 @@ export default function EventDetailPage() {
           .eq("is_active", true)
           .maybeSingle();
         canDelete = myMember?.role === "main_admin";
+        allowViewVideoClickCounts = allowViewVideoClickCounts || myMember?.role === "main_admin";
       }
     }
     setCanDeleteEvent(canDelete);
@@ -232,9 +239,11 @@ export default function EventDetailPage() {
         memberRoles = data ?? [];
       }
       const roles = new Set(memberRoles.map((x: any) => x.role));
+      allowViewVideoClickCounts = allowViewVideoClickCounts || roles.has("main_admin");
       allowManageShare = allowManageShare || roles.has("main_admin") || roles.has("sub_admin");
       allowCopyShare = allowManageShare || roles.has("member");
     }
+    setCanViewVideoClickCounts(allowViewVideoClickCounts);
     setCanManageShare(allowManageShare);
     setCanCopyShare(allowCopyShare);
 
@@ -302,6 +311,22 @@ export default function EventDetailPage() {
     setScoreInputs((prev) => ({ ...savedScores, ...prev }));
     const savedYoutube = Object.fromEntries(normalizedMatches.map((m: any) => [m.id, m.youtube_url ?? ""]));
     setYoutubeInputs((prev) => ({ ...savedYoutube, ...prev }));
+    if (allowViewVideoClickCounts) {
+      const { data: clickRows, error: clickError } = await supabase.rpc("get_event_video_click_counts", { p_event_id: eventId });
+      if (clickError) {
+        console.warn("イベント動画クリック数の取得に失敗しました", {
+          message: clickError.message,
+          code: clickError.code,
+          details: clickError.details,
+          hint: clickError.hint
+        });
+        setVideoClickCounts({});
+      } else {
+        setVideoClickCounts(Object.fromEntries((clickRows ?? []).map((row: any) => [row.match_id, Number(row.click_count ?? 0)])));
+      }
+    } else {
+      setVideoClickCounts({});
+    }
   };
 
   const generateShareToken = () => {
@@ -1138,7 +1163,7 @@ export default function EventDetailPage() {
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
                   )}
-                </div><div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>}</div>
+                </div><div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
               </div>
             );
           })}

@@ -26,11 +26,11 @@ export function OfficialStatsCard({ stats }: { stats: OfficialStats | null }) {
 
   const toggleSection = (key: SectionKey) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
   const table = (rows: OfficialStatsRow[]) => rows.length === 0
-    ? <p className="text-sm text-zinc-400">公式戦績はまだありません</p>
+    ? <p className="text-sm text-zinc-400">オフィシャルチームマッチ戦績はまだありません</p>
     : <div className="space-y-2">{rows.map((row) => <div key={row.name} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{row.name}</p><p className="text-zinc-300">{row.matches}試合 {row.wins}勝 {row.losses}敗 {row.draws}分 / 勝率 {row.winRate}%</p></div>)}</div>;
 
   const summaryContent = !stats.hasMatches
-    ? <p className="text-sm text-zinc-400">公式戦績はまだありません</p>
+    ? <p className="text-sm text-zinc-400">オフィシャルチームマッチ戦績はまだありません</p>
     : stats.countedMatches === 0
       ? <p className="text-sm text-zinc-400">集計対象の試合結果がありません</p>
       : (
@@ -43,7 +43,7 @@ export function OfficialStatsCard({ stats }: { stats: OfficialStats | null }) {
       );
 
   return (
-    <Card title="公式戦績">
+    <Card title="オフィシャルチームマッチ戦績">
       <div className="space-y-3">
         <StatsSection title="結果サマリ" isOpen={openSections.summary} onToggle={() => toggleSection("summary")}>
           {summaryContent}

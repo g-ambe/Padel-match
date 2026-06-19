@@ -35,8 +35,10 @@ export default function SharedEventPage() {
     const supabase = getSupabaseClient(); if (!supabase || !token) return;
     const { data: event } = await supabase.from("events").select("id,name,created_at,status,is_deleted,share_enabled,club_id").eq("share_token", token).maybeSingle();
     if (!event || !event.share_enabled || event.status !== "closed" || event.is_deleted) return setError("この共有リンクは無効です");
-    const { data: club } = await supabase.from("clubs").select("is_active").eq("id", event.club_id).maybeSingle();
-    if (!club?.is_active) return setError("この共有リンクは無効です");
+    if (event.club_id) {
+      const { data: club } = await supabase.from("clubs").select("is_active").eq("id", event.club_id).maybeSingle();
+      if (!club?.is_active) return setError("この共有リンクは無効です");
+    }
     setEventName(event.name ?? "-");
     setEventDate(event.created_at ? new Date(event.created_at).toLocaleDateString("ja-JP") : "-");
     const { data: pt } = await supabase.from("event_participants").select("id,guest_name,participant_type,player_profile_id,profile_id").eq("event_id", event.id);
@@ -74,5 +76,31 @@ export default function SharedEventPage() {
   const hasRankingResults = rankingRows.length > 0;
   const toggleRankingSection = (key: SharedRankingSectionKey) => setOpenRankingSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント結果共有</h1>{error && <p className="text-sm text-red-400">{error}</p>}{!error && <><Card title="イベント情報"><div className="space-y-1 text-sm"><p>イベント名：{eventName}</p><p>開催日：{eventDate}</p><p>総試合数：{matches.length}</p><p>参加者数：{participants.length}</p></div></Card><Card title="結果サマリー"><div className="space-y-3 text-sm"><SharedRankingSection title="勝利数ランキング" isOpen={openRankingSections.wins} onToggle={() => toggleRankingSection("wins")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r,i)=><li key={`w-${r.name}-${i}`}>{i+1}位 {r.name} {r.wins}勝</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="勝率ランキング" isOpen={openRankingSections.winRate} onToggle={() => toggleRankingSection("winRate")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r,i)=><li key={`wr-${r.name}-${i}`}>{i+1}位 {r.name} {r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="得失点差ランキング" isOpen={openRankingSections.diff} onToggle={() => toggleRankingSection("diff")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{diffRanking.map((r,i)=><li key={`df-${r.name}-${i}`}>{i+1}位 {r.name} {r.diff}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="MVP" isOpen={openRankingSections.mvp} onToggle={() => toggleRankingSection("mvp")}><div className="rounded-xl bg-zinc-800 p-3"><p>{hasRankingResults && mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p></div></SharedRankingSection></div></Card><Card title="各試合結果"><div className="space-y-2">{matches.map((m:any)=>{const a=(m.match_players??[]).filter((x:any)=>x.team==="A").map((x:any)=>nameMap[x.participant_id]).join("/");const b=(m.match_players??[]).filter((x:any)=>x.team==="B").map((x:any)=>nameMap[x.participant_id]).join("/");return <div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p>Round {m.round_number} / Court{m.court_number}</p><p className="font-semibold">{a} vs {b}</p><p>{m.result ? `${m.result.score_a} - ${m.result.score_b}` : "未入力"}</p>{m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="mt-1 inline-block rounded border border-zinc-500 px-3 py-1 text-xs">動画を見る</a>}</div>;})}</div></Card></>}</main>;
+  const logClickError = (error: any) => {
+    console.warn("イベント動画クリックの記録に失敗しました", {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint
+    });
+  };
+
+  const recordVideoClick = (matchId: string) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    void (async () => {
+      try {
+        const { error } = await supabase.rpc("record_event_video_click", {
+          match_id: matchId,
+          user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
+          referrer: typeof document === "undefined" ? null : document.referrer
+        });
+        if (error) logClickError(error);
+      } catch (err) {
+        logClickError(err);
+      }
+    })();
+  };
+
+  return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><h1 className="text-xl font-bold">イベント結果共有</h1>{error && <p className="text-sm text-red-400">{error}</p>}{!error && <><Card title="イベント情報"><div className="space-y-1 text-sm"><p>イベント名：{eventName}</p><p>開催日：{eventDate}</p><p>総試合数：{matches.length}</p><p>参加者数：{participants.length}</p></div></Card><Card title="結果サマリー"><div className="space-y-3 text-sm"><SharedRankingSection title="勝利数ランキング" isOpen={openRankingSections.wins} onToggle={() => toggleRankingSection("wins")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r,i)=><li key={`w-${r.name}-${i}`}>{i+1}位 {r.name} {r.wins}勝</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="勝率ランキング" isOpen={openRankingSections.winRate} onToggle={() => toggleRankingSection("winRate")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r,i)=><li key={`wr-${r.name}-${i}`}>{i+1}位 {r.name} {r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="得失点差ランキング" isOpen={openRankingSections.diff} onToggle={() => toggleRankingSection("diff")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{diffRanking.map((r,i)=><li key={`df-${r.name}-${i}`}>{i+1}位 {r.name} {r.diff}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="MVP" isOpen={openRankingSections.mvp} onToggle={() => toggleRankingSection("mvp")}><div className="rounded-xl bg-zinc-800 p-3"><p>{hasRankingResults && mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p></div></SharedRankingSection></div></Card><Card title="各試合結果"><div className="space-y-2">{matches.map((m:any)=>{const a=(m.match_players??[]).filter((x:any)=>x.team==="A").map((x:any)=>nameMap[x.participant_id]).join("/");const b=(m.match_players??[]).filter((x:any)=>x.team==="B").map((x:any)=>nameMap[x.participant_id]).join("/");return <div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p>Round {m.round_number} / Court{m.court_number}</p><p className="font-semibold">{a} vs {b}</p><p>{m.result ? `${m.result.score_a} - ${m.result.score_b}` : "未入力"}</p>{m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="mt-1 inline-block rounded border border-zinc-500 px-3 py-1 text-xs" onClick={() => recordVideoClick(m.id)}>動画を見る</a>}</div>;})}</div></Card></>}</main>;
 }

@@ -9,12 +9,18 @@ import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, 
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
-type MatchView = { id: string; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: "A" | "B" } | null };
+type TeamResult = "A" | "B" | "draw";
+type MatchView = { id: string; round_id?: string | null; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: TeamResult } | null };
 type HistoryMatch = { round_number: number; court_number: number; players: { participant_id: string; team: "A" | "B" }[] };
 type ScoreInput = { a: number | ""; b: number | "" };
 type ManualMatchDraft = { id: string; court_number: number; teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type LineupDraft = { teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type SummaryRankingSectionKey = "wins" | "winRate" | "diff" | "mvp";
+type MatchDeleteTarget = { id: string; hasScore: boolean } | null;
+
+const getWinnerTeam = (scoreA: number, scoreB: number): TeamResult => scoreA === scoreB ? "draw" : scoreA > scoreB ? "A" : "B";
+
+const isSupabaseErrorLike = (error: unknown): error is { message?: string; code?: string; details?: string; hint?: string } => typeof error === "object" && error !== null;
 
 const summaryRankingButtonClass = "flex min-h-12 w-full items-center rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-3 text-left text-sm font-bold text-zinc-100 shadow-sm shadow-black/20 active:bg-zinc-800";
 
@@ -68,6 +74,9 @@ export default function EventDetailPage() {
   const [manualDrafts, setManualDrafts] = useState<ManualMatchDraft[]>([]);
   const [lineupDrafts, setLineupDrafts] = useState<Record<string, LineupDraft>>({});
   const [openSummaryRankingSections, setOpenSummaryRankingSections] = useState<Record<SummaryRankingSectionKey, boolean>>({ wins: false, winRate: false, diff: false, mvp: false });
+  const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
+  const [swipeStartX, setSwipeStartX] = useState<Record<string, number>>({});
+  const [matchDeleteTarget, setMatchDeleteTarget] = useState<MatchDeleteTarget>(null);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -76,9 +85,9 @@ export default function EventDetailPage() {
 
 
   const eventSummary = useMemo(() => {
-    const table: Record<string, { name: string; played: number; wins: number; losses: number; scored: number; conceded: number; winRate: number; diff: number }> = {};
+    const table: Record<string, { name: string; played: number; wins: number; losses: number; draws: number; decided: number; scored: number; conceded: number; winRate: number; diff: number }> = {};
     for (const p of participants) {
-      table[p.id] = { name: p.guest_name ?? "ゲスト", played: 0, wins: 0, losses: 0, scored: 0, conceded: 0, winRate: 0, diff: 0 };
+      table[p.id] = { name: p.guest_name ?? "ゲスト", played: 0, wins: 0, losses: 0, draws: 0, decided: 0, scored: 0, conceded: 0, winRate: 0, diff: 0 };
     }
 
     for (const m of matches) {
@@ -92,8 +101,9 @@ export default function EventDetailPage() {
         row.played += 1;
         row.scored += m.result.score_a;
         row.conceded += m.result.score_b;
-        if (m.result.winner_team === "A") row.wins += 1;
-        else row.losses += 1;
+        if (m.result.winner_team === "A") { row.wins += 1; row.decided += 1; }
+        else if (m.result.winner_team === "B") { row.losses += 1; row.decided += 1; }
+        else row.draws += 1;
       }
       for (const pid of teamB) {
         const row = table[pid];
@@ -101,12 +111,13 @@ export default function EventDetailPage() {
         row.played += 1;
         row.scored += m.result.score_b;
         row.conceded += m.result.score_a;
-        if (m.result.winner_team === "B") row.wins += 1;
-        else row.losses += 1;
+        if (m.result.winner_team === "B") { row.wins += 1; row.decided += 1; }
+        else if (m.result.winner_team === "A") { row.losses += 1; row.decided += 1; }
+        else row.draws += 1;
       }
     }
 
-    const rows = Object.values(table).map((r) => ({ ...r, winRate: r.played ? Math.round((r.wins / r.played) * 1000) / 10 : 0, diff: r.scored - r.conceded }));
+    const rows = Object.values(table).map((r) => ({ ...r, winRate: r.decided ? Math.round((r.wins / r.decided) * 1000) / 10 : 0, diff: r.scored - r.conceded }));
     return {
       rows,
       winRateRanking: [...rows].sort((a, b) => b.winRate - a.winRate),
@@ -136,11 +147,13 @@ export default function EventDetailPage() {
       if (!m.completed) continue;
       const score = scoreInputs[m.id];
       if (!score) continue;
-      const winner = score.a > score.b ? "A" : "B";
+      const winner = score.a === score.b ? "draw" : score.a > score.b ? "A" : "B";
       for (const mp of m.players) {
         if (!stats[mp.participant_id]) continue;
-        stats[mp.participant_id].m += 1;
-        if (mp.team === winner) stats[mp.participant_id].w += 1;
+        if (winner !== "draw") {
+          stats[mp.participant_id].m += 1;
+          if (mp.team === winner) stats[mp.participant_id].w += 1;
+        }
       }
     }
     return Object.values(stats)
@@ -301,11 +314,11 @@ export default function EventDetailPage() {
 
     const { data: ms } = await supabase
       .from("matches")
-      .select("id,court_number,created_at,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(id,score_a,score_b,winner_team)")
+      .select("id,round_id,court_number,created_at,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(id,score_a,score_b,winner_team)")
       .eq("event_id", eventId)
       .order("created_at", { ascending: false });
 
-    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
+    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
     setMatches(normalizedMatches);
     const savedScores = Object.fromEntries(normalizedMatches.filter((m: any) => m.result).map((m: any) => [m.id, { a: m.result.score_a, b: m.result.score_b }]));
     setScoreInputs((prev) => ({ ...savedScores, ...prev }));
@@ -526,7 +539,7 @@ export default function EventDetailPage() {
       if (!score || score.a === "" || score.b === "") return;
       const ge = getGuestEvent(eventId);
       if (!ge) return;
-      ge.matches = ge.matches.map((m) => m.id === matchId ? { ...m, completed: true, result: { score_a: Number(score.a), score_b: Number(score.b), winner_team: Number(score.a) > Number(score.b) ? "A" : "B" } } : m);
+      ge.matches = ge.matches.map((m) => m.id === matchId ? { ...m, completed: true, result: { score_a: Number(score.a), score_b: Number(score.b), winner_team: getWinnerTeam(Number(score.a), Number(score.b)) } } : m);
       upsertGuestEvent(ge);
       setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
       await loadAll();
@@ -539,7 +552,7 @@ export default function EventDetailPage() {
       setError("スコアを入力してください");
       return;
     }
-    const winner = score.a > score.b ? "A" : "B";
+    const winner = getWinnerTeam(Number(score.a), Number(score.b));
 
     const targetMatch = matches.find((m) => m.id === matchId);
     if (targetMatch?.result?.id) {
@@ -551,7 +564,7 @@ export default function EventDetailPage() {
     setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
 
     const match = matches.find((m) => m.id === matchId);
-    if (match && statsMode === "official") {
+    if (match && statsMode === "official" && winner !== "draw") {
       const winners = match.players.filter((p) => p.team === winner).map((p) => p.participant_id);
       const losers = match.players.filter((p) => p.team !== winner).map((p) => p.participant_id);
 
@@ -585,6 +598,148 @@ export default function EventDetailPage() {
       }
     }
 
+    await loadAll();
+  };
+
+
+  const matchHasSavedScore = (match: MatchView) => {
+    const score = scoreInputs[match.id];
+    return !!match.result || match.completed || (score?.a !== undefined && score.a !== "") || (score?.b !== undefined && score.b !== "");
+  };
+
+  const requestMatchDelete = (match: MatchView) => {
+    if (eventMode !== "auto" || eventStatus === "closed") return;
+    setMatchDeleteTarget({ id: match.id, hasScore: matchHasSavedScore(match) });
+    setSwipeOffsets((prev) => ({ ...prev, [match.id]: Math.max(prev[match.id] ?? 0, 96) }));
+  };
+
+  const cancelMatchDelete = () => {
+    const id = matchDeleteTarget?.id;
+    setMatchDeleteTarget(null);
+    if (id) setSwipeOffsets((prev) => ({ ...prev, [id]: 0 }));
+  };
+
+  const logSupabaseError = (label: string, error: unknown) => {
+    if (!isSupabaseErrorLike(error)) return console.error(label, error);
+    console.error(label, { message: error.message, code: error.code, details: error.details, hint: error.hint });
+  };
+
+  const adjustPlayerStatsForDeletedMatch = async (match: MatchView) => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !match.result || match.result.winner_team === "draw" || statsMode !== "official") return;
+    const winners = match.players.filter((p) => p.team === match.result!.winner_team).map((p) => p.participant_id);
+    const losers = match.players.filter((p) => p.team !== match.result!.winner_team).map((p) => p.participant_id);
+    const adjust = async (pid: string, isWinner: boolean) => {
+      const profileId = profileMap[pid];
+      if (!profileId) return;
+      const { data: cur, error: fetchError } = await supabase.from("player_stats").select("id,match_count,win_count,loss_count").eq("profile_id", profileId).maybeSingle();
+      if (fetchError || !cur?.id) return;
+      const match_count = Math.max((cur.match_count ?? 0) - 1, 0);
+      const win_count = Math.max((cur.win_count ?? 0) - (isWinner ? 1 : 0), 0);
+      const loss_count = Math.max((cur.loss_count ?? 0) - (isWinner ? 0 : 1), 0);
+      const win_rate = match_count ? win_count / match_count : 0;
+      await supabase.from("player_stats").update({ match_count, win_count, loss_count, win_rate }).eq("id", cur.id);
+    };
+    await Promise.all([...winners.map((pid) => adjust(pid, true)), ...losers.map((pid) => adjust(pid, false))]);
+  };
+
+  const renumberRoundsAfterDeletedRound = async (deletedRoundNumber: number) => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId) return false;
+    const { data: laterRounds, error: fetchError } = await supabase
+      .from("rounds")
+      .select("id,round_number")
+      .eq("event_id", eventId)
+      .gt("round_number", deletedRoundNumber)
+      .order("round_number", { ascending: true });
+    if (fetchError) {
+      logSupabaseError("rounds renumber fetch failed", fetchError);
+      setError("Round番号の更新に失敗しました");
+      return false;
+    }
+    const rounds = (laterRounds ?? []) as { id: string; round_number: number }[];
+    for (const round of rounds) {
+      const { error: tempError } = await supabase
+        .from("rounds")
+        .update({ round_number: -100000 - round.round_number })
+        .eq("id", round.id);
+      if (tempError) {
+        logSupabaseError("rounds renumber temp update failed", tempError);
+        setError("Round番号の更新に失敗しました");
+        return false;
+      }
+    }
+    for (const round of rounds) {
+      const { error: finalError } = await supabase
+        .from("rounds")
+        .update({ round_number: round.round_number - 1 })
+        .eq("id", round.id);
+      if (finalError) {
+        logSupabaseError("rounds renumber final update failed", finalError);
+        setError("Round番号の更新に失敗しました");
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const deleteEmptyRoundAndRenumber = async (roundId: string | null | undefined, deletedRoundNumber: number) => {
+    if (!roundId) return true;
+    const supabase = getSupabaseClient();
+    if (!supabase) return false;
+    const { count, error: countError } = await supabase
+      .from("matches")
+      .select("id", { count: "exact", head: true })
+      .eq("round_id", roundId);
+    if (countError) {
+      logSupabaseError("round matches count failed", countError);
+      setError("Roundの削除に失敗しました");
+      return false;
+    }
+    if ((count ?? 0) > 0) return true;
+    const { error: roundDeleteError } = await supabase.from("rounds").delete().eq("id", roundId);
+    if (roundDeleteError) {
+      logSupabaseError("round delete failed", roundDeleteError);
+      setError("Roundの削除に失敗しました");
+      return false;
+    }
+    return renumberRoundsAfterDeletedRound(deletedRoundNumber);
+  };
+
+
+  const deleteMatch = async () => {
+    if (!matchDeleteTarget) return;
+    const matchId = matchDeleteTarget.id;
+    const match = matches.find((m) => m.id === matchId);
+    if (!match) return cancelMatchDelete();
+    if (guestMode && eventId) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return;
+      const deletedRoundNumber = match.round_number;
+      ge.matches = ge.matches.filter((m) => m.id !== matchId);
+      if (!ge.matches.some((m) => m.round_number === deletedRoundNumber)) {
+        ge.matches = ge.matches.map((m) => m.round_number > deletedRoundNumber ? { ...m, round_number: m.round_number - 1 } : m);
+      }
+      upsertGuestEvent(ge);
+      setScoreInputs((prev) => { const next = { ...prev }; delete next[matchId]; return next; });
+      cancelMatchDelete();
+      await loadAll();
+      return;
+    }
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    await adjustPlayerStatsForDeletedMatch(match);
+    const resultDelete = await supabase.from("match_results").delete().eq("match_id", matchId);
+    if (resultDelete.error) { logSupabaseError("match_results delete failed", resultDelete.error); setError("試合の削除に失敗しました"); return; }
+    const playersDelete = await supabase.from("match_players").delete().eq("match_id", matchId);
+    if (playersDelete.error) { logSupabaseError("match_players delete failed", playersDelete.error); setError("試合の削除に失敗しました"); return; }
+    const matchDelete = await supabase.from("matches").delete().eq("id", matchId);
+    if (matchDelete.error) { logSupabaseError("matches delete failed", matchDelete.error); setError("試合の削除に失敗しました"); return; }
+    const roundUpdated = await deleteEmptyRoundAndRenumber(match.round_id, match.round_number);
+    if (!roundUpdated) return;
+    setError("");
+    setScoreInputs((prev) => { const next = { ...prev }; delete next[matchId]; return next; });
+    cancelMatchDelete();
     await loadAll();
   };
 
@@ -1092,7 +1247,7 @@ export default function EventDetailPage() {
           <p>参加者数：{participants.length}</p>
         </div>
         <SummaryRankingSection title="勝利数ランキング" isOpen={openSummaryRankingSections.wins} onToggle={() => toggleSummaryRankingSection("wins")}>
-          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝{r.draws ? `${r.draws}分` : ""}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
         </SummaryRankingSection>
         <SummaryRankingSection title="勝率ランキング" isOpen={openSummaryRankingSections.winRate} onToggle={() => toggleSummaryRankingSection("winRate")}>
           {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
@@ -1133,7 +1288,25 @@ export default function EventDetailPage() {
             const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
             const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
             return (
-              <div key={m.id} className="rounded-xl bg-zinc-800 p-3">
+              <div key={m.id} className="relative overflow-hidden rounded-xl bg-red-950/70">
+                <div className="absolute inset-y-0 left-0 flex w-28 items-center justify-center bg-red-600 text-sm font-bold text-white">削除</div>
+                <div
+                  className="relative rounded-xl bg-zinc-800 p-3 transition-transform"
+                  style={{ transform: `translateX(${eventMode === "auto" && eventStatus !== "closed" ? (swipeOffsets[m.id] ?? 0) : 0}px)` }}
+                  onTouchStart={(e) => { if (eventMode === "auto" && eventStatus !== "closed") setSwipeStartX((prev) => ({ ...prev, [m.id]: e.touches[0]?.clientX ?? 0 })); }}
+                  onTouchMove={(e) => {
+                    if (eventMode !== "auto" || eventStatus === "closed") return;
+                    const start = swipeStartX[m.id] ?? e.touches[0]?.clientX ?? 0;
+                    const delta = Math.max(0, Math.min((e.touches[0]?.clientX ?? start) - start, 128));
+                    setSwipeOffsets((prev) => ({ ...prev, [m.id]: delta }));
+                  }}
+                  onTouchEnd={() => {
+                    if (eventMode !== "auto" || eventStatus === "closed") return;
+                    const offset = swipeOffsets[m.id] ?? 0;
+                    if (offset >= 88) requestMatchDelete(m);
+                    else setSwipeOffsets((prev) => ({ ...prev, [m.id]: 0 }));
+                  }}
+                >
                 <p className="text-sm">Round {m.round_number} / Court{m.court_number}</p>
                 <p className="mb-2 text-base font-semibold">{a} vs {b}</p>
                 {eventMode === "manual" && (lineupDrafts[m.id] ? (
@@ -1163,7 +1336,9 @@ export default function EventDetailPage() {
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
                   )}
-                </div><div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
+                </div>{m.result?.winner_team === "draw" && <p className="mt-2 text-sm font-semibold text-amber-300">引き分け</p>}<div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
+                  {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="mt-3 w-full rounded-xl border border-red-500 py-2 text-sm text-red-300" onClick={() => requestMatchDelete(m)}>削除</button>}
+                </div>
               </div>
             );
           })}
@@ -1263,6 +1438,8 @@ export default function EventDetailPage() {
 
       {guestMode && <p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>}
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
+
+      {matchDeleteTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">この試合を削除しますか？</p>{matchDeleteTarget.hasScore && <div className="mt-2 space-y-1 text-sm text-red-300"><p>この試合にはスコアが入力されています。</p><p>削除すると戦績からも除外されます。</p><p>本当に削除しますか？</p></div>}<div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={cancelMatchDelete}>キャンセル</button><button className="w-1/2 rounded-xl bg-red-500 py-2 font-semibold text-white" onClick={() => void deleteMatch()}>削除</button></div></div></div>}
 
       {showDeleteModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">本当にこのイベントを削除しますか？</p><p className="mt-2 text-sm text-zinc-300">このイベントの試合結果・戦績はランキングに反映されなくなります。</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={deleteChecked} onChange={(e) => setDeleteChecked(e.target.checked)} /><span>この操作を実行して問題ないことを確認しました</span></label><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setShowDeleteModal(false)}>キャンセル</button><button disabled={!deleteChecked} className="w-1/2 rounded-xl bg-red-500 py-2 disabled:bg-zinc-600" onClick={deleteEvent}>イベントを削除する</button></div></div></div>}
 

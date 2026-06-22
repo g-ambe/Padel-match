@@ -38,6 +38,7 @@ const resolveDisplayName = (playerProfiles: any) => {
   const displayName = getProfileRow(playerProfiles)?.display_name;
   return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";
 };
+const formatRecord = (wins: number, losses: number, draws: number) => `${wins}勝${losses}敗${draws}分`;
 
 const roleLabel: Record<Role, string> = { main_admin: "メイン管理者", sub_admin: "サブ管理者", member: "メンバー" };
 const roleRank: Record<Role, number> = { main_admin: 0, sub_admin: 1, member: 2 };
@@ -134,40 +135,42 @@ export default function GroupDetailPage() {
       const teamB = allB.filter((pid: string) => memberParticipantIds.has(pid));
       if (teamA.length !== 2 || teamB.length !== 2 || allA.length !== 2 || allB.length !== 2) continue;
 
-      const updPlayer = (pid: string, sA: number, sB: number, win: boolean, decided: boolean) => {
+      const updPlayer = (pid: string, sA: number, sB: number) => {
         const prof = participantMap.get(pid)?.player_profile_id;
         if (!prof) return;
-        if (!pStats[prof]) pStats[prof] = { name: profileName.get(prof) ?? "名称未設定", matches: 0, decided: 0, wins: 0, scored: 0, conceded: 0 };
+        if (!pStats[prof]) pStats[prof] = { name: profileName.get(prof) ?? "名称未設定", matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
         pStats[prof].matches += 1;
-        if (decided) pStats[prof].decided += 1;
-        if (win) pStats[prof].wins += 1;
+        if (sA > sB) pStats[prof].wins += 1;
+        else if (sA < sB) pStats[prof].losses += 1;
+        else pStats[prof].draws += 1;
         pStats[prof].scored += sA;
         pStats[prof].conceded += sB;
       };
 
-      for (const pid of teamA) updPlayer(pid, res.score_a, res.score_b, res.winner_team === "A", res.winner_team !== "draw");
-      for (const pid of teamB) updPlayer(pid, res.score_b, res.score_a, res.winner_team === "B", res.winner_team !== "draw");
+      for (const pid of teamA) updPlayer(pid, res.score_a, res.score_b);
+      for (const pid of teamB) updPlayer(pid, res.score_b, res.score_a);
 
-      const updPair = (team: string[], sA: number, sB: number, win: boolean, decided: boolean) => {
+      const updPair = (team: string[], sA: number, sB: number) => {
         if (team.length !== 2) return;
         const p1 = participantMap.get(team[0])?.player_profile_id;
         const p2 = participantMap.get(team[1])?.player_profile_id;
         if (!p1 || !p2) return;
         const [a, b] = [p1, p2].sort();
         const key = `${a}|${b}`;
-        if (!pairStats[key]) pairStats[key] = { pairName: `${profileName.get(a) ?? "名称未設定"} / ${profileName.get(b) ?? "名称未設定"}`, matches: 0, decided: 0, wins: 0, scored: 0, conceded: 0 };
+        if (!pairStats[key]) pairStats[key] = { pairName: `${profileName.get(a) ?? "名称未設定"} / ${profileName.get(b) ?? "名称未設定"}`, matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
         pairStats[key].matches += 1;
-        if (decided) pairStats[key].decided += 1;
-        if (win) pairStats[key].wins += 1;
+        if (sA > sB) pairStats[key].wins += 1;
+        else if (sA < sB) pairStats[key].losses += 1;
+        else pairStats[key].draws += 1;
         pairStats[key].scored += sA;
         pairStats[key].conceded += sB;
       };
 
-      updPair(teamA, res.score_a, res.score_b, res.winner_team === "A", res.winner_team !== "draw");
-      updPair(teamB, res.score_b, res.score_a, res.winner_team === "B", res.winner_team !== "draw");
+      updPair(teamA, res.score_a, res.score_b);
+      updPair(teamB, res.score_b, res.score_a);
     }
 
-    const indivBase = Object.values(pStats).map((x: any) => ({ ...x, rate: x.decided ? (x.wins / x.decided) * 100 : 0, diff: x.scored - x.conceded, avgScored: x.matches ? x.scored / x.matches : 0, avgConceded: x.matches ? x.conceded / x.matches : 0 }));
+    const indivBase = Object.values(pStats).map((x: any) => ({ ...x, rate: x.matches ? (x.wins / x.matches) * 100 : 0, diff: x.scored - x.conceded, matchPoints: x.wins * 3 + x.draws, avgScored: x.matches ? x.scored / x.matches : 0, avgConceded: x.matches ? x.conceded / x.matches : 0 }));
     const maxMatches = Math.max(1, ...indivBase.map((x: any) => x.matches));
     const maxDiff = Math.max(1, ...indivBase.map((x: any) => Math.max(0, x.diff)));
     const indiv = indivBase.map((x: any) => {
@@ -179,8 +182,8 @@ export default function GroupDetailPage() {
     setIndividualRows(indiv);
     setPairRows(
       Object.values(pairStats)
-        .map((x: any) => ({ ...x, rate: x.decided ? (x.wins / x.decided) * 100 : 0, diff: x.scored - x.conceded, avgDiff: x.matches ? (x.scored - x.conceded) / x.matches : 0 }))
-        .sort((a: any, b: any) => b.rate - a.rate || b.avgDiff - a.avgDiff || b.wins - a.wins || b.diff - a.diff || b.matches - a.matches)
+        .map((x: any) => ({ ...x, rate: x.matches ? (x.wins / x.matches) * 100 : 0, diff: x.scored - x.conceded, matchPoints: x.wins * 3 + x.draws, avgDiff: x.matches ? (x.scored - x.conceded) / x.matches : 0 }))
+        .sort((a: any, b: any) => b.matchPoints - a.matchPoints || b.wins - a.wins || b.rate - a.rate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.matches - b.matches || a.pairName.localeCompare(b.pairName, "ja"))
     );
     setEventHistoryRows((events ?? []).map((e: any) => ({ id: e.id, name: e.name, date: e.created_at, matchCount: (matches ?? []).filter((m: any) => m.event_id === e.id).length, participantCount: new Set((participants ?? []).filter((p: any) => p.event_id === e.id).map((p: any) => p.id)).size })));
   };
@@ -258,9 +261,9 @@ export default function GroupDetailPage() {
   const rankedIndividuals = useMemo(() => {
     const base = [...individualRows];
     if (individualMode === "総合ランキング") {
-      return base.sort((a: any, b: any) => b.totalPoint - a.totalPoint || b.rate - a.rate || b.wins - a.wins || b.diff - a.diff || b.matches - a.matches);
+      return base.sort((a: any, b: any) => b.totalPoint - a.totalPoint || b.matchPoints - a.matchPoints || b.rate - a.rate || b.wins - a.wins || b.draws - a.draws || b.diff - a.diff || a.matches - b.matches);
     }
-    return base.sort((a: any, b: any) => b.rate - a.rate || b.wins - a.wins || b.diff - a.diff || b.matches - a.matches);
+    return base.sort((a: any, b: any) => b.rate - a.rate || b.wins - a.wins || b.draws - a.draws || b.diff - a.diff || b.scored - a.scored || b.matches - a.matches);
   }, [individualRows, individualMode]);
   const targetIndividuals = useMemo(() => rankedIndividuals.filter((r: any) => !r.isReference), [rankedIndividuals]);
   const referenceIndividuals = useMemo(() => rankedIndividuals.filter((r: any) => r.isReference), [rankedIndividuals]);
@@ -404,10 +407,10 @@ export default function GroupDetailPage() {
                         {targetIndividuals.map((r: any, i: number) => (
                           <div key={`t-${i}`} className="rounded-xl bg-zinc-800 p-3 text-sm">
                             <p className="font-semibold">{i + 1}位 {r.name}</p>
-                            <p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p>
+                            <p>試合 {r.matches} / {formatRecord(r.wins, r.losses, r.draws)} / 勝率 {r.rate.toFixed(1)}%</p>
                             <p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p>
                             <p>1試合平均得点 {r.avgScored.toFixed(1)} / 1試合平均失点 {r.avgConceded.toFixed(1)}</p>
-                            <p>総合ポイント {r.totalPoint.toFixed(1)}</p>
+                            <p>総合ポイント {r.totalPoint.toFixed(1)} / 勝点 {r.matchPoints}</p>
                           </div>
                         ))}
                       </>
@@ -419,10 +422,10 @@ export default function GroupDetailPage() {
                         {referenceIndividuals.map((r: any, i: number) => (
                           <div key={`r-${i}`} className="rounded-xl border border-amber-600/40 bg-zinc-800 p-3 text-sm">
                             <p className="font-semibold">{r.name}（参考記録）</p>
-                            <p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p>
+                            <p>試合 {r.matches} / {formatRecord(r.wins, r.losses, r.draws)} / 勝率 {r.rate.toFixed(1)}%</p>
                             <p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p>
                             <p>1試合平均得点 {r.avgScored.toFixed(1)} / 1試合平均失点 {r.avgConceded.toFixed(1)}</p>
-                            <p>総合ポイント {r.totalPoint.toFixed(1)}</p>
+                            <p>総合ポイント {r.totalPoint.toFixed(1)} / 勝点 {r.matchPoints}</p>
                           </div>
                         ))}
                       </>
@@ -435,7 +438,7 @@ export default function GroupDetailPage() {
               pairRows.length === 0 ? <p className="text-sm text-zinc-300">まだ戦績がありません</p> : pairRows.map((r: any, i: number) => (
                 <div key={i} className="rounded-xl bg-zinc-800 p-3 text-sm">
                   <p className="font-semibold">{i + 1}位 {r.pairName}</p>
-                  <p>試合 {r.matches} / 勝利 {r.wins} / 勝率 {r.rate.toFixed(1)}%</p>
+                  <p>試合 {r.matches} / {formatRecord(r.wins, r.losses, r.draws)} / 勝率 {r.rate.toFixed(1)}%</p>
                   <p>得点 {r.scored} / 失点 {r.conceded} / 得失点差 {r.diff}</p>
                   <p>1試合平均得失点差 {r.avgDiff.toFixed(1)}</p>
                 </div>

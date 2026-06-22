@@ -16,6 +16,8 @@ type ScoreInput = { a: number | ""; b: number | "" };
 type ManualMatchDraft = { id: string; court_number: number; teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type LineupDraft = { teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type SummaryRankingSectionKey = "wins" | "winRate" | "diff" | "mvp";
+
+const formatRecord = (wins: number, losses: number, draws: number) => `${wins}勝${losses}敗${draws}分`;
 type MatchDeleteTarget = { id: string; hasScore: boolean } | null;
 
 const getWinnerTeam = (scoreA: number, scoreB: number): TeamResult => scoreA === scoreB ? "draw" : scoreA > scoreB ? "A" : "B";
@@ -85,9 +87,9 @@ export default function EventDetailPage() {
 
 
   const eventSummary = useMemo(() => {
-    const table: Record<string, { name: string; played: number; wins: number; losses: number; draws: number; decided: number; scored: number; conceded: number; winRate: number; diff: number }> = {};
+    const table: Record<string, { name: string; played: number; wins: number; losses: number; draws: number; scored: number; conceded: number; winRate: number; diff: number; matchPoints: number }> = {};
     for (const p of participants) {
-      table[p.id] = { name: p.guest_name ?? "ゲスト", played: 0, wins: 0, losses: 0, draws: 0, decided: 0, scored: 0, conceded: 0, winRate: 0, diff: 0 };
+      table[p.id] = { name: p.guest_name ?? "ゲスト", played: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0, winRate: 0, diff: 0, matchPoints: 0 };
     }
 
     for (const m of matches) {
@@ -101,8 +103,8 @@ export default function EventDetailPage() {
         row.played += 1;
         row.scored += m.result.score_a;
         row.conceded += m.result.score_b;
-        if (m.result.winner_team === "A") { row.wins += 1; row.decided += 1; }
-        else if (m.result.winner_team === "B") { row.losses += 1; row.decided += 1; }
+        if (m.result.score_a > m.result.score_b) row.wins += 1;
+        else if (m.result.score_a < m.result.score_b) row.losses += 1;
         else row.draws += 1;
       }
       for (const pid of teamB) {
@@ -111,27 +113,27 @@ export default function EventDetailPage() {
         row.played += 1;
         row.scored += m.result.score_b;
         row.conceded += m.result.score_a;
-        if (m.result.winner_team === "B") { row.wins += 1; row.decided += 1; }
-        else if (m.result.winner_team === "A") { row.losses += 1; row.decided += 1; }
+        if (m.result.score_b > m.result.score_a) row.wins += 1;
+        else if (m.result.score_b < m.result.score_a) row.losses += 1;
         else row.draws += 1;
       }
     }
 
-    const rows = Object.values(table).map((r) => ({ ...r, winRate: r.decided ? Math.round((r.wins / r.decided) * 1000) / 10 : 0, diff: r.scored - r.conceded }));
+    const rows = Object.values(table).map((r) => ({ ...r, winRate: r.played ? Math.round((r.wins / r.played) * 1000) / 10 : 0, diff: r.scored - r.conceded, matchPoints: r.wins * 3 + r.draws }));
     return {
       rows,
-      winRateRanking: [...rows].sort((a, b) => b.winRate - a.winRate),
-      diffRanking: [...rows].sort((a, b) => b.diff - a.diff),
+      winRateRanking: [...rows].sort((a, b) => b.winRate - a.winRate || b.wins - a.wins || b.draws - a.draws || b.diff - a.diff || b.scored - a.scored || b.played - a.played || a.name.localeCompare(b.name, "ja")),
+      diffRanking: [...rows].sort((a, b) => b.diff - a.diff || b.wins - a.wins || b.draws - a.draws || b.winRate - a.winRate || b.scored - a.scored || a.played - b.played || a.name.localeCompare(b.name, "ja")),
       scoredRanking: [...rows].sort((a, b) => b.scored - a.scored)
     };
   }, [participants, matches]);
   const totalMatches = useMemo(() => matches.length, [matches]);
   const summaryRankingRows = useMemo(() => eventSummary.rows.filter((r) => r.played > 0), [eventSummary.rows]);
   const hasSummaryResults = summaryRankingRows.length > 0;
-  const winRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.wins - a.wins || b.winRate - a.winRate), [summaryRankingRows]);
-  const winRateRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.winRate - a.winRate), [summaryRankingRows]);
-  const diffRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.diff - a.diff), [summaryRankingRows]);
-  const mvp = useMemo(() => winRanking[0] ?? null, [winRanking]);
+  const winRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.wins - a.wins || b.draws - a.draws || b.winRate - a.winRate || b.diff - a.diff || b.scored - a.scored || a.played - b.played || a.name.localeCompare(b.name, "ja")), [summaryRankingRows]);
+  const winRateRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.winRate - a.winRate || b.wins - a.wins || b.draws - a.draws || b.diff - a.diff || b.scored - a.scored || b.played - a.played || a.name.localeCompare(b.name, "ja")), [summaryRankingRows]);
+  const diffRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.diff - a.diff || b.wins - a.wins || b.draws - a.draws || b.winRate - a.winRate || b.scored - a.scored || a.played - b.played || a.name.localeCompare(b.name, "ja")), [summaryRankingRows]);
+  const mvp = useMemo(() => [...summaryRankingRows].sort((a, b) => b.matchPoints - a.matchPoints || b.wins - a.wins || b.winRate - a.winRate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.played - b.played || a.name.localeCompare(b.name, "ja"))[0] ?? null, [summaryRankingRows]);
   const toggleSummaryRankingSection = (key: SummaryRankingSectionKey) => setOpenSummaryRankingSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
 
@@ -150,10 +152,8 @@ export default function EventDetailPage() {
       const winner = score.a === score.b ? "draw" : score.a > score.b ? "A" : "B";
       for (const mp of m.players) {
         if (!stats[mp.participant_id]) continue;
-        if (winner !== "draw") {
-          stats[mp.participant_id].m += 1;
-          if (mp.team === winner) stats[mp.participant_id].w += 1;
-        }
+        stats[mp.participant_id].m += 1;
+        if (mp.team === winner) stats[mp.participant_id].w += 1;
       }
     }
     return Object.values(stats)
@@ -1247,16 +1247,16 @@ export default function EventDetailPage() {
           <p>参加者数：{participants.length}</p>
         </div>
         <SummaryRankingSection title="勝利数ランキング" isOpen={openSummaryRankingSections.wins} onToggle={() => toggleSummaryRankingSection("wins")}>
-          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {r.wins}勝{r.draws ? `${r.draws}分` : ""}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
         </SummaryRankingSection>
         <SummaryRankingSection title="勝率ランキング" isOpen={openSummaryRankingSections.winRate} onToggle={() => toggleSummaryRankingSection("winRate")}>
-          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)} / 勝率{r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
         </SummaryRankingSection>
         <SummaryRankingSection title="得失点差ランキング" isOpen={openSummaryRankingSections.diff} onToggle={() => toggleSummaryRankingSection("diff")}>
-          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {r.diff}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
+          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)} / 得失点差{r.diff}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
         </SummaryRankingSection>
         <SummaryRankingSection title="MVP" isOpen={openSummaryRankingSections.mvp} onToggle={() => toggleSummaryRankingSection("mvp")}>
-          <div className="rounded-xl bg-zinc-800 p-3"><p>{hasSummaryResults && mvp ? `${mvp.name}（${mvp.wins}勝）` : "該当なし"}</p></div>
+          <div className="rounded-xl bg-zinc-800 p-3"><p>{hasSummaryResults && mvp ? `${mvp.name}（${formatRecord(mvp.wins, mvp.losses, mvp.draws)} / 勝点${mvp.matchPoints} / 勝率${mvp.winRate}% / 得失点差${mvp.diff}）` : "該当なし"}</p></div>
         </SummaryRankingSection>
       </div>
     </Card>
@@ -1336,7 +1336,7 @@ export default function EventDetailPage() {
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
                   )}
-                </div>{m.result?.winner_team === "draw" && <p className="mt-2 text-sm font-semibold text-amber-300">引き分け</p>}<div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
+                </div>{m.result?.score_a === m.result?.score_b && <p className="mt-2 text-sm font-semibold text-amber-300">引き分け</p>}<div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
                   {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="mt-3 w-full rounded-xl border border-red-500 py-2 text-sm text-red-300" onClick={() => requestMatchDelete(m)}>削除</button>}
                 </div>
               </div>

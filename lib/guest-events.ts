@@ -18,7 +18,7 @@ export type GuestMatch = {
   completed: boolean;
   youtube_url: string | null;
   players: { participant_id: string; team: "A" | "B" }[];
-  result: { score_a: number; score_b: number; winner_team: "A" | "B" } | null;
+  result: { score_a: number; score_b: number; winner_team: "A" | "B" | "draw" } | null;
 };
 
 export type GuestEvent = {

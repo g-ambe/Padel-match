@@ -118,6 +118,7 @@ export default function ProfilePage() {
       : { data: [] as any[] };
 
     let matches = 0;
+    let decidedMatches = 0;
     let wins = 0;
     let scored = 0;
     let conceded = 0;
@@ -133,10 +134,11 @@ export default function ProfilePage() {
       const opScore = myTeam === "A" ? result.score_b : result.score_a;
       scored += myScore ?? 0;
       conceded += opScore ?? 0;
+      if (result.winner_team !== "draw") decidedMatches += 1;
       if (result.winner_team === myTeam) wins += 1;
     }
 
-    const winRate = matches > 0 ? (wins / matches) * 100 : 0;
+    const winRate = decidedMatches > 0 ? (wins / decidedMatches) * 100 : 0;
     setStats({
       matches,
       wins,

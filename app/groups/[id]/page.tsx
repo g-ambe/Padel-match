@@ -134,38 +134,40 @@ export default function GroupDetailPage() {
       const teamB = allB.filter((pid: string) => memberParticipantIds.has(pid));
       if (teamA.length !== 2 || teamB.length !== 2 || allA.length !== 2 || allB.length !== 2) continue;
 
-      const updPlayer = (pid: string, sA: number, sB: number, win: boolean) => {
+      const updPlayer = (pid: string, sA: number, sB: number, win: boolean, decided: boolean) => {
         const prof = participantMap.get(pid)?.player_profile_id;
         if (!prof) return;
-        if (!pStats[prof]) pStats[prof] = { name: profileName.get(prof) ?? "名称未設定", matches: 0, wins: 0, scored: 0, conceded: 0 };
+        if (!pStats[prof]) pStats[prof] = { name: profileName.get(prof) ?? "名称未設定", matches: 0, decided: 0, wins: 0, scored: 0, conceded: 0 };
         pStats[prof].matches += 1;
+        if (decided) pStats[prof].decided += 1;
         if (win) pStats[prof].wins += 1;
         pStats[prof].scored += sA;
         pStats[prof].conceded += sB;
       };
 
-      for (const pid of teamA) updPlayer(pid, res.score_a, res.score_b, res.winner_team === "A");
-      for (const pid of teamB) updPlayer(pid, res.score_b, res.score_a, res.winner_team === "B");
+      for (const pid of teamA) updPlayer(pid, res.score_a, res.score_b, res.winner_team === "A", res.winner_team !== "draw");
+      for (const pid of teamB) updPlayer(pid, res.score_b, res.score_a, res.winner_team === "B", res.winner_team !== "draw");
 
-      const updPair = (team: string[], sA: number, sB: number, win: boolean) => {
+      const updPair = (team: string[], sA: number, sB: number, win: boolean, decided: boolean) => {
         if (team.length !== 2) return;
         const p1 = participantMap.get(team[0])?.player_profile_id;
         const p2 = participantMap.get(team[1])?.player_profile_id;
         if (!p1 || !p2) return;
         const [a, b] = [p1, p2].sort();
         const key = `${a}|${b}`;
-        if (!pairStats[key]) pairStats[key] = { pairName: `${profileName.get(a) ?? "名称未設定"} / ${profileName.get(b) ?? "名称未設定"}`, matches: 0, wins: 0, scored: 0, conceded: 0 };
+        if (!pairStats[key]) pairStats[key] = { pairName: `${profileName.get(a) ?? "名称未設定"} / ${profileName.get(b) ?? "名称未設定"}`, matches: 0, decided: 0, wins: 0, scored: 0, conceded: 0 };
         pairStats[key].matches += 1;
+        if (decided) pairStats[key].decided += 1;
         if (win) pairStats[key].wins += 1;
         pairStats[key].scored += sA;
         pairStats[key].conceded += sB;
       };
 
-      updPair(teamA, res.score_a, res.score_b, res.winner_team === "A");
-      updPair(teamB, res.score_b, res.score_a, res.winner_team === "B");
+      updPair(teamA, res.score_a, res.score_b, res.winner_team === "A", res.winner_team !== "draw");
+      updPair(teamB, res.score_b, res.score_a, res.winner_team === "B", res.winner_team !== "draw");
     }
 
-    const indivBase = Object.values(pStats).map((x: any) => ({ ...x, rate: x.matches ? (x.wins / x.matches) * 100 : 0, diff: x.scored - x.conceded, avgScored: x.matches ? x.scored / x.matches : 0, avgConceded: x.matches ? x.conceded / x.matches : 0 }));
+    const indivBase = Object.values(pStats).map((x: any) => ({ ...x, rate: x.decided ? (x.wins / x.decided) * 100 : 0, diff: x.scored - x.conceded, avgScored: x.matches ? x.scored / x.matches : 0, avgConceded: x.matches ? x.conceded / x.matches : 0 }));
     const maxMatches = Math.max(1, ...indivBase.map((x: any) => x.matches));
     const maxDiff = Math.max(1, ...indivBase.map((x: any) => Math.max(0, x.diff)));
     const indiv = indivBase.map((x: any) => {
@@ -177,7 +179,7 @@ export default function GroupDetailPage() {
     setIndividualRows(indiv);
     setPairRows(
       Object.values(pairStats)
-        .map((x: any) => ({ ...x, rate: x.matches ? (x.wins / x.matches) * 100 : 0, diff: x.scored - x.conceded, avgDiff: x.matches ? (x.scored - x.conceded) / x.matches : 0 }))
+        .map((x: any) => ({ ...x, rate: x.decided ? (x.wins / x.decided) * 100 : 0, diff: x.scored - x.conceded, avgDiff: x.matches ? (x.scored - x.conceded) / x.matches : 0 }))
         .sort((a: any, b: any) => b.rate - a.rate || b.avgDiff - a.avgDiff || b.wins - a.wins || b.diff - a.diff || b.matches - a.matches)
     );
     setEventHistoryRows((events ?? []).map((e: any) => ({ id: e.id, name: e.name, date: e.created_at, matchCount: (matches ?? []).filter((m: any) => m.event_id === e.id).length, participantCount: new Set((participants ?? []).filter((p: any) => p.event_id === e.id).map((p: any) => p.id)).size })));

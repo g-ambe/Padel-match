@@ -12,6 +12,7 @@ export function GlobalMenu() {
   const [officialOpen, setOfficialOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [hasSession, setHasSession] = useState<boolean | null>(null);
+  const [isSuperUser, setIsSuperUser] = useState(false);
 
   const closeMenu = () => setOpen(false);
 
@@ -27,15 +28,27 @@ export function GlobalMenu() {
       return;
     }
 
-    void supabase.auth.getSession().then(({ data }) => {
+    void supabase.auth.getSession().then(async ({ data }) => {
       setHasSession(!!data.session);
+      const user = data.session?.user;
+      if (!user) return setIsSuperUser(false);
+      if (user.email?.toLowerCase() === "testuser01@example.com") return setIsSuperUser(true);
+      const { data: admin } = await supabase.from("app_admins").select("id").eq("profile_id", user.id).eq("is_active", true).maybeSingle();
+      setIsSuperUser(!!admin);
     });
 
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setHasSession(!!session);
       if (!session) {
+        setIsSuperUser(false);
         setOpen(false);
+        return;
       }
+      if (session.user.email?.toLowerCase() === "testuser01@example.com") {
+        setIsSuperUser(true);
+        return;
+      }
+      void supabase.from("app_admins").select("id").eq("profile_id", session.user.id).eq("is_active", true).maybeSingle().then(({ data }) => setIsSuperUser(!!data));
     });
 
     return () => {
@@ -122,6 +135,7 @@ export function GlobalMenu() {
               </div>
             )}
           </div>
+          {isSuperUser && <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/super-admin")}>スーパーユーザー管理</button>}
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/notifications")}>通知{unreadCount > 0 ? ` (${unreadCount})` : ""}</button>
           {/* 一時的に非表示: 将来再表示予定 */}
           {/* <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button> */}

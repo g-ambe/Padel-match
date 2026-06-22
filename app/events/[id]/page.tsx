@@ -16,6 +16,8 @@ type ScoreInput = { a: number | ""; b: number | "" };
 type ManualMatchDraft = { id: string; court_number: number; teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type LineupDraft = { teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type SummaryRankingSectionKey = "wins" | "winRate" | "diff" | "mvp";
+type EventVideoLink = { id: string; title: string; video_url: string | null; memo: string | null; display_order: number };
+type EventVideoForm = { title: string; video_url: string; memo: string; display_order: string };
 
 const formatRecord = (wins: number, losses: number, draws: number) => `${wins}勝${losses}敗${draws}分`;
 type MatchDeleteTarget = { id: string; hasScore: boolean } | null;
@@ -63,11 +65,13 @@ export default function EventDetailPage() {
   const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
   const [editingYoutubeIds, setEditingYoutubeIds] = useState<Record<string, boolean>>({});
   const [videoClickCounts, setVideoClickCounts] = useState<Record<string, number>>({});
+  const [eventVideoClickCounts, setEventVideoClickCounts] = useState<Record<string, number>>({});
   const [canViewVideoClickCounts, setCanViewVideoClickCounts] = useState(false);
   const [guestMode, setGuestMode] = useState(false);
   const [shareEnabled, setShareEnabled] = useState(false);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [canManageShare, setCanManageShare] = useState(false);
+  const [canManageEventVideos, setCanManageEventVideos] = useState(false);
   const [canCopyShare, setCanCopyShare] = useState(false);
   const [isGeneratingRound, setIsGeneratingRound] = useState(false);
   const [eventMode, setEventMode] = useState<EventMode>("auto");
@@ -79,6 +83,10 @@ export default function EventDetailPage() {
   const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
   const [swipeStartX, setSwipeStartX] = useState<Record<string, number>>({});
   const [matchDeleteTarget, setMatchDeleteTarget] = useState<MatchDeleteTarget>(null);
+  const [eventVideoLinks, setEventVideoLinks] = useState<EventVideoLink[]>([]);
+  const [eventVideoForm, setEventVideoForm] = useState<EventVideoForm>({ title: "全試合動画", video_url: "", memo: "", display_order: "1" });
+  const [editingEventVideoId, setEditingEventVideoId] = useState<string | null>(null);
+  const [deleteEventVideoId, setDeleteEventVideoId] = useState<string | null>(null);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -182,7 +190,10 @@ export default function EventDetailPage() {
       setMatches(ge.matches as any);
       setScoreInputs(Object.fromEntries(ge.matches.filter((m) => m.result).map((m) => [m.id, { a: m.result!.score_a, b: m.result!.score_b }])));
       setVideoClickCounts({});
+      setEventVideoClickCounts({});
+      setEventVideoLinks([]);
       setCanViewVideoClickCounts(false);
+      setCanManageEventVideos(false);
       return;
     }
     setGuestMode(false);
@@ -207,6 +218,7 @@ export default function EventDetailPage() {
     const { data: adminRow } = uid ? await supabase.from("app_admins").select("id").eq("profile_id", uid).eq("is_active", true).maybeSingle() : { data: null as any };
     const superUser = !!adminRow;
     let allowViewVideoClickCounts = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
+    let allowManageEventVideos = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
     let canDelete = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
     if (!canDelete && uid && event?.club_id) {
       const { data: linkedProfiles } = await supabase
@@ -254,10 +266,12 @@ export default function EventDetailPage() {
       const roles = new Set(memberRoles.map((x: any) => x.role));
       allowViewVideoClickCounts = allowViewVideoClickCounts || roles.has("main_admin");
       allowManageShare = allowManageShare || roles.has("main_admin") || roles.has("sub_admin");
+      allowManageEventVideos = allowManageEventVideos || roles.has("main_admin") || roles.has("sub_admin");
       allowCopyShare = allowManageShare || roles.has("member");
     }
     setCanViewVideoClickCounts(allowViewVideoClickCounts);
     setCanManageShare(allowManageShare);
+    setCanManageEventVideos(allowManageEventVideos);
     setCanCopyShare(allowCopyShare);
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
@@ -324,6 +338,8 @@ export default function EventDetailPage() {
     setScoreInputs((prev) => ({ ...savedScores, ...prev }));
     const savedYoutube = Object.fromEntries(normalizedMatches.map((m: any) => [m.id, m.youtube_url ?? ""]));
     setYoutubeInputs((prev) => ({ ...savedYoutube, ...prev }));
+    const { data: eventVideos } = await supabase.from("event_video_links").select("id,title,video_url,memo,display_order").eq("event_id", eventId).order("display_order", { ascending: true }).order("created_at", { ascending: true });
+    setEventVideoLinks((eventVideos ?? []) as EventVideoLink[]);
     if (allowViewVideoClickCounts) {
       const { data: clickRows, error: clickError } = await supabase.rpc("get_event_video_click_counts", { p_event_id: eventId });
       if (clickError) {
@@ -339,6 +355,17 @@ export default function EventDetailPage() {
       }
     } else {
       setVideoClickCounts({});
+    }
+    if (allowViewVideoClickCounts) {
+      const { data: eventVideoClickRows, error: eventVideoClickError } = await supabase.rpc("get_event_video_link_click_counts", { p_event_id: eventId });
+      if (eventVideoClickError) {
+        console.warn("全試合動画クリック数の取得に失敗しました", { message: eventVideoClickError.message, code: eventVideoClickError.code, details: eventVideoClickError.details, hint: eventVideoClickError.hint });
+        setEventVideoClickCounts({});
+      } else {
+        setEventVideoClickCounts(Object.fromEntries((eventVideoClickRows ?? []).map((row: any) => [row.event_video_link_id, Number(row.click_count ?? 0)])));
+      }
+    } else {
+      setEventVideoClickCounts({});
     }
   };
 
@@ -771,6 +798,48 @@ export default function EventDetailPage() {
     if (e) return setError("YouTubeリンクの削除に失敗しました");
     setYoutubeInputs((prev) => ({ ...prev, [matchId]: "" }));
     setEditingYoutubeIds((prev) => ({ ...prev, [matchId]: false }));
+    await loadAll();
+  };
+
+  const resetEventVideoForm = () => {
+    setEventVideoForm({ title: "全試合動画", video_url: "", memo: "", display_order: String(eventVideoLinks.length + 1 || 1) });
+    setEditingEventVideoId(null);
+  };
+
+  const startEventVideoEdit = (video: EventVideoLink) => {
+    setEditingEventVideoId(video.id);
+    setEventVideoForm({ title: video.title || "全試合動画", video_url: video.video_url ?? "", memo: video.memo ?? "", display_order: String(video.display_order ?? 1) });
+  };
+
+  const saveEventVideoLink = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId || !canManageEventVideos) return setError("この操作を行う権限がありません");
+    const videoUrl = eventVideoForm.video_url.trim();
+    if (videoUrl && !isYoutubeUrl(videoUrl)) return setError("YouTubeのURLを入力してください");
+    const payload = {
+      event_id: eventId,
+      title: eventVideoForm.title.trim() || "全試合動画",
+      video_url: videoUrl || null,
+      memo: eventVideoForm.memo.trim() || null,
+      display_order: Number(eventVideoForm.display_order) || 1,
+      updated_at: new Date().toISOString()
+    };
+    const result = editingEventVideoId
+      ? await supabase.from("event_video_links").update(payload).eq("id", editingEventVideoId).eq("event_id", eventId)
+      : await supabase.from("event_video_links").insert(payload);
+    if (result.error) return setError("動画の保存に失敗しました");
+    setError("");
+    resetEventVideoForm();
+    await loadAll();
+  };
+
+  const deleteEventVideoLink = async () => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !eventId || !deleteEventVideoId || !canManageEventVideos) return;
+    const { error: e } = await supabase.from("event_video_links").delete().eq("id", deleteEventVideoId).eq("event_id", eventId);
+    if (e) return setError("動画の削除に失敗しました");
+    setDeleteEventVideoId(null);
+    if (editingEventVideoId === deleteEventVideoId) resetEventVideoForm();
     await loadAll();
   };
 
@@ -1423,6 +1492,30 @@ export default function EventDetailPage() {
 
       
 
+      <Card title="動画視聴">
+        <div className="space-y-3 text-sm">
+          {eventVideoLinks.map((video) => (
+            <div key={video.id} className="rounded-xl bg-zinc-800 p-3">
+              <p className="font-semibold">{video.title || "全試合動画"}</p>
+              {video.video_url ? <a href={video.video_url} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded border border-zinc-500 px-3 py-2 text-sm">YouTubeで見る</a> : <p className="mt-2 text-xs text-zinc-400">YouTube URL未設定</p>}
+              {video.memo && <p className="mt-2 whitespace-pre-wrap text-xs text-zinc-300">メモ: {video.memo}</p>}
+              {canViewVideoClickCounts && <p className="mt-2 text-xs text-zinc-400">動画クリック数: {eventVideoClickCounts[video.id] ?? 0}回</p>}
+              {canManageEventVideos && <div className="mt-3 flex gap-2"><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => startEventVideoEdit(video)}>動画を編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => setDeleteEventVideoId(video.id)}>動画を削除</button></div>}
+            </div>
+          ))}
+          {canManageEventVideos && (
+            <div className="space-y-2 rounded-xl border border-zinc-700 p-3">
+              <p className="font-semibold">{editingEventVideoId ? "動画を編集" : "動画を追加"}</p>
+              <input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="全試合動画" value={eventVideoForm.title} onChange={(e) => setEventVideoForm((prev) => ({ ...prev, title: e.target.value }))} />
+              <input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={eventVideoForm.video_url} onChange={(e) => setEventVideoForm((prev) => ({ ...prev, video_url: e.target.value }))} />
+              <textarea className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="メモ" value={eventVideoForm.memo} onChange={(e) => setEventVideoForm((prev) => ({ ...prev, memo: e.target.value }))} />
+              <input type="number" className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="表示順" value={eventVideoForm.display_order} onChange={(e) => setEventVideoForm((prev) => ({ ...prev, display_order: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-2"><button className="rounded border border-zinc-500 py-2" onClick={resetEventVideoForm}>キャンセル</button><button className="rounded bg-accent py-2 text-black" onClick={() => void saveEventVideoLink()}>保存</button></div>
+            </div>
+          )}
+        </div>
+      </Card>
+
 <Card title="開催操作">
         <button className="w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowCloseModal(true)} disabled={eventStatus === "closed"}>
           {eventStatus === "closed" ? "イベント終了済み" : "イベント終了"}
@@ -1440,6 +1533,8 @@ export default function EventDetailPage() {
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
       {matchDeleteTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">この試合を削除しますか？</p>{matchDeleteTarget.hasScore && <div className="mt-2 space-y-1 text-sm text-red-300"><p>この試合にはスコアが入力されています。</p><p>削除すると戦績からも除外されます。</p><p>本当に削除しますか？</p></div>}<div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={cancelMatchDelete}>キャンセル</button><button className="w-1/2 rounded-xl bg-red-500 py-2 font-semibold text-white" onClick={() => void deleteMatch()}>削除</button></div></div></div>}
+
+      {deleteEventVideoId && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">動画を削除しますか？</p><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setDeleteEventVideoId(null)}>キャンセル</button><button className="w-1/2 rounded-xl bg-red-500 py-2 font-semibold text-white" onClick={() => void deleteEventVideoLink()}>動画を削除</button></div></div></div>}
 
       {showDeleteModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">本当にこのイベントを削除しますか？</p><p className="mt-2 text-sm text-zinc-300">このイベントの試合結果・戦績はランキングに反映されなくなります。</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={deleteChecked} onChange={(e) => setDeleteChecked(e.target.checked)} /><span>この操作を実行して問題ないことを確認しました</span></label><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setShowDeleteModal(false)}>キャンセル</button><button disabled={!deleteChecked} className="w-1/2 rounded-xl bg-red-500 py-2 disabled:bg-zinc-600" onClick={deleteEvent}>イベントを削除する</button></div></div></div>}
 

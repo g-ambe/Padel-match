@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActionButton, Card } from "@/components/ui";
 import { resetGuestModeData, setGuestMode } from "@/lib/guest-events";
 
@@ -17,6 +17,14 @@ export default function LoginPage() {
   const [displayName, setDisplayName] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [agreed, setAgreed] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("confirmed") === "true") {
+      setSignupMode(false);
+      setMessage("アカウント作成が完了しました。ログインしてください。");
+    }
+  }, []);
 
   const loginWithEmail = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -64,10 +72,14 @@ export default function LoginPage() {
       return;
     }
 
+    const redirectUrl = new URL("/login?confirmed=true", window.location.origin).toString();
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { display_name: trimmedName } }
+      options: {
+        data: { display_name: trimmedName },
+        emailRedirectTo: redirectUrl,
+      }
     });
 
     if (signUpError) {
@@ -89,7 +101,7 @@ export default function LoginPage() {
 
     setLoading(false);
     if (!signUpData.session) {
-      setMessage("確認メールを送信しました。メール内のリンクから登録を完了してください。");
+      setMessage("確認メールを送信しました。メールをご確認ください。");
       return;
     }
     resetGuestModeData();
@@ -114,13 +126,13 @@ export default function LoginPage() {
       <h1 className="text-center text-2xl font-bold">パデルクラブ</h1>
       <Card title={signupMode ? "アカウント作成" : "ログイン"}>
         <form className="space-y-3" onSubmit={signupMode ? signUpWithEmail : loginWithEmail}>
+          {error && <p className="text-sm text-red-400">{error}</p>}
+          {message && <p className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">{message}</p>}
           <input className="w-full rounded-2xl bg-zinc-800 p-3" placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} />
           {signupMode && <input className="w-full rounded-2xl bg-zinc-800 p-3" placeholder="表示名" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />}
           <input className="w-full rounded-2xl bg-zinc-800 p-3" type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} />
           {signupMode && <input className="w-full rounded-2xl bg-zinc-800 p-3" type="password" placeholder="パスワード確認" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />}
           {signupMode && <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /><span>利用規約/プライバシーポリシーに同意する</span></label>}
-          {error && <p className="text-sm text-red-400">{error}</p>}
-          {message && <p className="text-sm text-emerald-400">{message}</p>}
           <ActionButton type="submit" disabled={loading}>{loading ? (signupMode ? "作成中..." : "ログイン中...") : (signupMode ? "アカウント作成" : "メールでログイン")}</ActionButton>
           {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={loginWithGoogle}>Googleでログイン</button>}
           {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={() => { setGuestMode(true); router.push("/home"); }}>ゲストで利用</button>}

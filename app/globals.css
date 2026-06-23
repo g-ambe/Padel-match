@@ -129,3 +129,73 @@ body {
 [data-theme="light"] .bg-black\/60 {
   background-color: rgb(15 23 42 / 0.45) !important;
 }
+
+[data-theme="light"] aside {
+  background: #f8fafc !important;
+  color: #111827 !important;
+  border-left: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] aside > button,
+[data-theme="light"] aside nav > button,
+[data-theme="light"] aside nav > div {
+  background-color: #eef2f7 !important;
+  border: 1px solid #cbd5e1;
+  color: #111827 !important;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.08);
+}
+
+[data-theme="light"] aside nav > button:hover,
+[data-theme="light"] aside nav > div button:hover {
+  background-color: #e2e8f0 !important;
+}
+
+[data-theme="light"] aside nav > div > div,
+[data-theme="light"] aside nav > div > div > div {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+}
+
+[data-theme="light"] aside nav > div button {
+  color: #1f2937 !important;
+}
+
+[data-theme="light"] aside nav > div button[class*="px-6"],
+[data-theme="light"] aside nav > div button[class*="px-9"] {
+  background-color: #ffffff !important;
+  border-color: #d1d5db !important;
+}
+
+[data-theme="light"] aside nav > div button[class*="px-9"] {
+  background-color: #f1f5f9 !important;
+}
+
+[data-theme="light"] aside .border-accent.bg-accent,
+[data-theme="light"] aside .bg-blue-600 {
+  background-color: #2563eb !important;
+  border-color: #1d4ed8 !important;
+  color: #ffffff !important;
+}
+
+[data-theme="light"] aside .border-zinc-600.bg-zinc-900\/60 {
+  background-color: #ffffff !important;
+  border-color: #94a3b8 !important;
+  color: #334155 !important;
+}
+
+[data-theme="light"] .text-amber-300,
+[data-theme="light"] .text-yellow-300,
+[data-theme="light"] .text-yellow-400 {
+  color: #92400e !important;
+}
+
+[data-theme="light"] .border-amber-600\/40,
+[data-theme="light"] .border-yellow-500,
+[data-theme="light"] .border-yellow-600 {
+  border-color: #d97706 !important;
+}
+
+[data-theme="light"] .bg-amber-900\/20,
+[data-theme="light"] .bg-yellow-900\/20 {
+  background-color: #fef3c7 !important;
+}

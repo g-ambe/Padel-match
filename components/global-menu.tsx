@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase";
+import { useTheme } from "@/components/theme-provider";
 
 export function GlobalMenu() {
   const router = useRouter();
@@ -13,6 +14,7 @@ export function GlobalMenu() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [hasSession, setHasSession] = useState<boolean | null>(null);
   const [isSuperUser, setIsSuperUser] = useState(false);
+  const { theme, saving: themeSaving, message: themeMessage, setTheme } = useTheme();
 
   const closeMenu = () => setOpen(false);
 
@@ -137,6 +139,27 @@ export function GlobalMenu() {
           </div>
           {isSuperUser && <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/super-admin")}>スーパーユーザー管理</button>}
           <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/notifications")}>通知{unreadCount > 0 ? ` (${unreadCount})` : ""}</button>
+          <div className="rounded-lg bg-zinc-800 p-3">
+            <p className="mb-2 text-sm font-bold">表示設定</p>
+            <p className="mb-2 text-xs text-zinc-300">テーマ</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                className={`rounded-lg border px-2 py-2 text-sm ${theme === "dark" ? "border-accent bg-accent text-black" : "border-zinc-600 bg-zinc-900/60"}`}
+                disabled={themeSaving}
+                onClick={() => void setTheme("dark")}
+              >
+                ダークモード
+              </button>
+              <button
+                className={`rounded-lg border px-2 py-2 text-sm ${theme === "light" ? "border-blue-500 bg-blue-600 text-white" : "border-zinc-600 bg-zinc-900/60"}`}
+                disabled={themeSaving}
+                onClick={() => void setTheme("light")}
+              >
+                ホワイトモード
+              </button>
+            </div>
+            {themeMessage && <p className="mt-2 text-xs text-accent">{themeMessage}</p>}
+          </div>
           {/* 一時的に非表示: 将来再表示予定 */}
           {/* <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button> */}
           <button className="w-full rounded-lg bg-red-600/80 px-3 py-3 text-left" onClick={() => void logout()}>ログアウト</button>

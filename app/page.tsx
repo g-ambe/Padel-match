@@ -101,7 +101,7 @@ export default function LoginPage() {
 
     setLoading(false);
     if (!signUpData.session) {
-      setMessage("確認メールを送信しました。メールをご確認ください。");
+      router.push("/signup/check-email");
       return;
     }
     resetGuestModeData();

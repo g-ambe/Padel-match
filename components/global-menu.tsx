@@ -9,6 +9,7 @@ export function GlobalMenu() {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const [friendlyOpen, setFriendlyOpen] = useState(false);
   const [groupOpen, setGroupOpen] = useState(false);
   const [officialOpen, setOfficialOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -111,7 +112,16 @@ export function GlobalMenu() {
           <div className="rounded-lg bg-zinc-800">
             <div className="px-3 py-3 font-medium">イベント作成・閲覧</div>
             <div className="border-t border-zinc-700">
-              <button className="w-full px-6 py-3 text-left text-sm" onClick={() => moveTo("/home")}>フレンドリーマッチ</button>
+              <button className="flex w-full items-center justify-between px-6 py-3 text-left text-sm" onClick={() => setFriendlyOpen((v) => !v)}>
+                <span>フレンドリーマッチ</span>
+                <span>{friendlyOpen ? "−" : "+"}</span>
+              </button>
+              {friendlyOpen && (
+                <div className="border-t border-zinc-700 bg-zinc-900/60">
+                  <button className="w-full px-9 py-3 text-left text-sm" onClick={() => moveTo("/home")}>フレンドリーマッチ</button>
+                  <button className="w-full border-t border-zinc-700 px-9 py-3 text-left text-sm" onClick={() => moveTo("/team-matches/new")}>フレンドリーチームマッチ</button>
+                </div>
+              )}
               <button className="flex w-full items-center justify-between border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => setOfficialOpen((v) => !v)}>
                 <span>オフィシャルマッチ</span>
                 <span>{officialOpen ? "−" : "+"}</span>

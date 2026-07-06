@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
 import { fetchActiveClubMemberParticipants } from "@/lib/event-participants";
@@ -17,6 +17,8 @@ type EventRow = { id: string; name: string; status: string; club_id: string | nu
 type Side = { id: string; side: TeamSideKey; club_id: string | null; team_name: string | null };
 type Match = { id: string; match_order: number; team_a_player1_profile_id: string | null; team_a_player1_guest_name: string | null; team_a_player2_profile_id: string | null; team_a_player2_guest_name: string | null; team_b_player1_profile_id: string | null; team_b_player1_guest_name: string | null; team_b_player2_profile_id: string | null; team_b_player2_guest_name: string | null; team_a_score: number | null; team_b_score: number | null; result: ResultValue; score_detail: string | null; memo: string | null; youtube_url: string | null; created_at?: string | null };
 type Form = { a1ProfileId: string; a1GuestName: string; a2ProfileId: string; a2GuestName: string; b1ProfileId: string; b1GuestName: string; b2ProfileId: string; b2GuestName: string; aScore: string; bScore: string; result: ResultValue; scoreDetail: string; memo: string; youtubeUrl: string };
+type StatsSectionKey = "teams" | "players" | "pairs";
+type StatsRow = { name: string; matches: number; wins: number; losses: number; draws: number; points: number; scored: number; conceded: number; diff: number; winRate: number };
 
 const emptyForm = (): Form => ({ a1ProfileId:"",a1GuestName:"",a2ProfileId:"",a2GuestName:"",b1ProfileId:"",b1GuestName:"",b2ProfileId:"",b2GuestName:"",aScore:"",bScore:"",result:"undecided",scoreDetail:"",memo:"",youtubeUrl:"" });
 const resultLabel = (r: ResultValue) => ({ win:"チームA勝ち", lose:"チームB勝ち", draw:"引き分け", undecided:"未定" }[r]);
@@ -24,6 +26,10 @@ const autoResult = (a: string, b: string): ResultValue => { if (a.trim()==="" ||
 const isYoutubeUrl = (v: string) => /^https:\/\/(www\.)?youtube\.com\/watch\?v=/.test(v) || /^https:\/\/youtu\.be\//.test(v) || /^https:\/\/(www\.)?youtube\.com\/shorts\//.test(v);
 const guestChoiceValue = (name: string) => `guest:${name}`;
 const selectedChoiceValue = (profileId: string, guestName: string) => profileId || (guestName ? guestChoiceValue(guestName) : "");
+const emptyStatsRow = (name: string): StatsRow => ({ name, matches: 0, wins: 0, losses: 0, draws: 0, points: 0, scored: 0, conceded: 0, diff: 0, winRate: 0 });
+const applyStatsResult = (row: StatsRow, scored: number, conceded: number) => { row.matches += 1; row.scored += scored; row.conceded += conceded; if (scored > conceded) { row.wins += 1; row.points += 3; } else if (scored < conceded) { row.losses += 1; } else { row.draws += 1; row.points += 1; } row.diff = row.scored - row.conceded; row.winRate = row.matches ? Math.round((row.wins / row.matches) * 1000) / 10 : 0; };
+const sortStatsRows = (rows: StatsRow[]) => [...rows].sort((a, b) => b.points - a.points || b.wins - a.wins || b.winRate - a.winRate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.matches - b.matches || a.name.localeCompare(b.name, "ja"));
+const hasCountableTeamScore = (match: Match) => typeof match.team_a_score === "number" && typeof match.team_b_score === "number" && !(match.team_a_score === 0 && match.team_b_score === 0);
 
 export default function FriendlyTeamMatchDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +51,7 @@ export default function FriendlyTeamMatchDetailPage() {
   const [showDelete,setShowDelete]=useState(false);
   const [deleteOk,setDeleteOk]=useState(false);
   const [closeMode,setCloseMode]=useState<"official"|"record_only">("official");
+  const [openStatsSections,setOpenStatsSections]=useState<Record<StatsSectionKey, boolean>>({ teams: false, players: false, pairs: false });
 
   const teamA = sides.find((s)=>s.side==="team_a");
   const teamB = sides.find((s)=>s.side==="team_b");
@@ -88,6 +95,30 @@ export default function FriendlyTeamMatchDetailPage() {
   ];
   const memberName=(side:TeamSideKey, pid:string|null, guest:string|null)=>guest||members[side].find((m)=>m.playerProfileId===pid)?.displayName||"未入力";
   const applyChoice = (choice: string, profileKey: keyof Form, guestKey: keyof Form) => choice.startsWith("guest:") ? { [profileKey]: "", [guestKey]: choice.slice(6) } as Partial<Form> : { [profileKey]: choice, [guestKey]: "" } as Partial<Form>;
+  const teamMatchStats = useMemo(() => {
+    const teamRows = { team_a: emptyStatsRow(teamAName), team_b: emptyStatsRow(teamBName) };
+    const playerRows = new Map<string, StatsRow>();
+    const pairRows = new Map<string, StatsRow>();
+    const playerInfo = (side: TeamSideKey, profileId: string | null, guestName: string | null) => ({ key: profileId ? `profile:${profileId}` : guestName ? `guest:${side}:${guestName}` : "", name: memberName(side, profileId, guestName) });
+    const ensureRow = (map: Map<string, StatsRow>, key: string, name: string) => { if (!map.has(key)) map.set(key, emptyStatsRow(name)); return map.get(key)!; };
+    const applyPlayers = (players: { key: string; name: string }[], scored: number, conceded: number) => { for (const player of players.filter((p) => p.key)) applyStatsResult(ensureRow(playerRows, player.key, player.name), scored, conceded); };
+    const applyPair = (players: { key: string; name: string }[], scored: number, conceded: number) => { const valid = players.filter((p) => p.key); if (valid.length !== 2) return; const sorted = [...valid].sort((a, b) => a.key.localeCompare(b.key)); const key = sorted.map((p) => p.key).join("|"); const name = sorted.map((p) => p.name).join(" / "); applyStatsResult(ensureRow(pairRows, key, name), scored, conceded); };
+    for (const match of matches) {
+      if (!hasCountableTeamScore(match)) continue;
+      const aScore = match.team_a_score!;
+      const bScore = match.team_b_score!;
+      applyStatsResult(teamRows.team_a, aScore, bScore);
+      applyStatsResult(teamRows.team_b, bScore, aScore);
+      const teamAPlayers = [playerInfo("team_a", match.team_a_player1_profile_id, match.team_a_player1_guest_name), playerInfo("team_a", match.team_a_player2_profile_id, match.team_a_player2_guest_name)];
+      const teamBPlayers = [playerInfo("team_b", match.team_b_player1_profile_id, match.team_b_player1_guest_name), playerInfo("team_b", match.team_b_player2_profile_id, match.team_b_player2_guest_name)];
+      applyPlayers(teamAPlayers, aScore, bScore);
+      applyPlayers(teamBPlayers, bScore, aScore);
+      applyPair(teamAPlayers, aScore, bScore);
+      applyPair(teamBPlayers, bScore, aScore);
+    }
+    return { countedMatches: teamRows.team_a.matches, teams: [teamRows.team_a, teamRows.team_b], players: sortStatsRows([...playerRows.values()]), pairs: sortStatsRows([...pairRows.values()]) };
+  }, [matches, members, teamAName, teamBName]);
+  const toggleStatsSection = (key: StatsSectionKey) => setOpenStatsSections((prev) => ({ ...prev, [key]: !prev[key] }));
   const validate=(f:Form)=>{
     const vals=[f.a1ProfileId||f.a1GuestName.trim(),f.a2ProfileId||f.a2GuestName.trim(),f.b1ProfileId||f.b1GuestName.trim(),f.b2ProfileId||f.b2GuestName.trim()].filter(Boolean);
     if(new Set(vals).size!==vals.length) return "同一試合内で同じ選手は選択できません";
@@ -137,6 +168,7 @@ export default function FriendlyTeamMatchDetailPage() {
     <Card title="チーム設定"><div className="space-y-3">{[teamA,teamB].filter(Boolean).map((s)=><SideEditor key={s!.id} side={s!} title={s!.side==="team_a"?"チームA":"チームB"} guests={guests[s!.side]} guestName={guestNames[s!.side]} setGuestName={(value)=>setGuestNames((prev)=>({...prev,[s!.side]:value}))} groups={groups} canManage={canManage&&event.status!=="closed"} onSave={updateSide} onAddGuest={()=>void addGuest(s!.side)}/>)}</div></Card>
     <Card title="開催操作"><div className="space-y-3 text-sm">{event.status==="active"&&canManage&&<><select className="w-full rounded-xl bg-zinc-800 p-3" value={closeMode} onChange={(e)=>setCloseMode(e.target.value as any)}><option value="official">戦績に反映する</option><option value="record_only">記録用にする</option></select><button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>void closeOrReopen("closed")}>フレンドリーチームマッチ終了</button></>}{event.status==="closed"&&<><p>フレンドリーチームマッチ終了済み（{event.stats_mode==="record_only"?"記録用":"戦績に反映する"}）</p>{canManage&&<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void closeOrReopen("active")}>フレンドリーチームマッチ再開</button>}{canManage&&(showDelete?<div className="space-y-2 rounded-xl border border-red-500/60 p-3"><label className="flex gap-2 text-xs"><input type="checkbox" checked={deleteOk} onChange={(e)=>setDeleteOk(e.target.checked)}/>削除すると元に戻せません</label><button className="w-full rounded bg-red-600 py-2 font-bold" onClick={()=>void deleteEvent()}>フレンドリーチームマッチ削除</button></div>:<button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>setShowDelete(true)}>フレンドリーチームマッチ削除</button>)}</>}</div></Card>
     {event.status==="closed"&&<Card title="共有リンク"><div className="space-y-2 text-sm">{shareUrl?<><p className="break-all rounded-xl bg-zinc-800 p-3 text-xs">{shareUrl}</p><button className="w-full rounded-xl border border-zinc-500 py-2" onClick={()=>navigator.clipboard.writeText(shareUrl)}>共有リンクをコピー</button></>:canManage?<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void share()}>共有リンクを作成</button>:<p>共有されていません</p>}</div></Card>}
+    {event.status==="closed"&&<TeamMatchStatsCard stats={teamMatchStats} openSections={openStatsSections} onToggle={toggleStatsSection} />}
     <Card title="試合結果"><div className="space-y-3">{matches.map((m,i)=><div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">第{i+1}試合</p><p>{memberName("team_a",m.team_a_player1_profile_id,m.team_a_player1_guest_name)} / {memberName("team_a",m.team_a_player2_profile_id,m.team_a_player2_guest_name)} vs {memberName("team_b",m.team_b_player1_profile_id,m.team_b_player1_guest_name)} / {memberName("team_b",m.team_b_player2_profile_id,m.team_b_player2_guest_name)}</p><p>スコア: {m.team_a_score??"未入力"} - {m.team_b_score??"未入力"}</p><p>結果: {resultLabel(m.result)}</p>{m.score_detail&&<p>詳細スコア: {m.score_detail}</p>}{m.memo&&<p className="whitespace-pre-wrap">メモ: {m.memo}</p>}{m.youtube_url&&<a className="underline" href={m.youtube_url} target="_blank" rel="noreferrer">動画視聴</a>}{canManage&&event.status!=="closed"&&<div className="mt-2 grid grid-cols-2 gap-2"><button className="rounded border border-zinc-500 py-2" onClick={()=>{setEditingId(m.id);setEditingForm(toForm(m));}}>編集</button><button className="rounded border border-red-500/70 py-2 text-red-200" onClick={()=>void deleteMatch(m.id)}>削除</button></div>}{editingId===m.id&&<MatchFormView title="試合カードを編集" form={editingForm} setForm={(p,s)=>setEditingForm((prev)=>{const n={...prev,...p}; if(s)n.result=autoResult(n.aScore,n.bScore); return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onSave={()=>void saveMatch(true)} onCancel={()=>setEditingId(null)}/>}</div>)}{canManage&&event.status!=="closed"&&(showForm?<MatchFormView title="試合カードを追加" form={form} setForm={(p,s)=>setForm((prev)=>{const n={...prev,...p}; if(s)n.result=autoResult(n.aScore,n.bScore); return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onSave={()=>void saveMatch(false)} onCancel={()=>setShowForm(false)}/>:<ActionButton onClick={()=>setShowForm(true)}>試合カードを追加</ActionButton>)}</div></Card>
     <Link href="/team-matches/new" className="text-center text-sm underline">フレンドリーチームマッチへ戻る</Link>
   </main>;
@@ -153,4 +185,21 @@ function MatchFormView({title,form,setForm,applyChoice,teamAChoices,teamBChoices
   const cls="w-full rounded-xl border border-zinc-700 bg-zinc-950/70 px-3 py-2 text-sm";
   const player=(label:string,pid:keyof Form,guest:keyof Form,choices:PlayerChoice[])=><div className="space-y-1"><label className="text-xs text-zinc-300">{label}</label><select className={cls} value={selectedChoiceValue(form[pid] as string, form[guest] as string)} onChange={(e)=>setForm(applyChoice(e.target.value,pid,guest))}><option value="">選手を選択</option>{choices.map((choice)=><option key={`${choice.kind}-${choice.value}`} value={choice.value}>{choice.kind==="guest"?`ゲスト: ${choice.label}`:choice.label}</option>)}</select><input className={cls} placeholder="自由入力" value={(form[guest] as string).startsWith("guest:") ? "" : form[guest] as string} onChange={(e)=>setForm({[pid]:"",[guest]:e.target.value} as any)}/></div>;
   return <div className="space-y-3 rounded-2xl border border-zinc-700 p-3"><h4 className="font-bold">{title}</h4><section className="space-y-2"><p className="text-xs font-bold text-zinc-400">チームA</p>{player("チームA 選手1","a1ProfileId","a1GuestName",teamAChoices)}{player("チームA 選手2","a2ProfileId","a2GuestName",teamAChoices)}</section><section className="space-y-2"><p className="text-xs font-bold text-zinc-400">チームB</p>{player("チームB 選手1","b1ProfileId","b1GuestName",teamBChoices)}{player("チームB 選手2","b2ProfileId","b2GuestName",teamBChoices)}</section><div className="grid grid-cols-2 gap-2"><input className={cls} inputMode="numeric" placeholder="チームA得点" value={form.aScore} onChange={(e)=>setForm({aScore:e.target.value},true)}/><input className={cls} inputMode="numeric" placeholder="チームB得点" value={form.bScore} onChange={(e)=>setForm({bScore:e.target.value},true)}/></div><select className={cls} value={form.result} onChange={(e)=>setForm({result:e.target.value as ResultValue})}><option value="win">チームA勝ち</option><option value="lose">チームB勝ち</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><input className={cls} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e)=>setForm({scoreDetail:e.target.value})}/><textarea className={cls} placeholder="メモ" value={form.memo} onChange={(e)=>setForm({memo:e.target.value})}/><input className={cls} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e)=>setForm({youtubeUrl:e.target.value})}/><div className="grid grid-cols-2 gap-2"><button className="rounded-xl bg-accent py-2 font-bold text-black" onClick={onSave}>保存</button><button className="rounded-xl border border-zinc-500 py-2" onClick={onCancel}>キャンセル</button></div></div>;
+}
+
+
+const teamStatsButtonClass = "flex min-h-12 w-full items-center rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-3 text-left text-sm font-bold text-zinc-100 shadow-sm shadow-black/20 active:bg-zinc-800";
+
+function TeamStatsSection({ title, isOpen, onToggle, children }: { title: string; isOpen: boolean; onToggle: () => void; children: ReactNode }) {
+  return <section className="space-y-2"><button type="button" className={teamStatsButtonClass} onClick={onToggle} aria-expanded={isOpen}><span className="mr-2 text-accent">{isOpen ? "▼" : "◀"}</span><span>{title}</span></button>{isOpen && <div>{children}</div>}</section>;
+}
+
+function StatsRowsView({ rows }: { rows: StatsRow[] }) {
+  if (rows.length === 0) return <p className="text-sm text-zinc-400">集計対象の試合結果がありません</p>;
+  return <div className="space-y-2">{rows.map((row) => <div key={row.name} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{row.name}</p><p className="text-zinc-300">{row.wins}勝{row.losses}敗{row.draws}分 / 勝点{row.points} / 勝率{row.winRate.toFixed(1)}% / 得失点差{row.diff >= 0 ? `+${row.diff}` : row.diff}</p><p className="text-xs text-zinc-400">{row.matches}試合 / 得点{row.scored} / 失点{row.conceded}</p></div>)}</div>;
+}
+
+function TeamMatchStatsCard({ stats, openSections, onToggle }: { stats: { countedMatches: number; teams: StatsRow[]; players: StatsRow[]; pairs: StatsRow[] }; openSections: Record<StatsSectionKey, boolean>; onToggle: (key: StatsSectionKey) => void }) {
+  const emptyRows: StatsRow[] = [];
+  return <Card title="戦績"><div className="space-y-3"><TeamStatsSection title="チーム戦績" isOpen={openSections.teams} onToggle={() => onToggle("teams")}><StatsRowsView rows={stats.countedMatches > 0 ? stats.teams : emptyRows} /></TeamStatsSection><TeamStatsSection title="個人戦績" isOpen={openSections.players} onToggle={() => onToggle("players")}><StatsRowsView rows={stats.players} /></TeamStatsSection><TeamStatsSection title="ペア戦績" isOpen={openSections.pairs} onToggle={() => onToggle("pairs")}><StatsRowsView rows={stats.pairs} /></TeamStatsSection></div></Card>;
 }

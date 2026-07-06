@@ -7,6 +7,7 @@ import { Card, ActionButton } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
+import { hasEnteredFriendlyMatchScore, isFriendlyMatchDraw } from "@/lib/friendly-match-results";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
 type TeamResult = "A" | "B" | "draw";
@@ -101,7 +102,7 @@ export default function EventDetailPage() {
     }
 
     for (const m of matches) {
-      if (!m.completed || !m.result) continue;
+      if (!hasEnteredFriendlyMatchScore(m)) continue;
       const teamA = m.players.filter((x) => x.team === "A").map((x) => x.participant_id);
       const teamB = m.players.filter((x) => x.team === "B").map((x) => x.participant_id);
 
@@ -154,10 +155,8 @@ export default function EventDetailPage() {
     const stats: Record<string, { name: string; m: number; w: number }> = {};
     for (const p of participants) stats[p.id] = { name: p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定"), m: 0, w: 0 };
     for (const m of matches) {
-      if (!m.completed) continue;
-      const score = scoreInputs[m.id];
-      if (!score) continue;
-      const winner = score.a === score.b ? "draw" : score.a > score.b ? "A" : "B";
+      if (!hasEnteredFriendlyMatchScore(m)) continue;
+      const winner = m.result!.winner_team;
       for (const mp of m.players) {
         if (!stats[mp.participant_id]) continue;
         stats[mp.participant_id].m += 1;
@@ -334,7 +333,7 @@ export default function EventDetailPage() {
 
     const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
     setMatches(normalizedMatches);
-    const savedScores = Object.fromEntries(normalizedMatches.filter((m: any) => m.result).map((m: any) => [m.id, { a: m.result.score_a, b: m.result.score_b }]));
+    const savedScores = Object.fromEntries(normalizedMatches.filter((m: any) => hasEnteredFriendlyMatchScore(m)).map((m: any) => [m.id, { a: m.result.score_a, b: m.result.score_b }]));
     setScoreInputs((prev) => ({ ...savedScores, ...prev }));
     const savedYoutube = Object.fromEntries(normalizedMatches.map((m: any) => [m.id, m.youtube_url ?? ""]));
     setYoutubeInputs((prev) => ({ ...savedYoutube, ...prev }));
@@ -631,7 +630,7 @@ export default function EventDetailPage() {
 
   const matchHasSavedScore = (match: MatchView) => {
     const score = scoreInputs[match.id];
-    return !!match.result || match.completed || (score?.a !== undefined && score.a !== "") || (score?.b !== undefined && score.b !== "");
+    return hasEnteredFriendlyMatchScore(match) || (score?.a !== undefined && score.a !== "") || (score?.b !== undefined && score.b !== "");
   };
 
   const requestMatchDelete = (match: MatchView) => {
@@ -1405,7 +1404,7 @@ export default function EventDetailPage() {
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
                   )}
-                </div>{m.result?.score_a === m.result?.score_b && <p className="mt-2 text-sm font-semibold text-amber-300">引き分け</p>}<div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
+                </div>{isFriendlyMatchDraw(m) && <p className="mt-2 text-sm font-semibold text-amber-300">引き分け</p>}<div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
                   {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="mt-3 w-full rounded-xl border border-red-500 py-2 text-sm text-red-300" onClick={() => requestMatchDelete(m)}>削除</button>}
                 </div>
               </div>

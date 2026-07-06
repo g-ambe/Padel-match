@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
+import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { canDeleteGroup, canEditGroupProfile, canManageMembers, canSubAdminEditTarget, toAppRole } from "@/lib/permissions";
 
 type Role = "main_admin" | "sub_admin" | "member";
@@ -121,14 +122,14 @@ export default function GroupDetailPage() {
     const { data: pps } = profileIds.length ? await s.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[] };
     const profileName = new Map((pps ?? []).map((p: any) => [p.id, p.display_name]));
 
-    const { data: matches } = await s.from("matches").select("id,event_id,match_players(participant_id,team),match_results(score_a,score_b,winner_team)").in("event_id", closedEventIds);
+    const { data: matches } = await s.from("matches").select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)").in("event_id", closedEventIds);
 
     const pStats: Record<string, any> = {};
     const pairStats: Record<string, any> = {};
 
     for (const m of matches ?? []) {
       const res = m.match_results?.[0];
-      if (!res) continue;
+      if (!hasEnteredFriendlyMatchScore({ completed: m.completed, result: res })) continue;
       const allA = (m.match_players ?? []).filter((x: any) => x.team === "A").map((x: any) => x.participant_id);
       const allB = (m.match_players ?? []).filter((x: any) => x.team === "B").map((x: any) => x.participant_id);
       const teamA = allA.filter((pid: string) => memberParticipantIds.has(pid));

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
+import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 
 const PLAY_LEVEL_OPTIONS = ["初級", "初中級", "中級", "中上級", "上級"] as const;
 const DOMINANT_HAND_OPTIONS = ["右", "左"] as const;
@@ -114,11 +115,10 @@ export default function ProfilePage() {
     const closedIds = new Set((closedEvents ?? []).map((e: any) => e.id));
 
     const { data: matchRows } = participantIds.length
-      ? await s.from("match_players").select("match_id,participant_id,team,matches!inner(id,event_id,match_results(score_a,score_b,winner_team))").in("participant_id", participantIds)
+      ? await s.from("match_players").select("match_id,participant_id,team,matches!inner(id,event_id,completed,match_results(score_a,score_b,winner_team))").in("participant_id", participantIds)
       : { data: [] as any[] };
 
     let matches = 0;
-    let decidedMatches = 0;
     let wins = 0;
     let scored = 0;
     let conceded = 0;
@@ -127,18 +127,17 @@ export default function ProfilePage() {
       const m = mp.matches;
       if (!m || !closedIds.has(m.event_id)) continue;
       const result = m.match_results?.[0];
-      if (!result) continue;
+      if (!hasEnteredFriendlyMatchScore({ completed: m.completed, result })) continue;
       matches += 1;
       const myTeam = mp.team;
       const myScore = myTeam === "A" ? result.score_a : result.score_b;
       const opScore = myTeam === "A" ? result.score_b : result.score_a;
       scored += myScore ?? 0;
       conceded += opScore ?? 0;
-      if (result.winner_team !== "draw") decidedMatches += 1;
       if (result.winner_team === myTeam) wins += 1;
     }
 
-    const winRate = decidedMatches > 0 ? (wins / decidedMatches) * 100 : 0;
+    const winRate = matches > 0 ? (wins / matches) * 100 : 0;
     setStats({
       matches,
       wins,

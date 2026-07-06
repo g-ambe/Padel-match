@@ -23,67 +23,116 @@ create table if not exists event_team_sides (
 );
 
 
--- Allow friendly team match managers to close/reopen team events even when their group is stored
--- on event_team_sides rather than events.club_id. club_members.status is intentionally not used.
+-- Investigation SQL for manual diagnosis (run separately if needed):
+-- select schemaname, tablename, policyname, cmd, roles, qual, with_check
+-- from pg_policies
+-- where schemaname = 'public' and tablename = 'events'
+-- order by policyname;
+
+-- Non-recursive helpers for friendly team event policies. These functions do not select from events.
+create or replace function public.can_view_friendly_team_event_by_sides(
+  p_event_id uuid,
+  p_created_by_auth_user_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_super_user()
+    or p_created_by_auth_user_id = auth.uid()
+    or exists (
+      select 1
+      from public.event_team_sides ets
+      join public.club_members cm on cm.club_id = ets.club_id
+      join public.player_profiles pp on pp.id = cm.player_profile_id
+      where ets.event_id = p_event_id
+        and cm.is_active = true
+        and pp.linked_auth_user_id = auth.uid()
+    )
+    or exists (
+      select 1
+      from public.event_team_sides ets
+      join public.club_members cm on cm.club_id = ets.club_id
+      where ets.event_id = p_event_id
+        and cm.is_active = true
+        and cm.profile_id = auth.uid()
+    );
+$$;
+
+create or replace function public.can_manage_friendly_team_event_by_sides(
+  p_event_id uuid,
+  p_created_by_auth_user_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.is_super_user()
+    or p_created_by_auth_user_id = auth.uid()
+    or exists (
+      select 1
+      from public.event_team_sides ets
+      join public.club_members cm on cm.club_id = ets.club_id
+      join public.player_profiles pp on pp.id = cm.player_profile_id
+      where ets.event_id = p_event_id
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+        and pp.linked_auth_user_id = auth.uid()
+    )
+    or exists (
+      select 1
+      from public.event_team_sides ets
+      join public.club_members cm on cm.club_id = ets.club_id
+      where ets.event_id = p_event_id
+        and cm.is_active = true
+        and cm.role in ('main_admin', 'sub_admin')
+        and cm.profile_id = auth.uid()
+    );
+$$;
+
+grant execute on function public.can_view_friendly_team_event_by_sides(uuid, uuid) to authenticated;
+grant execute on function public.can_manage_friendly_team_event_by_sides(uuid, uuid) to authenticated;
+
+-- Friendly team event policies intentionally avoid selecting from events to prevent 42P17 recursion.
+drop policy if exists "events_select_friendly_team_match_viewers" on events;
+create policy "events_select_friendly_team_match_viewers"
+  on events for select to authenticated
+  using (
+    event_mode = 'team'
+    and coalesce(is_deleted, false) = false
+    and public.can_view_friendly_team_event_by_sides(id, created_by_auth_user_id)
+  );
+
 drop policy if exists "events_update_friendly_team_match_managers" on events;
 create policy "events_update_friendly_team_match_managers"
   on events for update to authenticated
   using (
     event_mode = 'team'
     and coalesce(is_deleted, false) = false
-    and (
-      public.is_super_user()
-      or created_by_auth_user_id = auth.uid()
-      or exists (
-        select 1
-        from event_team_sides ets
-        join club_members cm on cm.club_id = ets.club_id
-        join player_profiles pp on pp.id = cm.player_profile_id
-        where ets.event_id = events.id
-          and cm.is_active = true
-          and cm.role in ('main_admin', 'sub_admin')
-          and pp.linked_auth_user_id = auth.uid()
-      )
-      or exists (
-        select 1
-        from event_team_sides ets
-        join club_members cm on cm.club_id = ets.club_id
-        where ets.event_id = events.id
-          and cm.is_active = true
-          and cm.role in ('main_admin', 'sub_admin')
-          and cm.profile_id = auth.uid()
-      )
-    )
+    and public.can_manage_friendly_team_event_by_sides(id, created_by_auth_user_id)
   )
   with check (
     event_mode = 'team'
     and coalesce(is_deleted, false) = false
     and stats_mode in ('official', 'record_only', 'undecided')
     and status in ('active', 'closed')
-    and (
-      public.is_super_user()
-      or created_by_auth_user_id = auth.uid()
-      or exists (
-        select 1
-        from event_team_sides ets
-        join club_members cm on cm.club_id = ets.club_id
-        join player_profiles pp on pp.id = cm.player_profile_id
-        where ets.event_id = events.id
-          and cm.is_active = true
-          and cm.role in ('main_admin', 'sub_admin')
-          and pp.linked_auth_user_id = auth.uid()
-      )
-      or exists (
-        select 1
-        from event_team_sides ets
-        join club_members cm on cm.club_id = ets.club_id
-        where ets.event_id = events.id
-          and cm.is_active = true
-          and cm.role in ('main_admin', 'sub_admin')
-          and cm.profile_id = auth.uid()
-      )
-    )
+    and public.can_manage_friendly_team_event_by_sides(id, created_by_auth_user_id)
   );
+
+drop policy if exists "events_delete_friendly_team_match_managers" on events;
+create policy "events_delete_friendly_team_match_managers"
+  on events for delete to authenticated
+  using (
+    event_mode = 'team'
+    and public.can_manage_friendly_team_event_by_sides(id, created_by_auth_user_id)
+  );
+
+-- Operational verification SQL (replace the id with a friendly team event id):
+-- select id, status, stats_mode, event_mode from public.events where id = '<event-id>'::uuid;
 
 create table if not exists event_team_matches (
   id uuid primary key default gen_random_uuid(),

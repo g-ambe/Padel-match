@@ -113,7 +113,18 @@ export default function FriendlyTeamMatchDetailPage() {
   const deleteMatch=async(mid:string)=>{ if(!window.confirm("試合カードを削除しますか？"))return; const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("event_team_matches").delete().eq("id",mid); if(e)return setError("試合カードの削除に失敗しました"); setNotice("試合カードを削除しました"); await load(); };
   const updateSide=async(side:Side, clubId:string, name:string)=>{ const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("event_team_sides").update({club_id:clubId||null,team_name:name.trim()||null,updated_at:new Date().toISOString()}).eq("id",side.id); await load(); };
   const addGuest=async(side:TeamSideKey)=>{ setError(""); setNotice(""); if(!canManage||event?.status==="closed") return setError("この操作を行う権限がありません"); const guestName=guestNames[side].trim(); if(!guestName) return setError("ゲスト名を入力してください"); const supabase=getSupabaseClient(); if(!supabase)return; const { error:e }=await supabase.from("event_team_guests").insert({ event_id:id, side, guest_name:guestName }); if(e) return setError("ゲストの追加に失敗しました"); setGuestNames((prev)=>({...prev,[side]:""})); setNotice("ゲストを追加しました"); await load(); };
-  const closeOrReopen=async(status:"active"|"closed")=>{ const supabase=getSupabaseClient(); if(!supabase)return; if(status==="closed"&&!window.confirm("フレンドリーチームマッチ終了しますか？"))return; const {error:e}=await supabase.from("events").update({status,stats_mode:status==="closed"?closeMode:"undecided",closed_at:status==="closed"?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq("id",id); if(e)return setError(status==="closed"?"終了に失敗しました":"再開に失敗しました"); await load(); };
+  const closeOrReopen=async(status:"active"|"closed")=>{
+    setError(""); setNotice("");
+    const supabase=getSupabaseClient(); if(!supabase)return;
+    if(status==="closed"&&!window.confirm("フレンドリーチームマッチ終了しますか？"))return;
+    const {error:e}=await supabase.from("events").update({status,stats_mode:status==="closed"?closeMode:"undecided",closed_at:status==="closed"?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq("id",id);
+    if(e){
+      console.error("フレンドリーチームマッチ終了/再開に失敗しました", { message:e.message, code:e.code, details:e.details, hint:e.hint });
+      return setError(status==="closed"?"終了に失敗しました":"再開に失敗しました");
+    }
+    setNotice(status==="closed"?"フレンドリーチームマッチを終了しました":"フレンドリーチームマッチを再開しました");
+    await load();
+  };
   const deleteEvent=async()=>{ if(!deleteOk)return setError("削除確認にチェックしてください"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({is_deleted:true,deleted_at:new Date().toISOString(),share_enabled:false,share_token:null}).eq("id",id); router.push("/team-matches/new"); };
   const share=async()=>{ const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id); await load(); };
 

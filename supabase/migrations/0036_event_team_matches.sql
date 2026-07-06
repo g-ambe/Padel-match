@@ -7,7 +7,9 @@ alter table if exists events
 
 alter table if exists events
   add column if not exists description text,
-  add column if not exists memo text;
+  add column if not exists memo text,
+  add column if not exists updated_at timestamptz;
+
 
 create table if not exists event_team_sides (
   id uuid primary key default gen_random_uuid(),
@@ -19,6 +21,69 @@ create table if not exists event_team_sides (
   updated_at timestamptz not null default now(),
   unique (event_id, side)
 );
+
+
+-- Allow friendly team match managers to close/reopen team events even when their group is stored
+-- on event_team_sides rather than events.club_id. club_members.status is intentionally not used.
+drop policy if exists "events_update_friendly_team_match_managers" on events;
+create policy "events_update_friendly_team_match_managers"
+  on events for update to authenticated
+  using (
+    event_mode = 'team'
+    and coalesce(is_deleted, false) = false
+    and (
+      public.is_super_user()
+      or created_by_auth_user_id = auth.uid()
+      or exists (
+        select 1
+        from event_team_sides ets
+        join club_members cm on cm.club_id = ets.club_id
+        join player_profiles pp on pp.id = cm.player_profile_id
+        where ets.event_id = events.id
+          and cm.is_active = true
+          and cm.role in ('main_admin', 'sub_admin')
+          and pp.linked_auth_user_id = auth.uid()
+      )
+      or exists (
+        select 1
+        from event_team_sides ets
+        join club_members cm on cm.club_id = ets.club_id
+        where ets.event_id = events.id
+          and cm.is_active = true
+          and cm.role in ('main_admin', 'sub_admin')
+          and cm.profile_id = auth.uid()
+      )
+    )
+  )
+  with check (
+    event_mode = 'team'
+    and coalesce(is_deleted, false) = false
+    and stats_mode in ('official', 'record_only', 'undecided')
+    and status in ('active', 'closed')
+    and (
+      public.is_super_user()
+      or created_by_auth_user_id = auth.uid()
+      or exists (
+        select 1
+        from event_team_sides ets
+        join club_members cm on cm.club_id = ets.club_id
+        join player_profiles pp on pp.id = cm.player_profile_id
+        where ets.event_id = events.id
+          and cm.is_active = true
+          and cm.role in ('main_admin', 'sub_admin')
+          and pp.linked_auth_user_id = auth.uid()
+      )
+      or exists (
+        select 1
+        from event_team_sides ets
+        join club_members cm on cm.club_id = ets.club_id
+        where ets.event_id = events.id
+          and cm.is_active = true
+          and cm.role in ('main_admin', 'sub_admin')
+          and cm.profile_id = auth.uid()
+      )
+    )
+  );
 
 create table if not exists event_team_matches (
   id uuid primary key default gen_random_uuid(),

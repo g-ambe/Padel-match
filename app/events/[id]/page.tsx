@@ -79,6 +79,7 @@ export default function EventDetailPage() {
   const [eventNameDraft, setEventNameDraft] = useState("");
   const [isGeneratingRound, setIsGeneratingRound] = useState(false);
   const [eventMode, setEventMode] = useState<EventMode>("auto");
+  const [eventClubId, setEventClubId] = useState<string | null>(null);
   const [statsMode, setStatsMode] = useState<StatsMode>("official");
   const [closeStatsMode, setCloseStatsMode] = useState<StatsMode>("official");
   const [manualDrafts, setManualDrafts] = useState<ManualMatchDraft[]>([]);
@@ -187,6 +188,7 @@ export default function EventDetailPage() {
       setCourtCount(ge.court_count);
       setEventStatus(ge.status);
       setEventMode(ge.event_mode ?? "auto");
+      setEventClubId(null);
       setStatsMode(ge.stats_mode ?? (ge.event_mode === "manual" ? "undecided" : "official"));
       setParticipants(ge.participants.map((p) => ({ ...p, profile_id: null, player_profile_id: null, display_name: p.guest_name, is_member_candidate: true })));
       setMatches(ge.matches as any);
@@ -213,6 +215,7 @@ export default function EventDetailPage() {
     else setEventStatus("active");
     setShareEnabled(!!event?.share_enabled);
     setShareToken(event?.share_token ?? null);
+    setEventClubId(event?.club_id ?? null);
     setEventMode((event?.event_mode ?? "auto") as EventMode);
     setStatsMode((event?.stats_mode ?? "official") as StatsMode);
 
@@ -252,8 +255,9 @@ export default function EventDetailPage() {
       }
     }
     setCanDeleteEvent(canDelete);
-    let allowManageShare = superUser;
-    let allowCopyShare = false;
+    const isNoGroupCreator = !!uid && !event?.club_id && event?.created_by_auth_user_id === uid;
+    let allowManageShare = superUser || isNoGroupCreator;
+    let allowCopyShare = allowManageShare;
     if (uid && event?.club_id) {
       const { data: linkedProfiles } = await supabase.from("player_profiles").select("id").eq("linked_auth_user_id", uid);
       const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
@@ -422,38 +426,81 @@ export default function EventDetailPage() {
     if (!shareToken || typeof window === "undefined") return "";
     return `${window.location.origin}/share/events/${shareToken}`;
   }, [shareToken]);
-  const createShareLink = async () => {
+  const logShareContext = (reason: string, extra?: Record<string, unknown>) => {
+    console.warn(reason, {
+      eventId,
+      eventMode,
+      isClubIdNull: eventClubId === null,
+      status: eventStatus,
+      canShare: canManageShare,
+      canManage: canManageShare,
+      ...extra
+    });
+  };
+
+  const updateShareLink = async (rotate: boolean) => {
+    setError("");
+    setMessage("");
+    if (!eventId) {
+      logShareContext("共有リンク更新を中止しました: イベント情報なし");
+      return setError("イベント情報を取得できていません");
+    }
     const supabase = getSupabaseClient();
-    if (!supabase || !eventId) return;
-    if (eventStatus !== "closed") return setError("終了済みイベントのみ共有できます");
-    if (!canManageShare) return setError("この操作を行う権限がありません");
+    if (!supabase) {
+      logShareContext("共有リンク更新を中止しました: Supabaseクライアントなし");
+      return setError("Supabaseクライアントを初期化できませんでした");
+    }
+    if (eventStatus !== "closed") {
+      logShareContext("共有リンク更新を中止しました: イベント未終了");
+      return setError("終了済みイベントのみ共有リンクを作成できます");
+    }
+    if (!canManageShare) {
+      logShareContext("共有リンク更新を中止しました: 権限不足", { creatorMatched: false });
+      return setError("この操作を行う権限がありません");
+    }
     const token = generateShareToken();
     const { error: e } = await supabase.from("events").update({ share_enabled: true, share_token: token, share_token_updated_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed").eq("is_deleted", false);
-    if (e) return setError("共有リンクの作成に失敗しました");
-    setShareEnabled(true); setShareToken(token); setMessage("共有リンクを作成しました");
+    if (e) {
+      console.error("共有リンクの更新に失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: e.message, code: e.code, details: e.details, hint: e.hint });
+      return setError(rotate ? "共有リンクの再発行に失敗しました" : "共有リンクの作成に失敗しました");
+    }
+    setShareEnabled(true);
+    setShareToken(token);
+    setMessage(rotate ? "共有リンクを再発行しました" : "共有リンクを作成しました");
+    try {
+      const url = `${window.location.origin}/share/events/${token}`;
+      await navigator.clipboard.writeText(url);
+      setMessage(rotate ? "共有リンクを再発行してコピーしました" : "共有リンクを作成してコピーしました");
+    } catch (copyError) {
+      console.warn("共有リンクのコピーに失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: copyError instanceof Error ? copyError.message : String(copyError) });
+    }
   };
+
+  const createShareLink = async () => updateShareLink(false);
+  const reissueShareLink = async () => updateShareLink(true);
   const stopShareLink = async () => {
+    setError("");
+    setMessage("");
+    if (!eventId) { logShareContext("共有停止を中止しました: イベント情報なし"); return setError("イベント情報を取得できていません"); }
     const supabase = getSupabaseClient();
-    if (!supabase || !eventId) return;
-    if (!canManageShare) return setError("この操作を行う権限がありません");
-    const { error: e } = await supabase.from("events").update({ share_enabled: false, share_token_updated_at: new Date().toISOString() }).eq("id", eventId);
-    if (e) return setError("共有停止に失敗しました");
-    setShareEnabled(false); setMessage("共有を停止しました");
-  };
-  const reissueShareLink = async () => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !eventId) return;
-    if (!canManageShare) return setError("この操作を行う権限がありません");
-    const token = generateShareToken();
-    const { error: e } = await supabase.from("events").update({ share_enabled: true, share_token: token, share_token_updated_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed").eq("is_deleted", false);
-    if (e) return setError("共有リンクの再発行に失敗しました");
-    setShareEnabled(true); setShareToken(token); setMessage("共有リンクを再発行しました");
+    if (!supabase) { logShareContext("共有停止を中止しました: Supabaseクライアントなし"); return setError("Supabaseクライアントを初期化できませんでした"); }
+    if (!canManageShare) { logShareContext("共有停止を中止しました: 権限不足"); return setError("この操作を行う権限がありません"); }
+    const { error: e } = await supabase.from("events").update({ share_enabled: false, share_token: null, share_token_updated_at: new Date().toISOString() }).eq("id", eventId);
+    if (e) { console.error("共有停止に失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: e.message, code: e.code, details: e.details, hint: e.hint }); return setError("共有停止に失敗しました"); }
+    setShareEnabled(false); setShareToken(null); setMessage("共有を停止しました");
   };
   const copyShareLink = async () => {
+    setError("");
+    setMessage("");
     if (!canCopyShare) return setError("この操作を行う権限がありません");
-    if (!shareEnabled || !shareToken) return setError("このイベントは共有されていません");
-    await navigator.clipboard.writeText(shareUrl);
-    setMessage("共有リンクをコピーしました");
+    if (!shareEnabled || !shareToken || !shareUrl) return setError("このイベントは共有されていません");
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setMessage("共有リンクをコピーしました");
+    } catch (copyError) {
+      console.warn("共有リンクのコピーに失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: copyError instanceof Error ? copyError.message : String(copyError) });
+      setError("コピーに失敗しました。URLを手動でコピーしてください");
+    }
   };
 
   useEffect(() => {
@@ -1385,12 +1432,12 @@ export default function EventDetailPage() {
       {eventStatus === "closed" && (
         <Card title="結果共有">
           <div className="space-y-2 text-sm">
-            {shareEnabled && shareToken ? <p className="break-all rounded bg-zinc-800 p-2">{shareUrl}</p> : <p className="text-zinc-300">このイベントは共有されていません</p>}
+            {shareEnabled && shareToken ? <div className="space-y-1"><p className="font-bold">共有リンク</p><p className="break-all rounded bg-zinc-800 p-2">{shareUrl}</p></div> : <p className="text-zinc-300">このイベントは共有されていません</p>}
             <div className="grid grid-cols-2 gap-2">
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void createShareLink()} disabled={!canManageShare}>共有リンクを作成</button>
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void copyShareLink()} disabled={!canCopyShare}>共有リンクをコピー</button>
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void stopShareLink()} disabled={!canManageShare}>共有リンクを停止</button>
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void reissueShareLink()} disabled={!canManageShare}>共有リンクを再発行</button>
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void createShareLink()}>共有リンクを作成</button>
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void copyShareLink()}>コピー</button>
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void stopShareLink()}>共有を停止</button>
+              <button className="rounded border border-zinc-500 py-2" onClick={() => void reissueShareLink()}>共有リンクを再発行</button>
             </div>
           </div>
         </Card>

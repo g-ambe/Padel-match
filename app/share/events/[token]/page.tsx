@@ -41,34 +41,55 @@ export default function SharedEventPage() {
 
   useEffect(() => { void (async () => {
     const supabase = getSupabaseClient(); if (!supabase || !token) return;
-    const { data: event } = await supabase.from("events").select("id,name,created_at,status,is_deleted,share_enabled,club_id,event_mode").eq("share_token", token).maybeSingle();
-    if (!event || !event.share_enabled || event.status !== "closed" || event.is_deleted) return setError("この共有リンクは無効です");
-    if (event.club_id) {
-      const { data: club } = await supabase.from("clubs").select("is_active").eq("id", event.club_id).maybeSingle();
-      if (!club?.is_active) return setError("この共有リンクは無効です");
+    const logSharedLoadError = (label: string, error: any) => {
+      console.error(label, { message: error?.message, code: error?.code, details: error?.details, hint: error?.hint });
+    };
+    const { data: event, error: eventError } = await supabase
+      .from("events")
+      .select("id,name,created_at,status,is_deleted,share_enabled,club_id,event_mode")
+      .eq("share_token", token)
+      .eq("share_enabled", true)
+      .eq("status", "closed")
+      .or("is_deleted.is.null,is_deleted.eq.false")
+      .maybeSingle();
+    if (eventError) {
+      logSharedLoadError("共有イベントの取得に失敗しました", eventError);
+      return setError("共有イベントが見つかりません");
     }
+    if (!event) return setError("この共有リンクは無効です");
     setEventName(event.name ?? "-");
     setEventDate(event.created_at ? new Date(event.created_at).toLocaleDateString("ja-JP") : "-");
     setIsTeamEvent(event.event_mode === "team");
     if (event.event_mode === "team") {
-      const { data: sides } = await supabase.from("event_team_sides").select("side,team_name,club_id").eq("event_id", event.id);
-      const { data: cards } = await supabase.from("event_team_matches").select("*").eq("event_id", event.id).order("match_order", { ascending: true }).order("created_at", { ascending: true });
+      const { data: sides, error: sidesError } = await supabase.from("event_team_sides").select("side,team_name,club_id").eq("event_id", event.id);
+      if (sidesError) logSharedLoadError("フレンドリーチームマッチ共有チーム取得に失敗しました", sidesError);
+      const { data: cards, error: cardsError } = await supabase.from("event_team_matches").select("*").eq("event_id", event.id).order("match_order", { ascending: true }).order("created_at", { ascending: true });
+      if (cardsError) logSharedLoadError("フレンドリーチームマッチ共有試合取得に失敗しました", cardsError);
       setTeamSides(sides ?? []);
       setTeamMatches(cards ?? []);
     }
-    const { data: pt } = await supabase.from("event_participants").select("id,guest_name,participant_type,player_profile_id,profile_id").eq("event_id", event.id);
+    const { data: pt, error: participantsError } = await supabase.from("event_participants").select("id,guest_name,participant_type,player_profile_id,profile_id").eq("event_id", event.id);
+    if (participantsError) logSharedLoadError("共有イベント参加者の取得に失敗しました", participantsError);
     const rows = pt ?? [];
     const playerProfileIds = rows.map((r: any) => r.player_profile_id).filter(Boolean);
     const profileIds = rows.map((r: any) => r.profile_id).filter(Boolean);
-    const { data: pps } = playerProfileIds.length ? await supabase.from("player_profiles").select("id,display_name").in("id", playerProfileIds) : { data: [] as any[] };
-    const { data: ps } = profileIds.length ? await supabase.from("profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[] };
+    const { data: pps, error: playerProfilesError } = playerProfileIds.length ? await supabase.from("player_profiles").select("id,display_name").in("id", playerProfileIds) : { data: [] as any[], error: null as any };
+    if (playerProfilesError) logSharedLoadError("共有イベント選手名の取得に失敗しました", playerProfilesError);
+    const { data: ps, error: profilesError } = profileIds.length ? await supabase.from("profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[], error: null as any };
+    if (profilesError) logSharedLoadError("共有イベントプロフィール名の取得に失敗しました", profilesError);
     const ppm = new Map((pps ?? []).map((x: any) => [x.id, x.display_name]));
     const pm = new Map((ps ?? []).map((x: any) => [x.id, x.display_name]));
     setParticipants(rows.map((r: any) => ({ ...r, display_name: (r.player_profile_id ? ppm.get(r.player_profile_id) : null) ?? (r.profile_id ? pm.get(r.profile_id) : null) ?? r.guest_name ?? "ゲスト" })));
-    const { data: ms } = await supabase.from("matches").select("id,court_number,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(score_a,score_b,winner_team)").eq("event_id", event.id).order("created_at", { ascending: false });
+    const { data: ms, error: matchesError } = await supabase.from("matches").select("id,court_number,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(score_a,score_b,winner_team)").eq("event_id", event.id).order("created_at", { ascending: false });
+    if (matchesError) logSharedLoadError("共有イベント試合結果の取得に失敗しました", matchesError);
     setMatches((ms ?? []).map((m: any) => ({ ...m, round_number: m.rounds?.round_number ?? 0, result: m.match_results?.[0] ?? null })));
-    const { data: videos } = await supabase.from("event_video_links").select("id,title,video_url,memo,display_order").eq("event_id", event.id).order("display_order", { ascending: true }).order("created_at", { ascending: true });
-    setEventVideoLinks(((videos ?? []) as any[]).filter((v) => typeof v.video_url === "string" && v.video_url.trim()).map((v) => ({ ...v, title: v.title || "全試合動画", video_url: v.video_url.trim() })));
+    const { data: videos, error: videosError } = await supabase.from("event_video_links").select("id,title,video_url,memo,display_order").eq("event_id", event.id).order("display_order", { ascending: true }).order("created_at", { ascending: true });
+    if (videosError) {
+      logSharedLoadError("共有イベント全試合動画の取得に失敗しました", videosError);
+      setEventVideoLinks([]);
+    } else {
+      setEventVideoLinks(((videos ?? []) as any[]).filter((v) => typeof v.video_url === "string" && v.video_url.trim()).map((v) => ({ ...v, title: v.title || "全試合動画", video_url: v.video_url.trim() })));
+    }
   })(); }, [token]);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p: any) => [p.id, p.display_name])), [participants]);

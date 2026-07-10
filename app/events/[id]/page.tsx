@@ -73,7 +73,10 @@ export default function EventDetailPage() {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [canManageShare, setCanManageShare] = useState(false);
   const [canManageEventVideos, setCanManageEventVideos] = useState(false);
+  const [canManageEventName, setCanManageEventName] = useState(false);
   const [canCopyShare, setCanCopyShare] = useState(false);
+  const [isEditingEventName, setIsEditingEventName] = useState(false);
+  const [eventNameDraft, setEventNameDraft] = useState("");
   const [isGeneratingRound, setIsGeneratingRound] = useState(false);
   const [eventMode, setEventMode] = useState<EventMode>("auto");
   const [statsMode, setStatsMode] = useState<StatsMode>("official");
@@ -193,6 +196,7 @@ export default function EventDetailPage() {
       setEventVideoLinks([]);
       setCanViewVideoClickCounts(false);
       setCanManageEventVideos(false);
+      setCanManageEventName(true);
       return;
     }
     setGuestMode(false);
@@ -271,6 +275,7 @@ export default function EventDetailPage() {
     setCanViewVideoClickCounts(allowViewVideoClickCounts);
     setCanManageShare(allowManageShare);
     setCanManageEventVideos(allowManageEventVideos);
+    setCanManageEventName(allowManageEventVideos);
     setCanCopyShare(allowCopyShare);
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
@@ -366,6 +371,46 @@ export default function EventDetailPage() {
     } else {
       setEventVideoClickCounts({});
     }
+  };
+
+  const startEventNameEdit = () => {
+    setError("");
+    setMessage("");
+    setEventNameDraft(eventName === "-" ? "" : eventName);
+    setIsEditingEventName(true);
+  };
+
+  const cancelEventNameEdit = () => {
+    setEventNameDraft("");
+    setIsEditingEventName(false);
+  };
+
+  const saveEventName = async () => {
+    setError("");
+    setMessage("");
+    const nextName = eventNameDraft.trim();
+    if (!nextName) return setError("イベント名を入力してください");
+    if (nextName.length > 80) return setError("イベント名は80文字以内で入力してください");
+    if (!eventId) return;
+
+    if (guestMode) {
+      const ge = getGuestEvent(eventId);
+      if (!ge) return setError("イベントが見つかりません");
+      upsertGuestEvent({ ...ge, name: nextName });
+      setEventName(nextName);
+      setIsEditingEventName(false);
+      setMessage("更新しました");
+      return;
+    }
+
+    if (!canManageEventName) return setError("この操作を行う権限がありません");
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    const { error: e } = await supabase.from("events").update({ name: nextName, updated_at: new Date().toISOString() }).eq("id", eventId);
+    if (e) return setError("更新に失敗しました");
+    setEventName(nextName);
+    setIsEditingEventName(false);
+    setMessage("更新しました");
   };
 
   const generateShareToken = () => {
@@ -1332,7 +1377,7 @@ export default function EventDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20">
-      <h1 className="text-xl font-bold">イベント詳細：{eventName}</h1>
+      <EditableEventTitle label="イベント詳細" name={eventName} canEdit={guestMode || canManageEventName} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={() => void saveEventName()} onCancel={cancelEventNameEdit} />
       {guestMode && <p className="text-xs text-amber-300">ゲストモードではデータは一時保存です。ログインするとイベントや戦績を保存できます。</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}
@@ -1557,5 +1602,27 @@ export default function EventDetailPage() {
         </div>
       )}
     </main>
+  );
+}
+
+
+function EditableEventTitle({ label, name, canEdit, isEditing, draft, onDraftChange, onStartEdit, onSave, onCancel }: { label: string; name: string; canEdit: boolean; isEditing: boolean; draft: string; onDraftChange: (value: string) => void; onStartEdit: () => void; onSave: () => void; onCancel: () => void }) {
+  if (isEditing) {
+    return (
+      <div className="space-y-2">
+        <label className="text-xs font-semibold text-zinc-400">{label}</label>
+        <input className="w-full rounded-xl border border-zinc-600 bg-zinc-900 px-3 py-3 text-lg font-bold text-zinc-100 outline-none focus:border-accent" value={draft} onChange={(e) => onDraftChange(e.target.value)} maxLength={80} autoFocus />
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className="rounded-xl bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button>
+          <button type="button" className="rounded-xl border border-zinc-500 py-2 text-sm text-zinc-100" onClick={onCancel}>キャンセル</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-start gap-2">
+      <h1 className="min-w-0 flex-1 text-xl font-bold break-words">{label}：{name}</h1>
+      {canEdit && <button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}
+    </div>
   );
 }

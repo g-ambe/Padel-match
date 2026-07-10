@@ -52,6 +52,8 @@ export default function FriendlyTeamMatchDetailPage() {
   const [deleteOk,setDeleteOk]=useState(false);
   const [closeMode,setCloseMode]=useState<"official"|"record_only">("official");
   const [openStatsSections,setOpenStatsSections]=useState<Record<StatsSectionKey, boolean>>({ teams: false, players: false, pairs: false });
+  const [isEditingEventName,setIsEditingEventName]=useState(false);
+  const [eventNameDraft,setEventNameDraft]=useState("");
 
   const teamA = sides.find((s)=>s.side==="team_a");
   const teamB = sides.find((s)=>s.side==="team_b");
@@ -132,7 +134,8 @@ export default function FriendlyTeamMatchDetailPage() {
 
   const saveMatch=async(edit=false)=>{
     setError(""); setNotice("");
-    if(!canManage||event?.status==="closed") return setError("この操作を行う権限がありません");
+    if(!event) return setError("イベント情報を取得できていません");
+    if(!canManage||event.status==="closed") return setError("この操作を行う権限がありません");
     const f=edit?editingForm:form;
     const v=validate(f); if(v)return setError(v);
     const supabase=getSupabaseClient(); if(!supabase)return;
@@ -143,9 +146,10 @@ export default function FriendlyTeamMatchDetailPage() {
   };
   const deleteMatch=async(mid:string)=>{ if(!window.confirm("試合カードを削除しますか？"))return; const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("event_team_matches").delete().eq("id",mid); if(e)return setError("試合カードの削除に失敗しました"); setNotice("試合カードを削除しました"); await load(); };
   const updateSide=async(side:Side, clubId:string, name:string)=>{ const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("event_team_sides").update({club_id:clubId||null,team_name:name.trim()||null,updated_at:new Date().toISOString()}).eq("id",side.id); await load(); };
-  const addGuest=async(side:TeamSideKey)=>{ setError(""); setNotice(""); if(!canManage||event?.status==="closed") return setError("この操作を行う権限がありません"); const guestName=guestNames[side].trim(); if(!guestName) return setError("ゲスト名を入力してください"); const supabase=getSupabaseClient(); if(!supabase)return; const { error:e }=await supabase.from("event_team_guests").insert({ event_id:id, side, guest_name:guestName }); if(e) return setError("ゲストの追加に失敗しました"); setGuestNames((prev)=>({...prev,[side]:""})); setNotice("ゲストを追加しました"); await load(); };
+  const addGuest=async(side:TeamSideKey)=>{ setError(""); setNotice(""); if(!event) return setError("イベント情報を取得できていません"); if(!canManage||event.status==="closed") return setError("この操作を行う権限がありません"); const guestName=guestNames[side].trim(); if(!guestName) return setError("ゲスト名を入力してください"); const supabase=getSupabaseClient(); if(!supabase)return; const { error:e }=await supabase.from("event_team_guests").insert({ event_id:id, side, guest_name:guestName }); if(e) return setError("ゲストの追加に失敗しました"); setGuestNames((prev)=>({...prev,[side]:""})); setNotice("ゲストを追加しました"); await load(); };
   const closeOrReopen=async(status:"active"|"closed")=>{
     setError(""); setNotice("");
+    if(!event) return setError("イベント情報を取得できていません");
     const supabase=getSupabaseClient(); if(!supabase)return;
     if(status==="closed"&&!window.confirm("フレンドリーチームマッチ終了しますか？"))return;
     const {error:e}=await supabase.from("events").update({status,stats_mode:status==="closed"?closeMode:"undecided",closed_at:status==="closed"?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq("id",id);
@@ -156,16 +160,20 @@ export default function FriendlyTeamMatchDetailPage() {
     setNotice(status==="closed"?"フレンドリーチームマッチを終了しました":"フレンドリーチームマッチを再開しました");
     await load();
   };
-  const deleteEvent=async()=>{ if(!deleteOk)return setError("削除確認にチェックしてください"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({is_deleted:true,deleted_at:new Date().toISOString(),share_enabled:false,share_token:null}).eq("id",id); router.push("/team-matches/new"); };
-  const share=async()=>{ const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id); await load(); };
+  const deleteEvent=async()=>{ if(!event)return setError("イベント情報を取得できていません"); if(!deleteOk)return setError("削除確認にチェックしてください"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({is_deleted:true,deleted_at:new Date().toISOString(),share_enabled:false,share_token:null}).eq("id",id); router.push("/team-matches/new"); };
+  const share=async()=>{ if(!event)return setError("イベント情報を取得できていません"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id); await load(); };
+  const startEventNameEdit=()=>{ if(!event){ setError("イベント情報を取得できていません"); return; } setError(""); setNotice(""); setEventNameDraft(event.name ?? ""); setIsEditingEventName(true); };
+  const cancelEventNameEdit=()=>{ setEventNameDraft(""); setIsEditingEventName(false); };
+  const saveEventName=async()=>{ setError(""); setNotice(""); if(!event)return setError("イベント情報を取得できていません"); const nextName=eventNameDraft.trim(); if(!nextName)return setError("イベント名を入力してください"); if(nextName.length>80)return setError("イベント名は80文字以内で入力してください"); if(!canManage)return setError("この操作を行う権限がありません"); const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("events").update({name:nextName,updated_at:new Date().toISOString()}).eq("id",id); if(e){ console.error("イベント名の更新に失敗しました", { message:e.message, code:e.code, details:e.details, hint:e.hint }); return setError("更新に失敗しました"); } setEvent((prev)=>prev?{...prev,name:nextName}:prev); setIsEditingEventName(false); setNotice("更新しました"); };
 
   if(!event) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100">{error||"読み込み中..."}</main>;
+  const eventSides = [teamA, teamB].filter((side): side is Side => Boolean(side));
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
-    <h1 className="text-xl font-bold">フレンドリーチームマッチ詳細</h1>
+    <EditableEventTitle label="フレンドリーチームマッチ詳細" name={event.name} canEdit={canManage} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={()=>void saveEventName()} onCancel={cancelEventNameEdit} />
     {error&&<p className="rounded-xl border border-red-500/60 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
     {notice&&<p className="rounded-xl border border-emerald-500/60 bg-emerald-950/40 p-3 text-sm text-emerald-200">{notice}</p>}
-    <Card title={event.name}><dl className="space-y-2 text-sm"><div><dt className="text-zinc-400">ステータス</dt><dd>{officialStatusLabel(event.status)}</dd></div><div><dt className="text-zinc-400">説明</dt><dd className="whitespace-pre-wrap">{event.description||"未入力"}</dd></div><div><dt className="text-zinc-400">メモ</dt><dd className="whitespace-pre-wrap">{event.memo||"未入力"}</dd></div></dl></Card>
-    <Card title="チーム設定"><div className="space-y-3">{[teamA,teamB].filter(Boolean).map((s)=><SideEditor key={s!.id} side={s!} title={s!.side==="team_a"?"チームA":"チームB"} guests={guests[s!.side]} guestName={guestNames[s!.side]} setGuestName={(value)=>setGuestNames((prev)=>({...prev,[s!.side]:value}))} groups={groups} canManage={canManage&&event.status!=="closed"} onSave={updateSide} onAddGuest={()=>void addGuest(s!.side)}/>)}</div></Card>
+    <Card title="イベント情報"><dl className="space-y-2 text-sm"><div><dt className="text-zinc-400">ステータス</dt><dd>{officialStatusLabel(event.status)}</dd></div><div><dt className="text-zinc-400">説明</dt><dd className="whitespace-pre-wrap">{event.description||"未入力"}</dd></div><div><dt className="text-zinc-400">メモ</dt><dd className="whitespace-pre-wrap">{event.memo||"未入力"}</dd></div></dl></Card>
+    <Card title="チーム設定"><div className="space-y-3">{eventSides.map((side)=><SideEditor key={side.id} side={side} title={side.side==="team_a"?"チームA":"チームB"} guests={guests[side.side]} guestName={guestNames[side.side]} setGuestName={(value)=>setGuestNames((prev)=>({...prev,[side.side]:value}))} groups={groups} canManage={canManage&&event.status!=="closed"} onSave={updateSide} onAddGuest={()=>void addGuest(side.side)}/>)}</div></Card>
     <Card title="開催操作"><div className="space-y-3 text-sm">{event.status==="active"&&canManage&&<><select className="w-full rounded-xl bg-zinc-800 p-3" value={closeMode} onChange={(e)=>setCloseMode(e.target.value as any)}><option value="official">戦績に反映する</option><option value="record_only">記録用にする</option></select><button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>void closeOrReopen("closed")}>フレンドリーチームマッチ終了</button></>}{event.status==="closed"&&<><p>フレンドリーチームマッチ終了済み（{event.stats_mode==="record_only"?"記録用":"戦績に反映する"}）</p>{canManage&&<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void closeOrReopen("active")}>フレンドリーチームマッチ再開</button>}{canManage&&(showDelete?<div className="space-y-2 rounded-xl border border-red-500/60 p-3"><label className="flex gap-2 text-xs"><input type="checkbox" checked={deleteOk} onChange={(e)=>setDeleteOk(e.target.checked)}/>削除すると元に戻せません</label><button className="w-full rounded bg-red-600 py-2 font-bold" onClick={()=>void deleteEvent()}>フレンドリーチームマッチ削除</button></div>:<button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>setShowDelete(true)}>フレンドリーチームマッチ削除</button>)}</>}</div></Card>
     {event.status==="closed"&&<Card title="共有リンク"><div className="space-y-2 text-sm">{shareUrl?<><p className="break-all rounded-xl bg-zinc-800 p-3 text-xs">{shareUrl}</p><button className="w-full rounded-xl border border-zinc-500 py-2" onClick={()=>navigator.clipboard.writeText(shareUrl)}>共有リンクをコピー</button></>:canManage?<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void share()}>共有リンクを作成</button>:<p>共有されていません</p>}</div></Card>}
     {event.status==="closed"&&<TeamMatchStatsCard stats={teamMatchStats} openSections={openStatsSections} onToggle={toggleStatsSection} />}
@@ -202,4 +210,10 @@ function StatsRowsView({ rows }: { rows: StatsRow[] }) {
 function TeamMatchStatsCard({ stats, openSections, onToggle }: { stats: { countedMatches: number; teams: StatsRow[]; players: StatsRow[]; pairs: StatsRow[] }; openSections: Record<StatsSectionKey, boolean>; onToggle: (key: StatsSectionKey) => void }) {
   const emptyRows: StatsRow[] = [];
   return <Card title="戦績"><div className="space-y-3"><TeamStatsSection title="チーム戦績" isOpen={openSections.teams} onToggle={() => onToggle("teams")}><StatsRowsView rows={stats.countedMatches > 0 ? stats.teams : emptyRows} /></TeamStatsSection><TeamStatsSection title="個人戦績" isOpen={openSections.players} onToggle={() => onToggle("players")}><StatsRowsView rows={stats.players} /></TeamStatsSection><TeamStatsSection title="ペア戦績" isOpen={openSections.pairs} onToggle={() => onToggle("pairs")}><StatsRowsView rows={stats.pairs} /></TeamStatsSection></div></Card>;
+}
+
+
+function EditableEventTitle({ label, name, canEdit, isEditing, draft, onDraftChange, onStartEdit, onSave, onCancel }: { label: string; name: string; canEdit: boolean; isEditing: boolean; draft: string; onDraftChange: (value: string) => void; onStartEdit: () => void; onSave: () => void; onCancel: () => void }) {
+  if (isEditing) return <div className="space-y-2"><label className="text-xs font-semibold text-zinc-400">{label}</label><input className="w-full rounded-xl border border-zinc-600 bg-zinc-900 px-3 py-3 text-lg font-bold text-zinc-100 outline-none focus:border-accent" value={draft} onChange={(e)=>onDraftChange(e.target.value)} maxLength={80} autoFocus/><div className="grid grid-cols-2 gap-2"><button type="button" className="rounded-xl bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button><button type="button" className="rounded-xl border border-zinc-500 py-2 text-sm text-zinc-100" onClick={onCancel}>キャンセル</button></div></div>;
+  return <div className="flex items-start gap-2"><h1 className="min-w-0 flex-1 break-words text-xl font-bold">{label}：{name}</h1>{canEdit&&<button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}</div>;
 }

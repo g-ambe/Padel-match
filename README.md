@@ -32,6 +32,35 @@ npm run dev
 - Node.js専用API（`fs`, `child_process`）は未使用
 - fetch / Supabase SDK前提
 
+## Supabase自動停止対策
+
+`.github/workflows/keep-supabase-awake.yml` は、毎日2回（02:17 / 14:17 UTC）
+Supabase REST APIから専用の `health_check` テーブルをSELECTします。アプリURLへの
+アクセスではなくDBクエリを発生させ、HTTP 2xx以外や接続失敗をActionsの失敗として扱います。
+
+### 初回設定
+
+1. Supabase Dashboardの `SQL Editor` で
+   `supabase/migrations/0038_health_check.sql` を手動実行する
+2. GitHubリポジトリのActions secretsに、既存のSupabase設定と同じ値を登録する
+   - `SUPABASE_URL`: Supabase Project URL
+   - `SUPABASE_ANON_KEY`: Supabase anon key（service role keyは使用しない）
+3. Actionsの `Supabase Ping` を `Run workflow` から手動実行し、HTTP 2xxと
+   `Supabase DB ping succeeded.` を確認する
+
+SQLは専用テーブルに固定の1行だけを作成し、`anon` には `id` のSELECTだけを許可します。
+定期実行ではINSERT/UPDATE/DELETEを行わず、既存の `events` / `clubs` /
+`club_members` などの業務テーブルやRLS policyには触れません。
+
+### 運用上の注意
+
+- Actions画面でworkflowが無効になっていないことと、scheduleの実行履歴を定期的に確認してください。
+- GitHub Actionsのscheduleは遅延する場合があります。また、public repositoryでは長期間
+  活動がないとscheduled workflowが自動的に無効化される場合があります。その場合は
+  Actions画面で再度有効化し、`workflow_dispatch` で疎通確認してください。
+- 失敗ログにはHTTP statusとレスポンス本文の先頭1000 bytesだけを出力します。
+  URL、anon key、Authorization headerは出力しません。
+
 
 ## Supabase SQL実行手順（初期スキーマ）
 

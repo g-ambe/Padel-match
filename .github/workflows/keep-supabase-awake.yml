@@ -1,31 +1,57 @@
-name: Keep Supabase Awake
+name: Supabase Ping
 
 on:
   schedule:
-    - cron: '0 3 * * 1'
-    - cron: '0 3 * * 4'
+    # UTC。schedule の一時的な遅延・取りこぼしに備えて1日2回実行する。
+    - cron: '17 2,14 * * *'
   workflow_dispatch:
 
 jobs:
   ping-supabase:
     runs-on: ubuntu-latest
     steps:
-      - name: Supabase REST APIへ軽いSELECT
+      - name: Supabase REST APIでhealth_checkをSELECT
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           set -euo pipefail
 
-          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_ANON_KEY}" ]; then
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_ANON_KEY:-}" ]; then
             echo "SUPABASE_URL または SUPABASE_ANON_KEY が未設定です。"
             exit 1
           fi
 
-          curl -sS --fail \
+          response_file="$(mktemp)"
+          trap 'rm -f "${response_file}"' EXIT
+
+          # URL末尾のスラッシュを除き、Supabase REST経由でDBへ軽量なSELECTを行う。
+          # キーをコマンド出力へ展開しないよう、shell traceは有効にしない。
+          set +e
+          http_status="$(curl --silent \
+            --connect-timeout 10 \
+            --max-time 30 \
+            --retry 2 \
+            --output "${response_file}" \
+            --write-out '%{http_code}' \
             -H "apikey: ${SUPABASE_ANON_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
-            "${SUPABASE_URL}/rest/v1/events?select=id&limit=1" \
-            > /dev/null
+            "${SUPABASE_URL%/}/rest/v1/health_check?select=id&id=eq.1&limit=1")"
+          curl_exit=$?
+          set -e
 
-          echo "Supabase keep-awake ping succeeded."
+          echo "Supabase ping HTTP status: ${http_status:-取得不可}"
+
+          if [ "${curl_exit}" -ne 0 ]; then
+            echo "Supabase REST APIへの接続に失敗しました (curl exit: ${curl_exit})。"
+            exit 1
+          fi
+
+          if ! [[ "${http_status}" =~ ^2[0-9][0-9]$ ]]; then
+            echo "Supabase pingに失敗しました。レスポンス（先頭1000 bytes）:"
+            head -c 1000 "${response_file}"
+            echo
+            exit 1
+          fi
+
+          echo "Supabase DB ping succeeded."

@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { canDeleteGroup, canEditGroupProfile, canManageMembers, canSubAdminEditTarget, toAppRole } from "@/lib/permissions";
+import { ensureLinkedPlayerProfile, preferredPlayerProfileId, profileErrorMessage, resolveLinkedPlayerProfile, setPlayerProfileAccountLink, PlayerProfileError } from "@/lib/player-profiles";
 
 type Role = "main_admin" | "sub_admin" | "member";
 type Member = {
@@ -28,7 +29,7 @@ type StatTab = "個人ランキング" | "ペアランキング" | "イベント
 type IndividualMode = "総合ランキング" | "勝率ランキング";
 
 type MainTab = "グループ管理" | "メンバー管理" | "グループ戦績";
-type JoinRequest = { id: string; club_id: string; target_club_member_id: string | null; requester_auth_user_id: string; message: string | null; status: "pending" | "approved" | "rejected"; created_at: string; requester_display_name: string; requester_email: string | null; target_member_name: string | null; };
+type JoinRequest = { id: string; club_id: string; target_club_member_id: string | null; requester_auth_user_id: string; requester_player_profile_id: string | null; message: string | null; status: "pending" | "approved" | "rejected"; created_at: string; requester_display_name: string; requester_email: string | null; target_member_name: string | null; };
 
 type Facility = { id: string; name: string; prefecture: string | null; address: string | null; };
 
@@ -74,6 +75,7 @@ export default function GroupDetailPage() {
 
   const [name, setName] = useState("");
   const [linkId, setLinkId] = useState("");
+  const pendingMemberProfile = useRef<{ id: string; name: string; userId: string | null } | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -234,7 +236,7 @@ export default function GroupDetailPage() {
     setMyAuthUserId(uid);
     setMyRole(me?.role ?? "member");
     setIsMemberOfGroup(!!me);
-    const { data: jrRows } = await s.from("join_requests").select("id,club_id,target_club_member_id,requester_auth_user_id,message,status,created_at").eq("club_id", id).order("created_at", { ascending: false });
+    const { data: jrRows } = await s.from("join_requests").select("id,club_id,target_club_member_id,requester_auth_user_id,requester_player_profile_id,message,status,created_at").eq("club_id", id).order("created_at", { ascending: false });
     const requesterIds = [...new Set((jrRows ?? []).map((r: any) => r.requester_auth_user_id))];
     const { data: reqProfiles } = requesterIds.length ? await s.from("profiles").select("id,display_name,email").in("id", requesterIds) : { data: [] as any[] };
     const requesterMap = new Map((reqProfiles ?? []).map((r: any) => [r.id, r]));
@@ -269,32 +271,92 @@ export default function GroupDetailPage() {
   const targetIndividuals = useMemo(() => rankedIndividuals.filter((r: any) => !r.isReference), [rankedIndividuals]);
   const referenceIndividuals = useMemo(() => rankedIndividuals.filter((r: any) => r.isReference), [rankedIndividuals]);
 
-  const addMember = async () => { if (!canManage) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = name.trim(); if (!trimmed) return setError("メンバー名を入力してください"); if (members.some((m) => m.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます"); setLoading(true); const { data: pp, error: pe } = await s.from("player_profiles").insert({ display_name: trimmed, linked_auth_user_id: linkId.trim() || null, is_active: true }).select("id").single(); if (pe || !pp?.id) { setError("メンバー追加に失敗しました"); setLoading(false); return; } await s.from("club_members").insert({ club_id: id, player_profile_id: pp.id, role: "member", is_active: true }); setMessage("更新しました"); setName(""); setLinkId(""); setLoading(false); await load(); };
-  const updateMember = async (m: Member, newName: string, newRole: Role) => { const s = getSupabaseClient(); if (!s) return; const isLinkedSelf = !!myAuthUserId && m.linked_auth_user_id === myAuthUserId; if (!canManage && !isLinkedSelf) return deny(); const trimmed = newName.trim(); if (!trimmed) return setError("メンバー名を入力してください"); if (members.some((x) => x.id !== m.id && x.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます"); setLoading(true); await s.from("player_profiles").update({ display_name: trimmed }).eq("id", m.player_profile_id); if (canManage) await s.from("club_members").update({ role: newRole }).eq("id", m.id); setMessage(isLinkedSelf ? "表示名を更新しました" : "更新しました"); setLoading(false); await load(); };
+  const addMember = async () => {
+    if (!canManage) return deny();
+    const s = getSupabaseClient(); if (!s || !id || loading) return;
+    const trimmed = name.trim();
+    const linkedUserId = linkId.trim() || null;
+    if (!trimmed) return setError("メンバー名を入力してください");
+    if (members.some((m) => m.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます");
+    setLoading(true); setError(""); setMessage("");
+    try {
+      if (linkedUserId) {
+        const { data: current, error: readError } = await s.from("club_members").select("id,player_profiles!inner(linked_auth_user_id)").eq("club_id", id).eq("is_active", true);
+        if (readError) throw new PlayerProfileError("メンバーの連携状況を取得できませんでした", { cause: readError });
+        if ((current ?? []).some((row: any) => getProfileRow(row.player_profiles)?.linked_auth_user_id === linkedUserId)) throw new PlayerProfileError("このアカウントはこのグループ内の別メンバーに既に紐づいています");
+      }
+      // グループ専用の選手作成は保持し、所属登録の再試行では同じIDを使う。
+      if (!pendingMemberProfile.current || pendingMemberProfile.current.name !== trimmed || pendingMemberProfile.current.userId !== linkedUserId) {
+        pendingMemberProfile.current = { id: crypto.randomUUID(), name: trimmed, userId: linkedUserId };
+      }
+      const playerId = pendingMemberProfile.current.id;
+      const { error: profileError } = await s.from("player_profiles").insert({ id: playerId, display_name: trimmed, linked_auth_user_id: linkedUserId, is_active: true });
+      if (profileError) {
+        if (profileError.code !== "23505") throw new PlayerProfileError("メンバーの選手登録に失敗しました", { cause: profileError });
+        const { data: previous, error: previousError } = await s.from("player_profiles").select("id,display_name,linked_auth_user_id").eq("id", playerId).single();
+        if (previousError || previous?.display_name !== trimmed || previous?.linked_auth_user_id !== linkedUserId) throw new PlayerProfileError("再試行する選手の情報が一致しません。再読み込みしてください", { cause: previousError });
+      }
+      const { error: memberError } = await s.from("club_members").insert({ club_id: id, player_profile_id: playerId, role: "member", is_active: true });
+      if (memberError) throw new PlayerProfileError("選手は登録されましたが所属登録に失敗しました。同じ内容で再試行するか管理者に確認してください", { cause: memberError });
+      pendingMemberProfile.current = null;
+      setMessage("更新しました"); setName(""); setLinkId("");
+      await load();
+    } catch (cause) {
+      console.error("グループのメンバー追加に失敗しました", cause);
+      setError(profileErrorMessage(cause));
+    } finally { setLoading(false); }
+  };
+  const updateMember = async (m: Member, newName: string, newRole: Role) => {
+    const s = getSupabaseClient(); if (!s || loading) return;
+    const isLinkedSelf = !!myAuthUserId && m.linked_auth_user_id === myAuthUserId;
+    if (!canManage && !isLinkedSelf) return deny();
+    const trimmed = newName.trim();
+    if (!trimmed) return setError("メンバー名を入力してください");
+    if (members.some((x) => x.id !== m.id && x.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます");
+    setLoading(true); setError(""); setMessage("");
+    try {
+      const { data: updated, error: updateError } = await s.from("player_profiles").update({ display_name: trimmed }).eq("id", m.player_profile_id).select("id");
+      if (updateError || updated?.length !== 1) throw new PlayerProfileError("メンバーの表示名を更新できませんでした", { cause: updateError });
+      if (canManage) {
+        const { data: roles, error: roleError } = await s.from("club_members").update({ role: newRole }).eq("id", m.id).select("id");
+        if (roleError || roles?.length !== 1) throw new PlayerProfileError("表示名は保存されましたが、権限の更新を確認できませんでした", { cause: roleError });
+      }
+      setMessage(isLinkedSelf ? "表示名を更新しました" : "更新しました");
+      await load();
+    } catch (cause) {
+      console.error("グループのメンバー保存に失敗しました", cause);
+      setError(profileErrorMessage(cause));
+    } finally { setLoading(false); }
+  };
   const linkMemberAccount = async (m: Member, account: AccountCandidate) => {
-    const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); if (!id) return;
-    setLoading(true);
-    const { data: sameClubMembers } = await s
-      .from("club_members")
-      .select("id,player_profile_id,player_profiles!inner(linked_auth_user_id)")
-      .eq("club_id", id)
-      .eq("is_active", true);
-
-    const duplicatedInSameClub = (sameClubMembers ?? []).some((row: any) => row.id !== m.id && row.player_profiles?.linked_auth_user_id === account.auth_user_id);
-    if (duplicatedInSameClub) { setError("このアカウントはこのグループ内の別メンバーに既に紐づいています"); setLoading(false); return; }
-
-    await s.from("player_profiles").update({ linked_auth_user_id: account.auth_user_id }).eq("id", m.player_profile_id);
-    setMessage("紐づけました");
-    setLoading(false);
-    await load();
+    const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); if (!id || loading) return;
+    setLoading(true); setError(""); setMessage("");
+    try {
+      if (m.linked_auth_user_id && m.linked_auth_user_id !== account.auth_user_id) throw new PlayerProfileError("別のアカウントに連携済みです。連携先を確認してください");
+      const { data: sameClubMembers, error: memberError } = await s.from("club_members")
+        .select("id,player_profile_id,player_profiles!inner(linked_auth_user_id)").eq("club_id", id).eq("is_active", true);
+      if (memberError) throw new PlayerProfileError("メンバーの連携状況を取得できませんでした", { cause: memberError });
+      const duplicated = (sameClubMembers ?? []).some((row: any) => row.id !== m.id && getProfileRow(row.player_profiles)?.linked_auth_user_id === account.auth_user_id);
+      if (duplicated) throw new PlayerProfileError("このアカウントはこのグループ内の別メンバーに既に紐づいています");
+      await setPlayerProfileAccountLink(s, m.player_profile_id, account.auth_user_id, m.linked_auth_user_id);
+      setMessage("紐づけました");
+      await load();
+    } catch (cause) {
+      console.error("メンバーのアカウント連携に失敗しました", cause);
+      setError(profileErrorMessage(cause));
+    } finally { setLoading(false); }
   };
   const unlinkMemberAccount = async (m: Member) => {
-    const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny();
-    setLoading(true);
-    await s.from("player_profiles").update({ linked_auth_user_id: null }).eq("id", m.player_profile_id);
-    setMessage("紐づけを解除しました");
-    setLoading(false);
-    await load();
+    const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); if (loading) return;
+    setLoading(true); setError(""); setMessage("");
+    try {
+      await setPlayerProfileAccountLink(s, m.player_profile_id, null, m.linked_auth_user_id);
+      setMessage("紐づけを解除しました");
+      await load();
+    } catch (cause) {
+      console.error("メンバーのアカウント連携解除に失敗しました", cause);
+      setError(profileErrorMessage(cause));
+    } finally { setLoading(false); }
   };
   const doDeactivate = async () => { if (!confirmLeave) return; if (!canManage) return deny(); if (confirmLeave.role === "main_admin" && activeMainAdmins <= 1) return setError("メイン管理者は最低1人必要です"); const s = getSupabaseClient(); if (!s) return; setLoading(true); await s.from("club_members").update({ is_active: false, status: "inactive" }).eq("id", confirmLeave.id); setConfirmLeave(null); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
   const restoreMember = async (m: Member) => { if (!canManage) return deny(); const s = getSupabaseClient(); if (!s) return; setLoading(true); await s.from("club_members").update({ is_active: true, status: "active" }).eq("id", m.id); setMessage("反映しました"); setLoading(false); await load(); };
@@ -327,8 +389,15 @@ export default function GroupDetailPage() {
     const { data: userRes } = await s.auth.getUser(); const uid = userRes.user?.id; if (!uid) return setError("ログイン情報を確認できません");
     if (isMemberOfGroup) return setError("既にこのグループのメンバーです");
     if (myPendingRequest) return setError("申請中です");
-    const { data: linkedProfile } = await s.from("player_profiles").select("id").eq("linked_auth_user_id", uid).maybeSingle();
-    const { data: createdRequest, error: e } = await s.from("join_requests").insert({ club_id: id, target_club_member_id: targetMemberId || null, requester_auth_user_id: uid, requester_player_profile_id: linkedProfile?.id ?? null, message: joinMessage.trim() || null, status: "pending" }).select("id").single();
+    let requesterProfileId: string | null;
+    try {
+      const linkedProfile = await resolveLinkedPlayerProfile(s, uid, preferredPlayerProfileId(uid));
+      requesterProfileId = linkedProfile?.id ?? null;
+    } catch (cause) {
+      console.error("加入申請時のプロフィール確認に失敗しました", cause);
+      return setError(profileErrorMessage(cause));
+    }
+    const { data: createdRequest, error: e } = await s.from("join_requests").insert({ club_id: id, target_club_member_id: targetMemberId || null, requester_auth_user_id: uid, requester_player_profile_id: requesterProfileId, message: joinMessage.trim() || null, status: "pending" }).select("id").single();
     if (e) return setError("加入申請に失敗しました");
     const { data: adminTargets } = await s.from("club_members").select("player_profiles!inner(linked_auth_user_id),role").eq("club_id", id).eq("is_active", true).in("role", ["main_admin", "sub_admin"]);
     const { data: superUsers } = await s.from("app_admins").select("profile_id").eq("is_active", true);
@@ -341,26 +410,42 @@ export default function GroupDetailPage() {
   };
 
   const reviewJoinRequest = async (req: JoinRequest, next: "approved" | "rejected") => {
-    const s = getSupabaseClient(); if (!s || !id) return; if (!canManage) return deny();
-    const { data: userRes } = await s.auth.getUser(); const uid = userRes.user?.id; if (!uid) return;
-    if (next === "approved") {
-      const { data: sameClubMembers } = await s.from("club_members").select("id,player_profiles!inner(linked_auth_user_id)").eq("club_id", id).eq("is_active", true);
-      const duplicated = (sameClubMembers ?? []).some((row: any) => row.player_profiles?.linked_auth_user_id === req.requester_auth_user_id && row.id !== req.target_club_member_id);
-      if (duplicated) return setError("このアカウントはこのグループ内の別メンバーに既に紐づいています");
-      if (req.target_club_member_id) {
-        const { data: targetMember } = await s.from("club_members").select("player_profile_id").eq("id", req.target_club_member_id).maybeSingle();
-        if (targetMember?.player_profile_id) await s.from("player_profiles").update({ linked_auth_user_id: req.requester_auth_user_id }).eq("id", targetMember.player_profile_id);
-      } else {
-        const { data: pp } = await s.from("player_profiles").select("id").eq("linked_auth_user_id", req.requester_auth_user_id).maybeSingle();
-        let ppId = pp?.id;
-        if (!ppId) { const { data: created } = await s.from("player_profiles").insert({ display_name: req.requester_display_name, linked_auth_user_id: req.requester_auth_user_id, is_active: true }).select("id").single(); ppId = created?.id; }
-        if (ppId) await s.from("club_members").insert({ club_id: id, player_profile_id: ppId, role: "member", is_active: true });
+    const s = getSupabaseClient(); if (!s || !id || loading) return; if (!canManage) return deny();
+    setLoading(true); setError(""); setMessage("");
+    try {
+      const { data: userRes, error: authError } = await s.auth.getUser();
+      const uid = userRes.user?.id;
+      if (authError || !uid) throw new PlayerProfileError("ログイン情報を確認できませんでした", { cause: authError });
+      if (next === "approved") {
+        const { data: sameClubMembers, error: memberError } = await s.from("club_members").select("id,player_profiles!inner(linked_auth_user_id)").eq("club_id", id).eq("is_active", true);
+        if (memberError) throw new PlayerProfileError("メンバーの連携状況を取得できませんでした", { cause: memberError });
+        const duplicated = (sameClubMembers ?? []).some((row: any) => getProfileRow(row.player_profiles)?.linked_auth_user_id === req.requester_auth_user_id && row.id !== req.target_club_member_id);
+        if (duplicated) throw new PlayerProfileError("このアカウントはこのグループ内の別メンバーに既に紐づいています");
+        if (req.target_club_member_id) {
+          const { data: target, error: targetError } = await s.from("club_members").select("player_profile_id,player_profiles(linked_auth_user_id)")
+            .eq("id", req.target_club_member_id).eq("club_id", id).eq("is_active", true).single();
+          if (targetError || !target?.player_profile_id) throw new PlayerProfileError("紐づけ対象のメンバーを確認できませんでした", { cause: targetError });
+          const previous = getProfileRow(target.player_profiles)?.linked_auth_user_id ?? null;
+          if (previous && previous !== req.requester_auth_user_id) throw new PlayerProfileError("対象メンバーは別のアカウントに連携済みです");
+          await setPlayerProfileAccountLink(s, target.player_profile_id, req.requester_auth_user_id, previous);
+        } else {
+          const profile = await ensureLinkedPlayerProfile(s, req.requester_auth_user_id, req.requester_display_name, req.requester_player_profile_id);
+          if (req.requester_player_profile_id && profile.id !== req.requester_player_profile_id) throw new PlayerProfileError("申請時の選手との連携が変わっています。申請者に確認してください");
+          if (!profile.is_active) throw new PlayerProfileError("申請者の選手プロフィールが無効になっています");
+          const { data: added, error: insertError } = await s.from("club_members").insert({ club_id: id, player_profile_id: profile.id, role: "member", is_active: true }).select("id").single();
+          if (insertError || !added?.id) throw new PlayerProfileError("メンバーの登録に失敗しました。申請は承認していません", { cause: insertError });
+        }
       }
-    }
-    await s.from("join_requests").update({ status: next, reviewed_by_auth_user_id: uid, reviewed_at: new Date().toISOString() }).eq("id", req.id);
-    await createNotifications([req.requester_auth_user_id], { type: next === "approved" ? "join_request_approved" : "join_request_rejected", title: next === "approved" ? "加入申請が承認されました" : "加入申請が否認されました", relatedJoinRequestId: req.id });
-    setMessage(next === "approved" ? "承認しました" : "否認しました");
-    await load();
+      const { data: reviewed, error: reviewError } = await s.from("join_requests").update({ status: next, reviewed_by_auth_user_id: uid, reviewed_at: new Date().toISOString() })
+        .eq("id", req.id).eq("status", "pending").select("id");
+      if (reviewError || reviewed?.length !== 1) throw new PlayerProfileError("申請の更新を確認できませんでした。状態を再読み込みしてください", { cause: reviewError });
+      await createNotifications([req.requester_auth_user_id], { type: next === "approved" ? "join_request_approved" : "join_request_rejected", title: next === "approved" ? "加入申請が承認されました" : "加入申請が否認されました", relatedJoinRequestId: req.id });
+      setMessage(next === "approved" ? "承認しました" : "否認しました");
+      await load();
+    } catch (cause) {
+      console.error("加入申請の審査に失敗しました", cause);
+      setError(profileErrorMessage(cause));
+    } finally { setLoading(false); }
   };
 
 

@@ -282,6 +282,18 @@ export default function HomePage() {
       return;
     }
 
+    if (!selectedGroupId) {
+      try {
+        const { preferredPlayerProfileId, resolveLinkedPlayerProfile } = await import("@/lib/player-profiles");
+        await resolveLinkedPlayerProfile(supabase, creatorUserId, preferredPlayerProfileId(creatorUserId));
+      } catch (cause) {
+        const { profileErrorMessage } = await import("@/lib/player-profiles");
+        setLoading(false);
+        setError(profileErrorMessage(cause));
+        return;
+      }
+    }
+
     const { data, error: insertError } = await supabase
       .from("events")
       .insert({

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { preferredPlayerProfileId, resolveLinkedPlayerProfile } from "./player-profiles";
 
 type ClubMemberRow = {
   player_profile_id?: string | null;
@@ -131,15 +132,8 @@ export async function addMissingClubMembersToEvent(supabase: SupabaseClient, eve
 }
 
 export async function addCreatorToNoGroupEvent(supabase: SupabaseClient, eventId: string, creatorAuthUserId: string) {
-  const { data: playerProfile, error: playerProfileError } = await supabase
-    .from("player_profiles")
-    .select("id,display_name,is_active")
-    .eq("linked_auth_user_id", creatorAuthUserId)
-    .eq("is_active", true)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (playerProfileError) throw playerProfileError;
+  const playerProfile = await resolveLinkedPlayerProfile(supabase, creatorAuthUserId, preferredPlayerProfileId(creatorAuthUserId));
+  if (playerProfile?.is_active === false) throw new Error("選手プロフィールが無効になっています。連携を確認してください");
 
   const { data: accountProfile, error: accountProfileError } = await supabase
     .from("profiles")

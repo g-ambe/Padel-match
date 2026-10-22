@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ActionButton, Card } from "@/components/ui";
 import { resetGuestModeData, setGuestMode } from "@/lib/guest-events";
+import { ensureAccountProfile, ensureLinkedPlayerProfile, preferredPlayerProfileId, profileErrorMessage } from "@/lib/player-profiles";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [displayName, setDisplayName] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [profileSetupPending, setProfileSetupPending] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -30,6 +32,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setMessage("");
+    setProfileSetupPending(false);
     setLoading(true);
 
     const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
@@ -40,13 +43,27 @@ export default function LoginPage() {
       return;
     }
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
+    const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
 
     if (signInError) {
+      setLoading(false);
       setError("メールまたはパスワードが正しくありません");
       return;
     }
+    try {
+      const user = signInData.user;
+      if (!user) throw new Error("ログイン情報を確認できません");
+      const displayName = typeof user.user_metadata?.display_name === "string" ? user.user_metadata.display_name : user.email?.split("@")[0] ?? "メンバー";
+      // メール確認後の初回ログインでも認証側の行を用意する。既存値は上書きしない。
+      await ensureAccountProfile(supabase, user.id, displayName, user.email ?? null);
+    } catch (cause) {
+      console.error("ログイン後のアカウント確認に失敗しました", cause);
+      setLoading(false);
+      setProfileSetupPending(true);
+      setError(profileErrorMessage(cause));
+      return;
+    }
+    setLoading(false);
     resetGuestModeData();
     router.push("/home");
   };
@@ -56,6 +73,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setMessage("");
+    setProfileSetupPending(false);
     const trimmedName = displayName.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setError("メールアドレスの形式が正しくありません");
     if (!trimmedName) return setError("表示名を入力してください");
@@ -88,22 +106,24 @@ export default function LoginPage() {
       return;
     }
 
-    const uid = signUpData.user?.id;
-    if (uid) {
-      const { data: existingProfile } = await supabase.from("player_profiles").select("id").eq("linked_auth_user_id", uid).maybeSingle();
-      if (existingProfile?.id) {
-        await supabase.from("player_profiles").update({ display_name: trimmedName }).eq("id", existingProfile.id);
-      } else {
-        await supabase.from("player_profiles").insert({ display_name: trimmedName, linked_auth_user_id: uid, is_active: true });
-      }
-      await supabase.from("profiles").upsert({ id: uid, display_name: trimmedName, email: email.trim() }, { onConflict: "id" });
-    }
-
-    setLoading(false);
     if (!signUpData.session) {
+      setLoading(false);
       router.push("/signup/check-email");
       return;
     }
+    const uid = signUpData.session.user.id;
+    try {
+      // 既存の表示名・詳細情報を登録フォームの値で上書きしない。
+      await ensureAccountProfile(supabase, uid, trimmedName, email.trim());
+      await ensureLinkedPlayerProfile(supabase, uid, trimmedName, preferredPlayerProfileId(uid));
+    } catch (cause) {
+      console.error("登録後のプロフィール確認に失敗しました", cause);
+      setLoading(false);
+      setProfileSetupPending(true);
+      setError(`アカウントは作成されました。${profileErrorMessage(cause)}。プロフィール画面で確認してください`);
+      return;
+    }
+    setLoading(false);
     resetGuestModeData();
     router.push("/home");
   };
@@ -127,6 +147,7 @@ export default function LoginPage() {
       <Card title={signupMode ? "アカウント作成" : "ログイン"}>
         <form className="space-y-3" onSubmit={signupMode ? signUpWithEmail : loginWithEmail}>
           {error && <p className="text-sm text-red-400">{error}</p>}
+          {profileSetupPending && <Link href="/profile" className="block text-sm text-accent underline">ログイン済みのプロフィールを確認</Link>}
           {message && <p className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">{message}</p>}
           <input className="w-full rounded-2xl bg-zinc-800 p-3" placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} />
           {signupMode && <input className="w-full rounded-2xl bg-zinc-800 p-3" placeholder="表示名" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />}

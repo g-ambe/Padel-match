@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
+import { ProfileLinkRequests } from "@/components/profile-link-requests";
 import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { choosePlayerProfile, ensureLinkedPlayerProfile, fetchLinkedPlayerProfiles, fetchProfileUsage, preferredPlayerProfileId, profileDetailCount, profileErrorMessage, readProfileRows, rememberPlayerProfile, saveLinkedPlayerProfile, type PlayerProfile, type ProfileUsage } from "@/lib/player-profiles";
@@ -104,6 +105,7 @@ export default function ProfilePage() {
       setStats(profileStats);
       if (relatedError) setError(relatedError);
       if (selected) {
+        if (rows.length === 1) rememberPlayerProfile(uid, selected.id);
         setProfileId(selected.id);
         setForm(toForm(selected));
         setDraft(toForm(selected));
@@ -193,8 +195,9 @@ export default function ProfilePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <Card title="プロフィール">
+        {profileId && <p className="mb-3 text-xs text-emerald-300">本人の連携プロフィールです。連携申請の承認後、他グループの所属・戦績もこの選手IDへ引き継ぎます。</p>}
         {profiles.length > 1 && !loading && <div className="mb-4 space-y-2 text-sm">
-          <p className="text-amber-300">複数の選手プロフィールがあります。表示・編集するプロフィールを選んでください。</p>
+          <p className="text-amber-300">複数の有効な連携プロフィールがあります。表示する選手は選べますが、正規プロフィールの特定と新しい連携・統合は、本人の選択を管理者が確認するまで停止します。</p>
           <select aria-label="表示する選手プロフィール" className="w-full rounded-xl bg-zinc-800 p-3" value={profileId ?? ""} disabled={saving} onChange={(e) => {
             if (!e.target.value || !ownerId) return;
             rememberPlayerProfile(ownerId, e.target.value);
@@ -236,6 +239,8 @@ export default function ProfilePage() {
         {message && <p role="status" className="mt-3 text-sm text-emerald-400">{message}</p>}
         {!loading && <button disabled={saving} className="mt-3 text-sm text-zinc-300 underline" onClick={() => void loadProfile()}>再読み込み</button>}
       </Card>
+
+      <Card title="連携申請"><ProfileLinkRequests /></Card>
 
       <Card title="総合戦績">
         {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (

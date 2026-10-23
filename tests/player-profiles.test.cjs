@@ -1,10 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createClient } = require('@supabase/supabase-js');
+// Nodeの直接TypeScript実行でも、Nextと同じ相対モジュールを解決する。
+require('node:module').registerHooks({ resolve(specifier, context, next) { return next(specifier === './player-profiles' ? './player-profiles.ts' : specifier, context); } });
 const {
   choosePlayerProfile, ensureAccountProfile, ensureLinkedPlayerProfile, fetchLinkedPlayerProfiles,
-  fetchProfileUsage, saveLinkedPlayerProfile, setPlayerProfileAccountLink,
+  fetchProfileUsage, saveLinkedPlayerProfile,
 } = require('../lib/player-profiles.ts');
+const { requestPlayerProfileLink, reviewPlayerProfileLink } = require('../lib/profile-links.ts');
 
 const userId = '11111111-1111-4111-8111-111111111111';
 const detailId = '22222222-2222-4222-8222-222222222222';
@@ -57,20 +60,21 @@ test('500件を超える候補もページングして取得する', async () =>
   assert.equal((await fetchLinkedPlayerProfiles(supabase, userId)).length, 501);
 });
 
-test('最新の空レコードより既存設定のあるレコードを読み込む', () => {
+test('複数の連携は設定の有無や新しさだけで正規プロフィールを決めない', () => {
   const detailed = profile(detailId, values);
   const latest = profile('新しい空レコード', { created_at: '2026-10-22T00:00:00Z' });
-  assert.equal(choosePlayerProfile([latest, detailed], new Map()).id, detailId);
+  assert.equal(choosePlayerProfile([latest, detailed], new Map()), null);
+  assert.equal(choosePlayerProfile([latest, detailed], new Map(), detailId).id, detailId);
 });
 
 test('設定済みレコードが複数ある場合は勝手に1件を選ばない', () => {
   assert.equal(choosePlayerProfile([profile(detailId, values), profile('別選手', { bio: '別の自己紹介' })], new Map()), null);
 });
 
-test('所属・参加・チーム戦の参照がある選手を空の新規レコードより優先する', () => {
+test('複数候補は所属・参加・チーム戦の参照だけで正規プロフィールを決めない', () => {
   const existing = profile('履歴あり');
   const usage = new Map([['履歴あり', { ...emptyUsage(), teamMatches: 3 }]]);
-  assert.equal(choosePlayerProfile([profile('空'), existing], usage).id, existing.id);
+  assert.equal(choosePlayerProfile([profile('空'), existing], usage), null);
 });
 
 test('別グループの履歴を持つ2選手を参照数だけで統合・選択しない', () => {
@@ -90,34 +94,32 @@ test('関連情報の取得失敗でも新しいプロフィールを作らな�
   const { supabase, calls } = client(call => call.table === 'player_profiles'
     ? { data: [profile(detailId, values), profile('空')] }
     : { status: 500, data: { code: 'XX000', message: '関連情報の取得失敗' } });
-  await assert.rejects(ensureLinkedPlayerProfile(supabase, userId, '別の名前'), /取得に失敗/);
+  await assert.rejects(fetchProfileUsage(supabase, [profile()]), /取得に失敗/);
+  await assert.rejects(ensureLinkedPlayerProfile(supabase, userId, '別の名前'), /一意に特定/);
   assert(calls.every(call => call.method === 'GET'));
 });
 
-test('既存設定を持つ54件から選び、表示名や詳細をINSERT・上書きしない', async () => {
+test('既存54件の連携が曖昧なら停止し、設定や選択済みIDを上書きしない', async () => {
   const detailed = profile(detailId, values);
   const rows = [detailed, ...Array.from({ length: 53 }, (_, index) => profile(`空-${index}`))];
   const { supabase, calls } = client(call => ({ data: call.table === 'player_profiles' ? rows : [] }));
-  assert.deepEqual(await ensureLinkedPlayerProfile(supabase, userId, '登録フォームの別名'), detailed);
+  await assert.rejects(ensureLinkedPlayerProfile(supabase, userId, '登録フォームの別名', detailId), /一意に特定/);
   assert(calls.every(call => call.method === 'GET'));
 });
 
-test('明示作成時の主キーは固定され、並行実行の23505から既存行を再取得する', async () => {
-  let created = false;
-  let posts = 0;
-  const { supabase, calls } = client(async call => {
-    if (call.method === 'GET') return { data: created ? [profile(userId)] : [] };
-    assert.equal(call.body.id, userId);
-    assert.equal(call.body.linked_auth_user_id, userId);
-    posts += 1;
-    if (posts === 1) { await new Promise(resolve => setTimeout(resolve, 5)); created = true; return { status: 201, data: profile(userId) }; }
-    await new Promise(resolve => setTimeout(resolve, 10));
-    return { status: 409, data: { code: '23505', message: '主キーが既に存在' } };
-  });
-  const results = await Promise.all([ensureLinkedPlayerProfile(supabase, userId, '選手'), ensureLinkedPlayerProfile(supabase, userId, '選手')]);
+test('本人の明示作成はRPCを使い、並行再試行でも同じIDを受け取る', async () => {
+  const { supabase, calls } = client(call => call.method === 'GET' ? { data: [] } : { data: profile(userId) });
+  const results = await Promise.all([ensureLinkedPlayerProfile(supabase,userId,'選手'), ensureLinkedPlayerProfile(supabase,userId,'選手')]);
   assert(results.every(row => row.id === userId));
-  assert(calls.filter(call => call.method === 'POST').every(call => call.body.id === userId));
-  assert(!calls.some(call => call.method === 'PATCH'));
+  const posts = calls.filter(call => call.method === 'POST');
+  assert(posts.every(call => call.table === 'ensure_my_player_profile' && call.body.p_display_name === '選手'));
+  assert(!calls.some(call => call.method === 'PATCH' || (call.table === 'player_profiles' && call.method === 'POST')));
+});
+
+test('認証IDと異なる既存の正規IDを再作成せず引き続き使う', async () => {
+  const { supabase, calls } = client(() => ({ data: [profile(detailId, values)] }));
+  assert.equal((await ensureLinkedPlayerProfile(supabase,userId,'別名',detailId)).id,detailId);
+  assert(calls.every(call => call.method === 'GET'));
 });
 
 test('選択済みIDとの連携が失われている場合は別IDを作らない', async () => {
@@ -187,16 +189,24 @@ test('ログインアカウントが切り替わっていたら更新リクエ�
   assert.equal(calls.length, 0);
 });
 
-test('アカウント連携も更新0件を成功にせず、既存の連携先を条件にする', async () => {
-  const { supabase, calls } = client(() => ({ data: [] }));
-  await assert.rejects(setPlayerProfileAccountLink(supabase, detailId, userId, null), /連携の更新を確認できません/);
-  assert.equal(calls[0].url.searchParams.get('linked_auth_user_id'), 'is.null');
+test('管理者は直接UPDATEせず、本人承認待ちの連携申請RPCだけを呼ぶ', async () => {
+  const { supabase, calls } = client(() => ({ data: '申請ID' }));
+  assert.equal(await requestPlayerProfileLink(supabase,'グループA',detailId,userId),'申請ID');
+  assert.deepEqual(calls.map(call => call.table),['request_player_profile_link']);
+  assert.deepEqual(calls[0].body,{p_club_id:'グループA',p_member_id:detailId,p_target_auth_user_id:userId});
 });
 
-test('別グループの異なる選手を同じアカウントに連携できる設計を保持する', async () => {
-  const { supabase } = client(call => ({ data: [{ id: call.url.searchParams.get('id').slice(3), linked_auth_user_id: userId }] }));
-  await setPlayerProfileAccountLink(supabase, detailId, userId, null);
-  await setPlayerProfileAccountLink(supabase, '別グループの選手', userId, null);
+test('別グループの仮選手もそれぞれ本人承認待ちの申請になり、直接複数連携しない', async () => {
+  const { supabase, calls } = client(() => ({ data: '申請ID' }));
+  await requestPlayerProfileLink(supabase,'A',detailId,userId);
+  await requestPlayerProfileLink(supabase,'B','別の仮選手',userId);
+  assert(calls.every(call => call.table === 'request_player_profile_link' && call.method === 'POST'));
+});
+
+test('本人承認は確認時のトークンを渡し、DBエラーを成功にしない', async () => {
+  const { supabase, calls } = client(() => ({ status:400,data:{code:'P0001',message:'同じイベントに複数の参加記録があります'} }));
+  await assert.rejects(reviewPlayerProfileLink(supabase,'申請ID','approved','確認トークン'),/同じイベント/);
+  assert.equal(calls[0].body.p_review_token,'確認トークン');
 });
 
 test('所属・参加・フレンドリーチーム戦・公式戦・申請の参照を選手ごとに集計する', async () => {

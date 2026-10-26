@@ -218,6 +218,8 @@ export function GlobalMenu() {
           </div>
           {/* 一時的に非表示: 将来再表示予定 */}
           {/* <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button> */}
+          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/terms")}>利用規約</button>
+          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/privacy")}>プライバシーポリシー</button>
           <button data-menu-action="logout" className="w-full rounded-lg bg-red-600/80 px-3 py-3 text-left" onClick={() => void logout()}>ログアウト</button>
           {pathname === "/" && <p className="pt-2 text-xs text-zinc-400">ログイン画面です</p>}
         </nav>

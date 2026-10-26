@@ -12,6 +12,24 @@ type Row = { name: string; played: number; wins: number; losses: number; draws: 
 const formatRecord = (wins: number, losses: number, draws: number) => `${wins}勝${losses}敗${draws}分`;
 type SharedRankingSectionKey = "wins" | "winRate" | "diff" | "mvp";
 type EventVideoLink = { id: string; title: string; video_url: string; memo: string | null; display_order: number };
+type SharedParticipant = { id: string; display_name: string };
+type SharedMatch = {
+  id: string; court_number: number; completed: boolean; youtube_url: string | null; round_number: number;
+  match_players: { participant_id: string; team: "A" | "B" }[];
+  result: { score_a: number; score_b: number; winner_team: string } | null;
+};
+type SharedTeamMatch = {
+  id: string; team_a_player1_guest_name: string; team_a_player2_guest_name: string;
+  team_b_player1_guest_name: string; team_b_player2_guest_name: string;
+  team_a_score: number | null; team_b_score: number | null; result: string;
+  score_detail: string | null; youtube_url: string | null;
+};
+type SharedEventData = {
+  event: { name: string; created_at: string | null; event_mode: string | null };
+  participants: SharedParticipant[]; matches: SharedMatch[];
+  team_sides: { side: string; team_name: string | null }[];
+  team_matches: SharedTeamMatch[]; videos: EventVideoLink[];
+};
 
 const sharedRankingButtonClass = "flex min-h-12 w-full items-center rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-3 text-left text-sm font-bold text-zinc-100 shadow-sm shadow-black/20 active:bg-zinc-800";
 
@@ -31,67 +49,49 @@ export default function SharedEventPage() {
   const { token } = useParams<{ token: string }>();
   const [eventName, setEventName] = useState("-");
   const [eventDate, setEventDate] = useState("-");
-  const [participants, setParticipants] = useState<any[]>([]);
-  const [matches, setMatches] = useState<any[]>([]);
+  const [participants, setParticipants] = useState<SharedParticipant[]>([]);
+  const [matches, setMatches] = useState<SharedMatch[]>([]);
   const [eventVideoLinks, setEventVideoLinks] = useState<EventVideoLink[]>([]);
   const [isTeamEvent, setIsTeamEvent] = useState(false);
-  const [teamSides, setTeamSides] = useState<any[]>([]);
-  const [teamMatches, setTeamMatches] = useState<any[]>([]);
+  const [teamSides, setTeamSides] = useState<SharedEventData["team_sides"]>([]);
+  const [teamMatches, setTeamMatches] = useState<SharedTeamMatch[]>([]);
   const [error, setError] = useState("");
   const [openRankingSections, setOpenRankingSections] = useState<Record<SharedRankingSectionKey, boolean>>({ wins: false, winRate: false, diff: false, mvp: false });
 
-  useEffect(() => { void (async () => {
-    const supabase = getSupabaseClient(); if (!supabase || !token) return;
-    const logSharedLoadError = (label: string, error: any) => {
-      console.error(label, { message: error?.message, code: error?.code, details: error?.details, hint: error?.hint });
-    };
-    const { data: event, error: eventError } = await supabase
-      .from("events")
-      .select("id,name,created_at,status,is_deleted,share_enabled,club_id,event_mode")
-      .eq("share_token", token)
-      .eq("share_enabled", true)
-      .eq("status", "closed")
-      .or("is_deleted.is.null,is_deleted.eq.false")
-      .maybeSingle();
-    if (eventError) {
-      logSharedLoadError("共有イベントの取得に失敗しました", eventError);
-      return setError("共有イベントが見つかりません");
-    }
-    if (!event) return setError("この共有リンクは無効です");
-    setEventName(event.name ?? "-");
-    setEventDate(event.created_at ? new Date(event.created_at).toLocaleDateString("ja-JP") : "-");
-    setIsTeamEvent(event.event_mode === "team");
-    if (event.event_mode === "team") {
-      const { data: sides, error: sidesError } = await supabase.from("event_team_sides").select("side,team_name,club_id").eq("event_id", event.id);
-      if (sidesError) logSharedLoadError("フレンドリーチームマッチ共有チーム取得に失敗しました", sidesError);
-      const { data: cards, error: cardsError } = await supabase.from("event_team_matches").select("*").eq("event_id", event.id).order("match_order", { ascending: true }).order("created_at", { ascending: true });
-      if (cardsError) logSharedLoadError("フレンドリーチームマッチ共有試合取得に失敗しました", cardsError);
-      setTeamSides(sides ?? []);
-      setTeamMatches(cards ?? []);
-    }
-    const { data: pt, error: participantsError } = await supabase.from("event_participants").select("id,guest_name,participant_type,player_profile_id,profile_id").eq("event_id", event.id);
-    if (participantsError) logSharedLoadError("共有イベント参加者の取得に失敗しました", participantsError);
-    const rows = pt ?? [];
-    const playerProfileIds = rows.map((r: any) => r.player_profile_id).filter(Boolean);
-    const profileIds = rows.map((r: any) => r.profile_id).filter(Boolean);
-    const { data: pps, error: playerProfilesError } = playerProfileIds.length ? await supabase.from("player_profiles").select("id,display_name").in("id", playerProfileIds) : { data: [] as any[], error: null as any };
-    if (playerProfilesError) logSharedLoadError("共有イベント選手名の取得に失敗しました", playerProfilesError);
-    const { data: ps, error: profilesError } = profileIds.length ? await supabase.from("profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[], error: null as any };
-    if (profilesError) logSharedLoadError("共有イベントプロフィール名の取得に失敗しました", profilesError);
-    const ppm = new Map((pps ?? []).map((x: any) => [x.id, x.display_name]));
-    const pm = new Map((ps ?? []).map((x: any) => [x.id, x.display_name]));
-    setParticipants(rows.map((r: any) => ({ ...r, display_name: (r.player_profile_id ? ppm.get(r.player_profile_id) : null) ?? (r.profile_id ? pm.get(r.profile_id) : null) ?? r.guest_name ?? "ゲスト" })));
-    const { data: ms, error: matchesError } = await supabase.from("matches").select("id,court_number,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(score_a,score_b,winner_team)").eq("event_id", event.id).order("created_at", { ascending: false });
-    if (matchesError) logSharedLoadError("共有イベント試合結果の取得に失敗しました", matchesError);
-    setMatches((ms ?? []).map((m: any) => ({ ...m, round_number: m.rounds?.round_number ?? 0, result: m.match_results?.[0] ?? null })));
-    const { data: videos, error: videosError } = await supabase.from("event_video_links").select("id,title,video_url,memo,display_order").eq("event_id", event.id).order("display_order", { ascending: true }).order("created_at", { ascending: true });
-    if (videosError) {
-      logSharedLoadError("共有イベント全試合動画の取得に失敗しました", videosError);
-      setEventVideoLinks([]);
-    } else {
-      setEventVideoLinks(((videos ?? []) as any[]).filter((v) => typeof v.video_url === "string" && v.video_url.trim()).map((v) => ({ ...v, title: v.title || "全試合動画", video_url: v.video_url.trim() })));
-    }
-  })(); }, [token]);
+  useEffect(() => {
+    let active = true;
+    setError("");
+    setParticipants([]);
+    setMatches([]);
+    setTeamSides([]);
+    setTeamMatches([]);
+    setEventVideoLinks([]);
+    void (async () => {
+      const supabase = getSupabaseClient(); if (!supabase || !token) return;
+      try {
+        // トークンの照合と公開状態の確認はDB側で行い、表示列だけを受け取る。
+        const { data, error: loadError } = await supabase.rpc("get_shared_event", { p_token: token });
+        if (!active) return;
+        if (loadError) {
+          console.error("共有イベントの取得に失敗しました", { message: loadError.message, code: loadError.code });
+          return setError("共有イベントが見つかりません");
+        }
+        if (!data) return setError("この共有リンクは無効です");
+        const shared = data as SharedEventData;
+        setEventName(shared.event.name ?? "-");
+        setEventDate(shared.event.created_at ? new Date(shared.event.created_at).toLocaleDateString("ja-JP") : "-");
+        setIsTeamEvent(shared.event.event_mode === "team");
+        setParticipants(shared.participants);
+        setMatches(shared.matches);
+        setTeamSides(shared.team_sides);
+        setTeamMatches(shared.team_matches);
+        setEventVideoLinks(shared.videos);
+      } catch {
+        if (active) setError("共有イベントが見つかりません");
+      }
+    })();
+    return () => { active = false; };
+  }, [token]);
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p: any) => [p.id, p.display_name])), [participants]);
   const rows = useMemo(() => {

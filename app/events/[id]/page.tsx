@@ -294,7 +294,7 @@ export default function EventDetailPage() {
     setCanCopyShare(allowCopyShare);
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
-    if (event?.club_id) {
+    if (event?.club_id && event.status === "active") {
       await addMissingClubMembersToEvent(supabase, eventId, event.club_id);
     }
 
@@ -698,36 +698,37 @@ export default function EventDetailPage() {
     setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
 
     const match = matches.find((m) => m.id === matchId);
-    if (match && statsMode === "official" && winner !== "draw") {
+    // 累計戦績はグループ単位。個人イベントは試合結果から集計する。
+    if (match && eventClubId && statsMode === "official" && winner !== "draw") {
       const winners = match.players.filter((p) => p.team === winner).map((p) => p.participant_id);
       const losers = match.players.filter((p) => p.team !== winner).map((p) => p.participant_id);
 
       for (const pid of winners) {
         const profileId = profileMap[pid];
         if (!profileId) continue;
-        const { data: cur } = await supabase.from("player_stats").select("id,match_count,win_count,loss_count").eq("profile_id", profileId).maybeSingle();
+        const { data: cur } = await supabase.from("player_stats").select("id,match_count,win_count,loss_count").eq("club_id", eventClubId).eq("profile_id", profileId).maybeSingle();
         const match_count = (cur?.match_count ?? 0) + 1;
         const win_count = (cur?.win_count ?? 0) + 1;
         const loss_count = cur?.loss_count ?? 0;
         const win_rate = match_count ? win_count / match_count : 0;
         if (cur?.id) {
-          await supabase.from("player_stats").update({ match_count, win_count, loss_count, win_rate }).eq("id", cur.id);
+          await supabase.from("player_stats").update({ match_count, win_count, loss_count, win_rate }).eq("club_id", eventClubId).eq("id", cur.id);
         } else {
-          await supabase.from("player_stats").insert({ profile_id: profileId, match_count, win_count, loss_count, win_rate });
+          await supabase.from("player_stats").insert({ club_id: eventClubId, profile_id: profileId, match_count, win_count, loss_count, win_rate });
         }
       }
       for (const pid of losers) {
         const profileId = profileMap[pid];
         if (!profileId) continue;
-        const { data: cur } = await supabase.from("player_stats").select("id,match_count,win_count,loss_count").eq("profile_id", profileId).maybeSingle();
+        const { data: cur } = await supabase.from("player_stats").select("id,match_count,win_count,loss_count").eq("club_id", eventClubId).eq("profile_id", profileId).maybeSingle();
         const match_count = (cur?.match_count ?? 0) + 1;
         const win_count = cur?.win_count ?? 0;
         const loss_count = (cur?.loss_count ?? 0) + 1;
         const win_rate = match_count ? win_count / match_count : 0;
         if (cur?.id) {
-          await supabase.from("player_stats").update({ match_count, win_count, loss_count, win_rate }).eq("id", cur.id);
+          await supabase.from("player_stats").update({ match_count, win_count, loss_count, win_rate }).eq("club_id", eventClubId).eq("id", cur.id);
         } else {
-          await supabase.from("player_stats").insert({ profile_id: profileId, match_count, win_count, loss_count, win_rate });
+          await supabase.from("player_stats").insert({ club_id: eventClubId, profile_id: profileId, match_count, win_count, loss_count, win_rate });
         }
       }
     }
@@ -760,19 +761,19 @@ export default function EventDetailPage() {
 
   const adjustPlayerStatsForDeletedMatch = async (match: MatchView) => {
     const supabase = getSupabaseClient();
-    if (!supabase || !match.result || match.result.winner_team === "draw" || statsMode !== "official") return;
+    if (!supabase || !eventClubId || !match.result || match.result.winner_team === "draw" || statsMode !== "official") return;
     const winners = match.players.filter((p) => p.team === match.result!.winner_team).map((p) => p.participant_id);
     const losers = match.players.filter((p) => p.team !== match.result!.winner_team).map((p) => p.participant_id);
     const adjust = async (pid: string, isWinner: boolean) => {
       const profileId = profileMap[pid];
       if (!profileId) return;
-      const { data: cur, error: fetchError } = await supabase.from("player_stats").select("id,match_count,win_count,loss_count").eq("profile_id", profileId).maybeSingle();
+      const { data: cur, error: fetchError } = await supabase.from("player_stats").select("id,match_count,win_count,loss_count").eq("club_id", eventClubId).eq("profile_id", profileId).maybeSingle();
       if (fetchError || !cur?.id) return;
       const match_count = Math.max((cur.match_count ?? 0) - 1, 0);
       const win_count = Math.max((cur.win_count ?? 0) - (isWinner ? 1 : 0), 0);
       const loss_count = Math.max((cur.loss_count ?? 0) - (isWinner ? 0 : 1), 0);
       const win_rate = match_count ? win_count / match_count : 0;
-      await supabase.from("player_stats").update({ match_count, win_count, loss_count, win_rate }).eq("id", cur.id);
+      await supabase.from("player_stats").update({ match_count, win_count, loss_count, win_rate }).eq("club_id", eventClubId).eq("id", cur.id);
     };
     await Promise.all([...winners.map((pid) => adjust(pid, true)), ...losers.map((pid) => adjust(pid, false))]);
   };

@@ -25,6 +25,8 @@ export default function LoginPage() {
     if (params.get("confirmed") === "true") {
       setSignupMode(false);
       setMessage("アカウント作成が完了しました。ログインしてください。");
+    } else {
+      setSignupMode(params.get("mode") === "signup");
     }
   }, []);
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
+import { MatchShareButtons } from "@/components/match-share-buttons";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
@@ -1439,6 +1440,18 @@ export default function EventDetailPage() {
               <button className="rounded border border-zinc-500 py-2" onClick={() => void stopShareLink()}>共有を停止</button>
               <button className="rounded border border-zinc-500 py-2" onClick={() => void reissueShareLink()}>共有リンクを再発行</button>
             </div>
+            <MatchShareButtons
+              event={{ status: eventStatus, is_deleted: isDeletedEvent, share_enabled: shareEnabled, share_token: shareToken }}
+              eventName={eventName}
+              kind="events"
+              canShare={canCopyShare}
+              getMatches={() => sortedMatches.map(match => ({
+                teamA: match.players.length === 4 ? match.players.filter(player => player.team === "A").map(player => nameMap[player.participant_id]) : [],
+                teamB: match.players.length === 4 ? match.players.filter(player => player.team === "B").map(player => nameMap[player.participant_id]) : [],
+                score: hasEnteredFriendlyMatchScore(match) ? { a: match.result.score_a, b: match.result.score_b } : null,
+                youtubeUrl: match.youtube_url,
+              }))}
+            />
           </div>
         </Card>
       )}

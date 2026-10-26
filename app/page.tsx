@@ -2,10 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActionButton, Card } from "@/components/ui";
+import { LegalConsentDialog } from "@/components/legal-consent-dialog";
+import { LEGAL_TERMS_VERSION, LEGAL_PRIVACY_VERSION, type LegalDocumentId } from "@/lib/legal-documents";
 import { resetGuestModeData, setGuestMode } from "@/lib/guest-events";
 import { ensureAccountProfile, ensureLinkedPlayerProfile, preferredPlayerProfileId, profileErrorMessage } from "@/lib/player-profiles";
+
+// 再開時はこの表示フラグだけを変更する。Supabase側のOAuth設定は変更しない。
+const GOOGLE_LOGIN_VISIBLE = false;
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,7 +22,18 @@ export default function LoginPage() {
   const [signupMode, setSignupMode] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [agreed, setAgreed] = useState(false);
+  const [consent, setConsent] = useState<{ agreed: boolean; acceptedAt: string | null }>({ agreed: false, acceptedAt: null });
+  const [legalDialogOpen, setLegalDialogOpen] = useState(false);
+  const [legalDocument, setLegalDocument] = useState<LegalDocumentId>("terms");
+  const [signupFinished, setSignupFinished] = useState(false);
+  const signupInFlight = useRef(false);
+  const agreed = consent.agreed;
+  const changeConsent = (next: boolean) => setConsent({ agreed: next, acceptedAt: next ? new Date().toISOString() : null });
+  const openLegalDocument = (documentId: LegalDocumentId) => {
+    if (loading) return;
+    setLegalDocument(documentId);
+    setLegalDialogOpen(true);
+  };
   const [profileSetupPending, setProfileSetupPending] = useState(false);
 
   useEffect(() => {
@@ -71,8 +87,9 @@ export default function LoginPage() {
   };
 
 
-  const signUpWithEmail = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  // フォームとポップアップは同じ処理を使い、Reactの再描画より先にrefで二重実行を防ぐ。
+  const createAccountWithEmail = async () => {
+    if (signupInFlight.current || signupFinished) return;
     setError("");
     setMessage("");
     setProfileSetupPending(false);
@@ -81,53 +98,71 @@ export default function LoginPage() {
     if (!trimmedName) return setError("表示名を入力してください");
     if (password.length < 8) return setError("パスワードは8文字以上で入力してください");
     if (password !== passwordConfirm) return setError("パスワード確認が一致しません");
-    if (!agreed) return setError("利用規約とプライバシーポリシーへの同意が必要です");
+    if (!agreed || !consent.acceptedAt) {
+      openLegalDocument("terms");
+      return;
+    }
 
+    signupInFlight.current = true;
     setLoading(true);
-    const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
-    const supabase = getSupabaseClient();
-    if (!supabase) {
-      setLoading(false);
-      setError(getSupabaseEnvErrorMessage() ?? "Supabase初期化に失敗しました");
-      return;
-    }
-
-    const redirectUrl = new URL("/login?confirmed=true", window.location.origin).toString();
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: trimmedName },
-        emailRedirectTo: redirectUrl,
-      }
-    });
-
-    if (signUpError) {
-      setLoading(false);
-      setError("アカウント作成に失敗しました");
-      return;
-    }
-
-    if (!signUpData.session) {
-      setLoading(false);
-      router.push("/signup/check-email");
-      return;
-    }
-    const uid = signUpData.session.user.id;
+    let created = false;
     try {
-      // 既存の表示名・詳細情報を登録フォームの値で上書きしない。
-      await ensureAccountProfile(supabase, uid, trimmedName, email.trim());
-      await ensureLinkedPlayerProfile(supabase, uid, trimmedName, preferredPlayerProfileId(uid));
-    } catch (cause) {
-      console.error("登録後のプロフィール確認に失敗しました", cause);
+      const { getSupabaseClient, getSupabaseEnvErrorMessage } = await import("@/lib/supabase");
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        setError(getSupabaseEnvErrorMessage() ?? "Supabase初期化に失敗しました");
+        return;
+      }
+      const redirectUrl = new URL("/login?confirmed=true", window.location.origin).toString();
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            display_name: trimmedName,
+            terms_version: LEGAL_TERMS_VERSION,
+            privacy_version: LEGAL_PRIVACY_VERSION,
+            consented_at: consent.acceptedAt,
+          },
+          emailRedirectTo: redirectUrl,
+        }
+      });
+      if (signUpError) {
+        setError("アカウント作成に失敗しました");
+        return;
+      }
+      created = true;
+      setSignupFinished(true);
+      setLegalDialogOpen(false);
+      if (!signUpData.session) {
+        router.push("/signup/check-email");
+        return;
+      }
+      const uid = signUpData.session.user.id;
+      try {
+        // 既存の表示名・詳細情報を登録フォームの値で上書きしない。
+        await ensureAccountProfile(supabase, uid, trimmedName, email.trim());
+        await ensureLinkedPlayerProfile(supabase, uid, trimmedName, preferredPlayerProfileId(uid));
+      } catch (cause) {
+        console.error("登録後のプロフィール確認に失敗しました", cause);
+        setProfileSetupPending(true);
+        setError(`アカウントは作成されました。${profileErrorMessage(cause)}。プロフィール画面で確認してください`);
+        return;
+      }
+      resetGuestModeData();
+      router.push("/home");
+    } catch {
+      setError("アカウント作成に失敗しました");
+    } finally {
+      // Authが成功した後は、画面遷移・プロフィール確認中の登録再送も防ぐ。
+      signupInFlight.current = created;
       setLoading(false);
-      setProfileSetupPending(true);
-      setError(`アカウントは作成されました。${profileErrorMessage(cause)}。プロフィール画面で確認してください`);
-      return;
     }
-    setLoading(false);
-    resetGuestModeData();
-    router.push("/home");
+  };
+
+  const signUpWithEmail = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void createAccountWithEmail();
   };
 
   const loginWithGoogle = async () => {
@@ -155,16 +190,24 @@ export default function LoginPage() {
           {signupMode && <input className="w-full rounded-2xl bg-zinc-800 p-3" placeholder="表示名" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />}
           <input className="w-full rounded-2xl bg-zinc-800 p-3" type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} />
           {signupMode && <input className="w-full rounded-2xl bg-zinc-800 p-3" type="password" placeholder="パスワード確認" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />}
-          {signupMode && <label className="flex items-center gap-2 text-sm text-zinc-300"><input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} /><span>利用規約/プライバシーポリシーに同意する</span></label>}
-          <ActionButton type="submit" disabled={loading}>{loading ? (signupMode ? "作成中..." : "ログイン中...") : (signupMode ? "アカウント作成" : "メールでログイン")}</ActionButton>
-          {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={loginWithGoogle}>Googleでログイン</button>}
+          {signupMode && <label className="flex items-start gap-3 text-sm leading-relaxed text-zinc-300">
+            <input type="checkbox" className="mt-1 shrink-0" checked={agreed} disabled={loading || signupFinished} onChange={event => changeConsent(event.target.checked)} />
+            <span><a href="/terms" className="text-accent underline underline-offset-4" aria-haspopup="dialog" onClick={event => { event.preventDefault(); event.stopPropagation(); openLegalDocument("terms"); }}>利用規約</a>に同意し、<a href="/privacy" className="text-accent underline underline-offset-4" aria-haspopup="dialog" onClick={event => { event.preventDefault(); event.stopPropagation(); openLegalDocument("privacy"); }}>プライバシーポリシー</a>の内容を確認しました。</span>
+          </label>}
+          <ActionButton type="submit" disabled={loading || (signupMode && signupFinished)}>{loading ? (signupMode ? "作成中..." : "ログイン中...") : (signupMode ? (signupFinished ? "アカウント作成済み" : "アカウント作成") : "メールでログイン")}</ActionButton>
+          {GOOGLE_LOGIN_VISIBLE && !signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={loginWithGoogle}>Googleでログイン</button>}
           {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={() => { setGuestMode(true); router.push("/home"); }}>ゲストで利用</button>}
-          <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={() => { setSignupMode((v) => !v); setError(""); setMessage(""); }}>
+          <button type="button" disabled={loading} className="w-full rounded-2xl border border-zinc-600 py-3 disabled:opacity-40" onClick={() => { setSignupMode((v) => !v); setError(""); setMessage(""); }}>
             {signupMode ? "ログインへ戻る" : "アカウント作成"}
           </button>
         </form>
       </Card>
+      <nav aria-label="規約とプライバシー" className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-zinc-300">
+        <Link href="/terms" className="inline-flex min-h-11 items-center underline underline-offset-4">利用規約</Link>
+        <Link href="/privacy" className="inline-flex min-h-11 items-center underline underline-offset-4">プライバシーポリシー</Link>
+      </nav>
       <Link href="/home" className="text-center text-sm text-zinc-300 underline">デモとしてホームへ進む</Link>
+      <LegalConsentDialog open={legalDialogOpen} initialDocument={legalDocument} agreed={agreed} onAgreedChange={changeConsent} onClose={() => setLegalDialogOpen(false)} onSubmit={() => void createAccountWithEmail()} loading={loading} error={error} />
     </main>
   );
 }

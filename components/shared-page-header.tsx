@@ -48,7 +48,7 @@ export function SharedPageHeader({ title }: { title: string }) {
   return <header className="flex items-center justify-between gap-3">
     <h1 className="min-w-0 text-xl font-bold">{title}</h1>
     {hasSession === false && <>
-      <button ref={triggerRef} type="button" className="min-h-11 shrink-0 px-1 py-2 text-xs text-zinc-400 underline underline-offset-4" aria-haspopup="dialog" aria-expanded={open} aria-controls={dialogId} onClick={() => setOpen(true)}>ログインはこちら</button>
+      <button ref={triggerRef} type="button" className="min-h-11 max-w-[40%] shrink-0 px-1 py-2 text-right text-xs text-zinc-400 underline underline-offset-4" aria-haspopup="dialog" aria-expanded={open} aria-controls={dialogId} onClick={() => setOpen(true)}>ログイン・アカウント登録はこちら</button>
       <dialog ref={dialogRef} id={dialogId} aria-labelledby={titleId} className="m-auto max-h-[calc(100dvh_-_2rem)] w-[calc(100%_-_2rem)] max-w-sm overflow-y-auto rounded-2xl border border-zinc-700 bg-card p-5 text-zinc-100 shadow-xl backdrop:bg-black/70" onCancel={() => setOpen(false)} onClose={() => setOpen(false)} onClick={event => { if (event.target === event.currentTarget) setOpen(false); }}>
         <h2 id={titleId} className="text-lg font-bold">ログイン・新規アカウント作成</h2>
         <p className="mt-3 text-sm text-zinc-300">ログイン、または新規登録しますか？</p>

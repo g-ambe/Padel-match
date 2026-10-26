@@ -23,7 +23,6 @@ export function getMatchShareUrls(event: MatchShareEvent, origin: string, kind: 
     return {
       detail: `${base.origin}/share/${kind}/${event.share_token}`,
       login: `${base.origin}/login`,
-      signup: `${base.origin}/login?mode=signup`,
     };
   } catch {
     return null;
@@ -60,7 +59,7 @@ export function buildMatchShareText(params: {
     blocks.push(lines.join("\n"));
   }
   if (!blocks.length) throw new Error("共有できる試合がありません。選手が設定済みか確認してください");
-  return `${blocks.join("\n\n")}\n\n戦績詳細：\n${urls.detail}\n\nログインして確認：\n${urls.login}\n\nアカウント作成：\n${urls.signup}`;
+  return `戦績詳細：\n${urls.detail}\n\n${blocks.join("\n\n")}\n\nログイン・アカウント登録はこちら\n${urls.login}`;
 }
 
 // 実機・ブラウザごとのURL上限に備えた保守的な上限。文章自体は一切切り詰めない。

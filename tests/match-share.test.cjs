@@ -8,12 +8,11 @@ const event = { status: 'closed', is_deleted: false, share_enabled: true, share_
 const match = { teamA: ['安倍', '瀧田'], teamB: ['篠原', '今野'], score: { a: 4, b: 2 }, youtubeUrl: 'https://youtu.be/E_f_A-FBni4' };
 const params = { event, eventName: '261023 部活', origin: 'https://padel.example.org', kind: 'events', matches: [match] };
 
-test('指定形式の全文・動画・ログインと登録URLを生成し、イベント名の日付を追加しない', () => {
+test('戦績詳細を先頭、ログイン・登録共通の案内を末尾に配置し、イベント名の日付を追加しない', () => {
   assert.equal(buildMatchShareText(params), [
-    '▼261023 部活 安倍瀧田vs篠原今野', 'スコア：4-2', '動画URL：https://youtu.be/E_f_A-FBni4', '',
     '戦績詳細：', 'https://padel.example.org/share/events/share-token_123', '',
-    'ログインして確認：', 'https://padel.example.org/login', '',
-    'アカウント作成：', 'https://padel.example.org/login?mode=signup',
+    '▼261023 部活 安倍瀧田vs篠原今野', 'スコア：4-2', '動画URL：https://youtu.be/E_f_A-FBni4', '',
+    'ログイン・アカウント登録はこちら', 'https://padel.example.org/login',
   ].join('\n'));
 });
 
@@ -29,7 +28,8 @@ test('通常・チーム・公式のURLは実際のoriginから組み立てる',
     assert.equal(getMatchShareUrls(event, 'https://production.padel.app', kind).detail, `https://production.padel.app/share/${kind}/share-token_123`);
     const text = buildMatchShareText({ ...params, kind, origin: 'http://127.0.0.1:4567', eventName: '公式大会' });
     assert.match(text, new RegExp(`/share/${kind}/share-token_123`));
-    assert.match(text, /http:\/\/127.0.0.1:4567\/login\?mode=signup$/);
+    assert.match(text, /^戦績詳細：\nhttp:\/\/127.0.0.1:4567\/share\//);
+    assert.match(text, /ログイン・アカウント登録はこちら\nhttp:\/\/127.0.0.1:4567\/login$/);
   }
 });
 
@@ -85,7 +85,7 @@ test('LINEへ改行・記号・日本語・全文をエンコードし、長文�
   assert(url.startsWith('https://line.me/R/share?text='));
   assert.equal(new URL(url).searchParams.get('text'), text);
   assert(url.length > MAX_LINE_SHARE_URL_LENGTH);
-  assert(text.includes('\n\nアカウント作成：\n'));
+  assert(text.endsWith('\n\nログイン・アカウント登録はこちら\nhttps://padel.example.org/login'));
 });
 
 test('PCはコピーへ、iPadのデスクトップUAを含むスマートフォンはLINEへ振り分ける', () => {

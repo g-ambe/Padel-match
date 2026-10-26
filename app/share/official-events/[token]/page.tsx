@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { OfficialStatsCard } from "@/components/official-stats-card";
 import { Card } from "@/components/ui";
+import { SharedPageHeader } from "@/components/shared-page-header";
 import { buildOfficialStats, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 
@@ -89,7 +90,7 @@ export default function SharedOfficialEventPage() {
   if (!event) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100">読み込み中...</main>;
 
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
-    <h1 className="text-xl font-bold">オフィシャルチームマッチ共有</h1>
+    <SharedPageHeader title="オフィシャルチームマッチ共有" />
     <Card title={event.title}>
       <dl className="space-y-3 text-sm">
         <div><dt className="text-zinc-400">所属グループ</dt><dd>{event.clubs?.name ?? "名称未設定"}</dd></div>

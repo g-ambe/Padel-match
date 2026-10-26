@@ -5,9 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { OfficialStatsCard } from "@/components/official-stats-card";
 import { ActionButton, Card } from "@/components/ui";
+import { MatchShareButtons } from "@/components/match-share-buttons";
 import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { buildOfficialStats, createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
+import { storedTeamShareScore } from "@/lib/match-share-text";
 
 type MemberOption = { playerProfileId: string; displayName: string | null };
 type OfficialOpponent = { id: string; official_event_id: string; opponent_team_name: string; memo: string | null };
@@ -321,6 +323,15 @@ export default function OfficialMatchDetailPage() {
             {shareUrl && canManageShare && <button className="rounded-xl border border-zinc-500 py-2 font-bold" onClick={() => void createOrRotateShare(true)}>共有リンクを再発行</button>}
             {shareUrl && canManageShare && <button className="rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => void stopShare()}>共有を停止</button>}
           </div>
+          <MatchShareButtons event={event} eventName={event.title} kind="official-events" getMatches={() => opponents.flatMap(opponent => opponentMatches(opponent.id)).map(match => ({
+            teamA: [
+              match.our_player1_profile_id || match.our_player1_guest_name ? memberName(match.our_player1_profile_id, match.our_player1_guest_name) : null,
+              match.our_player2_profile_id || match.our_player2_guest_name ? memberName(match.our_player2_profile_id, match.our_player2_guest_name) : null,
+            ],
+            teamB: [match.opponent_player1_name, match.opponent_player2_name],
+            score: storedTeamShareScore(match.our_score, match.opponent_score, match.result),
+            youtubeUrl: match.youtube_url,
+          }))} />
         </div>
       </Card>}
       <Card title="戦績">

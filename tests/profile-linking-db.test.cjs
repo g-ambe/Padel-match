@@ -371,3 +371,36 @@ test('申請時の本人の正規IDが変更された場合は新しいIDへ勝�
  await db.query('insert into player_profiles(id,display_name,linked_auth_user_id) values ($1,$2,$3)',[id(720),'別の正規候補',owner]);
  const before=await state(db);await assert.rejects(approve(db,request),/連携が変わっています/);assert.deepEqual(await state(db),before);
 }));
+
+const membershipSql=name=>readFileSync(join(__dirname,'../supabase/maintenance/group-members',name),'utf8');
+const commitMembershipSql=name=>membershipSql(name).replace(/rollback;\s*$/,'commit;');
+
+test('復帰後の権限はis_activeで判定し、旧状態やプロフィールを変更せずRLSの再帰も起こさない',async()=>fixture(async db=>{
+ await db.query("update club_members set status='inactive' where id=$1",[id(210)]);
+ const before=await state(db);assert.equal(await rpc(db,adminA,'can_manage_player_profile_club',[clubA]),false);
+ await db.exec(membershipSql('01_check_access.sql'));await db.exec(membershipSql('02_use_is_active.sql'));
+ assert.equal(await rpc(db,adminA,'can_manage_player_profile_club',[clubA]),false);
+ await db.exec(commitMembershipSql('02_use_is_active.sql'));assert.equal(await rpc(db,adminA,'can_manage_player_profile_club',[clubA]),true);
+ await asUser(db,adminA,async()=>assert.equal((await db.query('update club_members set is_active=false where id=$1 returning id',[memberA])).rows.length,1));
+ await db.query('update club_members set is_active=true where id=$1',[memberA]);
+ assert.deepEqual(await state(db),before);
+}));
+
+test('所属の旧状態列がなくても、復帰した仮選手の本人承認・統合と新規候補を維持する',async()=>fixture(async db=>{
+ await db.exec(commitMembershipSql('02_use_is_active.sql'));
+ await db.exec('alter table club_members drop column status');
+ const request=await requestLink(db);assert.equal((await approve(db,request)).status,'approved');
+ const fresh=await rpc(db,adminB,'add_provisional_club_member',[clubB,'新しい仮選手',id(730)]);assert(fresh);
+}));
+
+test('最後のメイン管理者の退会・降格・削除を手動保護SQLでも防ぎ、他の所属を変更しない',async()=>fixture(async db=>{
+ await db.exec(commitMembershipSql('03_guard_last_admin.sql'));
+ const before=await state(db);
+ for(const sql of ["update club_members set is_active=false where id=$1","update club_members set role='member' where id=$1","delete from club_members where id=$1"])
+   await assert.rejects(db.query(sql,[id(210)]),/最低1人/);
+ assert.deepEqual(await state(db),before);
+ await db.query("update club_members set role='main_admin' where id=$1",[memberA]);
+ await db.query('update club_members set is_active=false where id=$1',[id(210)]);
+ await assert.rejects(db.query('update club_members set is_active=false where id=$1',[memberA]),/最低1人/);
+ assert.equal((await db.query('select is_active from club_members where id=$1',[id(211)])).rows[0].is_active,true);
+}));

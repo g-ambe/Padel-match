@@ -1,10 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { preferredPlayerProfileId, resolveLinkedPlayerProfile } from "./player-profiles";
+import { preferredPlayerProfileId, readProfileRows, resolveLinkedPlayerProfile } from "./player-profiles";
 
 type ClubMemberRow = {
   player_profile_id?: string | null;
   profile_id?: string | null;
-  status?: string | null;
 };
 
 type PlayerProfileRow = {
@@ -23,31 +22,11 @@ type ActiveClubMemberParticipant = {
   displayName: string | null;
 };
 
-function isMissingColumnError(error: any, column: string) {
-  const message = `${error?.message ?? ""} ${error?.details ?? ""}`;
-  return error?.code === "42703" || message.includes(column);
-}
-
 async function fetchActiveClubMemberRows(supabase: SupabaseClient, clubId: string) {
-  const fetchRows = async (withStatus: boolean) => {
-    let query: any = supabase
-      .from("club_members")
-      .select(withStatus ? "player_profile_id,profile_id,status" : "player_profile_id,profile_id")
-      .eq("club_id", clubId)
-      .eq("is_active", true);
-    if (withStatus) query = query.eq("status", "active");
-    return await query;
-  };
-
-  let { data, error } = await fetchRows(true);
-  if (error && isMissingColumnError(error, "status")) {
-    const fallback = await fetchRows(false);
-    data = fallback.data;
-    error = fallback.error;
-  }
+  const { data, error } = await supabase.from("club_members")
+    .select("player_profile_id,profile_id").eq("club_id", clubId).eq("is_active", true);
   if (error) throw error;
-
-  return ((data ?? []) as ClubMemberRow[]).filter((member) => !member.status || member.status === "active");
+  return (data ?? []) as ClubMemberRow[];
 }
 
 async function fetchActivePlayerProfiles(supabase: SupabaseClient, ids: string[]) {
@@ -175,4 +154,20 @@ export async function addCreatorToNoGroupEvent(supabase: SupabaseClient, eventId
   if (insertError) throw insertError;
 
   return { insertedCount: 1 };
+}
+
+// 過去の試合の名前は在籍候補とは別に読む。退会者を新規候補へ戻さない。
+export async function fetchHistoricalPlayerNames(supabase: SupabaseClient, profileIds: (string | null)[]) {
+  const ids = [...new Set(profileIds.filter((id): id is string => !!id))];
+  const names = new Map<string, string>();
+  for (let index = 0; index < ids.length; index += 40) {
+    const rows = await readProfileRows<{ id: string; display_name: string }>((start, end) => supabase.from("player_profiles")
+      .select("id,display_name").in("id", ids.slice(index, index + 40)).order("id").range(start, end));
+    for (const row of rows) if (row.display_name?.trim()) names.set(row.id, row.display_name);
+  }
+  return names;
+}
+
+export function historicalPlayerName(profileId: string | null, guestName: string | null, names: ReadonlyMap<string, string>, currentName?: string | null) {
+  return profileId ? names.get(profileId) || currentName || guestName || "名称未設定" : guestName || "未入力";
 }

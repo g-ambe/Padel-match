@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
-import { fetchActiveClubMemberParticipants } from "@/lib/event-participants";
+import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { createShareToken, getOfficialAccess, officialStatusLabel, type OfficialGroup } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 
@@ -40,6 +40,7 @@ export default function FriendlyTeamMatchDetailPage() {
   const [members,setMembers]=useState<Record<TeamSideKey, MemberOption[]>>({ team_a: [], team_b: [] });
   const [guests,setGuests]=useState<Record<TeamSideKey, GuestOption[]>>({ team_a: [], team_b: [] });
   const [matches,setMatches]=useState<Match[]>([]);
+  const [historicalNames,setHistoricalNames]=useState<Map<string,string>>(new Map());
   const [form,setForm]=useState<Form>(emptyForm());
   const [editingId,setEditingId]=useState<string|null>(null);
   const [editingForm,setEditingForm]=useState<Form>(emptyForm());
@@ -87,7 +88,10 @@ export default function FriendlyTeamMatchDetailPage() {
     for (const guest of ((guestRows ?? []) as GuestOption[])) nextGuests[guest.side].push(guest);
     setGuests(nextGuests);
     const { data:ms }=await supabase.from("event_team_matches").select("*").eq("event_id",id).order("match_order").order("created_at").order("id");
-    setMatches((ms??[]) as Match[]);
+    const matchRows=(ms??[]) as Match[];
+    setMatches(matchRows);
+    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,matchRows.flatMap(match=>[match.team_a_player1_profile_id,match.team_a_player2_profile_id,match.team_b_player1_profile_id,match.team_b_player2_profile_id]))); }
+    catch { setError("過去の試合の選手名を取得できませんでした"); }
   };
   useEffect(()=>{void load();},[id]);
 
@@ -95,7 +99,7 @@ export default function FriendlyTeamMatchDetailPage() {
     ...members[side].map((member) => ({ value: member.playerProfileId, label: member.displayName ?? "名称未設定", kind: "member" as const })),
     ...guests[side].map((guest) => ({ value: guestChoiceValue(guest.guest_name), label: guest.guest_name, kind: "guest" as const }))
   ];
-  const memberName=(side:TeamSideKey, pid:string|null, guest:string|null)=>guest||members[side].find((m)=>m.playerProfileId===pid)?.displayName||"未入力";
+  const memberName=(side:TeamSideKey, pid:string|null, guest:string|null)=>historicalPlayerName(pid,guest,historicalNames,members[side].find((m)=>m.playerProfileId===pid)?.displayName);
   const applyChoice = (choice: string, profileKey: keyof Form, guestKey: keyof Form) => choice.startsWith("guest:") ? { [profileKey]: "", [guestKey]: choice.slice(6) } as Partial<Form> : { [profileKey]: choice, [guestKey]: "" } as Partial<Form>;
   const teamMatchStats = useMemo(() => {
     const teamRows = { team_a: emptyStatsRow(teamAName), team_b: emptyStatsRow(teamBName) };
@@ -119,7 +123,7 @@ export default function FriendlyTeamMatchDetailPage() {
       applyPair(teamBPlayers, bScore, aScore);
     }
     return { countedMatches: teamRows.team_a.matches, teams: [teamRows.team_a, teamRows.team_b], players: sortStatsRows([...playerRows.values()]), pairs: sortStatsRows([...pairRows.values()]) };
-  }, [matches, members, teamAName, teamBName]);
+  }, [matches, members, historicalNames, teamAName, teamBName]);
   const toggleStatsSection = (key: StatsSectionKey) => setOpenStatsSections((prev) => ({ ...prev, [key]: !prev[key] }));
   const validate=(f:Form)=>{
     const vals=[f.a1ProfileId||f.a1GuestName.trim(),f.a2ProfileId||f.a2GuestName.trim(),f.b1ProfileId||f.b1GuestName.trim(),f.b2ProfileId||f.b2GuestName.trim()].filter(Boolean);

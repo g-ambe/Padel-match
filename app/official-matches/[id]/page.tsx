@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { OfficialStatsCard } from "@/components/official-stats-card";
 import { ActionButton, Card } from "@/components/ui";
-import { fetchActiveClubMemberParticipants } from "@/lib/event-participants";
+import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { buildOfficialStats, createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 
@@ -62,6 +62,7 @@ export default function OfficialMatchDetailPage() {
   const [members, setMembers] = useState<MemberOption[]>([]);
   const [opponents, setOpponents] = useState<OfficialOpponent[]>([]);
   const [matches, setMatches] = useState<OfficialMatch[]>([]);
+  const [historicalNames, setHistoricalNames] = useState<Map<string,string>>(new Map());
   const [videoClickCounts, setVideoClickCounts] = useState<Record<string, number>>({});
   const [accessRole, setAccessRole] = useState<"main_admin" | "sub_admin" | "member">("member");
   const [isSuperUser, setIsSuperUser] = useState(false);
@@ -92,14 +93,14 @@ export default function OfficialMatchDetailPage() {
     return event.status !== "closed" && (isSuperUser || isCreator || accessRole === "main_admin" || accessRole === "sub_admin");
   }, [accessRole, event, isCreator, isSuperUser]);
   const canViewVideoClickCounts = useMemo(() => isSuperUser || accessRole === "main_admin", [accessRole, isSuperUser]);
-  const memberName = (profileId: string | null, guestName: string | null) => guestName || members.find((m) => m.playerProfileId === profileId)?.displayName || "未入力";
+  const memberName = (profileId: string | null, guestName: string | null) => historicalPlayerName(profileId,guestName,historicalNames,members.find((m) => m.playerProfileId === profileId)?.displayName);
   const opponentMatches = (opponentId: string) => matches
     .filter((match) => match.official_opponent_id === opponentId)
     .sort((a, b) => a.match_order - b.match_order || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
   const officialStats = useMemo(() => {
     if (!event) return null;
     return buildOfficialStats({ eventTitle: event.title, groupName: event.clubs?.name ?? "名称未設定", opponents, matches, memberName });
-  }, [event, opponents, matches, members]);
+  }, [event, opponents, matches, members, historicalNames]);
 
   const loadDetail = async () => {
     const supabase = getSupabaseClient();
@@ -122,7 +123,10 @@ export default function OfficialMatchDetailPage() {
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,official_event_id,opponent_team_name,memo").eq("official_event_id", id).order("created_at");
     setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
     const { data: matchRows } = await supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
-    setMatches((matchRows ?? []) as unknown as OfficialMatch[]);
+    const history=(matchRows ?? []) as unknown as OfficialMatch[];
+    setMatches(history);
+    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,history.flatMap(match=>[match.our_player1_profile_id,match.our_player2_profile_id]))); }
+    catch { setError("過去の試合の選手名を取得できませんでした"); }
     if (access.superUser || nextAccessRole === "main_admin") {
       const { data: clickRows, error: clickError } = await supabase.rpc("get_official_video_click_counts", { p_event_id: id });
       if (clickError) {

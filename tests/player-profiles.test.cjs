@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createClient } = require('@supabase/supabase-js');
 // Nodeの直接TypeScript実行でも、Nextと同じ相対モジュールを解決する。
-require('node:module').registerHooks({ resolve(specifier, context, next) { return next(specifier === './player-profiles' ? './player-profiles.ts' : specifier, context); } });
+require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./player-profiles','./permissions'].includes(specifier) ? specifier+'.ts' : specifier, context); } });
 const {
   choosePlayerProfile, ensureAccountProfile, ensureLinkedPlayerProfile, fetchLinkedPlayerProfiles,
   fetchProfileUsage, saveLinkedPlayerProfile,
@@ -220,4 +220,101 @@ test('所属・参加・フレンドリーチーム戦・公式戦・申請の�
   });
   const usage = await fetchProfileUsage(supabase, [profile()]);
   assert.deepEqual(usage.get(detailId), { groups: ['所属グループ'], memberships: 1, participants: 1, teamMatches: 1, officialMatches: 1, joinRequests: 1 });
+});
+
+const { setClubMemberActive, saveUnlinkedClubMemberName, saveClubMemberRole } = require('../lib/player-profiles.ts');
+const groupId = '44444444-4444-4444-8444-444444444444';
+const memberId = '55555555-5555-4555-8555-555555555555';
+const managerId = '66666666-6666-4666-8666-666666666666';
+const snapshot = { id: memberId, club_id: groupId, player_profile_id: detailId, role: 'member', is_active: true };
+function membershipClient(options={}) {
+  const target = { ...snapshot, profile_id:null, player_profiles:{display_name:'選手',linked_auth_user_id:options.linked??null,is_active:true}, ...options.target };
+  const manager = { id:managerId,club_id:groupId,profile_id:userId,player_profile_id:managerId,role:options.actorRole??'main_admin',is_active:options.actorActive??true,player_profiles:{display_name:'管理者',linked_auth_user_id:userId,is_active:true} };
+  return client(call=>{
+    if(call.table==='app_admins') return {data:options.superUser?[{id:'管理者ID'}]:[]};
+    if(call.table==='club_members' && call.method==='GET') return {data:[target,...(options.noMembership?[]:[manager])]};
+    if(call.method==='PATCH') {
+      if(options.patch) return options.patch(call);
+      return {data:[call.table==='player_profiles'?{id:detailId,display_name:call.body.display_name,linked_auth_user_id:null}:{...snapshot,...options.target,...call.body}],headers:{'Content-Range':'0-0/1'}};
+    }
+    return {data:[]};
+  });
+}
+
+test('連携済み選手も対象所属だけ退会・復帰でき、役職・プロフィール・旧状態列に触れない',async()=>{
+  for(const active of [false,true]) {
+    const expected={...snapshot,is_active:!active};
+    const {supabase,calls}=membershipClient({linked:userId,target:{is_active:!active}});
+    assert.equal((await setClubMemberActive(supabase,expected,active)).is_active,active);
+    const patches=calls.filter(c=>c.method==='PATCH');assert.equal(patches.length,1);const call=patches[0];
+    assert.equal(call.table,'club_members');assert.deepEqual(call.body,{is_active:active});
+    for(const [key,value] of Object.entries({id:memberId,club_id:groupId,player_profile_id:detailId,role:'member',is_active:String(!active)})) assert.equal(call.url.searchParams.get(key),`eq.${value}`);
+    assert(!calls.some(c=>c.method==='POST'||c.method==='DELETE'||c.url.searchParams.get('select')?.split(',').includes('status')));
+  }
+});
+for(const [name,response] of [
+ ['0件',{data:[],headers:{'Content-Range':'*/0'}}],
+ ['2件',{data:[{...snapshot,is_active:false},{...snapshot,is_active:false}],headers:{'Content-Range':'0-1/2'}}],
+ ['別グループ',{data:[{...snapshot,club_id:'別グループ',is_active:false}],headers:{'Content-Range':'0-0/1'}}],
+ ['更新拒否',{status:403,data:{code:'42501',message:'更新拒否'}}]
+]) test(`所属更新が${name}の場合は成功にしない`,async()=>{
+ const {supabase}=membershipClient({patch:()=>response});await assert.rejects(setClubMemberActive(supabase,snapshot,false));
+});
+
+test('一般メンバー・退会した管理者・サブ管理者のメイン管理者操作をハンドラ側でも拒否する',async()=>{
+ for(const options of [{actorRole:'member'},{actorActive:false},{actorRole:'sub_admin',target:{role:'main_admin'}}]) {
+  const {supabase,calls}=membershipClient(options);await assert.rejects(setClubMemberActive(supabase,{...snapshot,...options.target},false),/権限/);
+  assert(!calls.some(c=>c.method==='PATCH'));
+ }
+});
+test('super_userはグループ所属がなくても退会・復帰を管理できる',async()=>{
+ const {supabase}=membershipClient({superUser:true,noMembership:true});assert.equal((await setClubMemberActive(supabase,snapshot,false)).is_active,false);
+});
+test('最後のメイン管理者と、取得後に役職が変わったメンバーは更新しない',async()=>{
+ const expected={...snapshot,role:'main_admin'};
+ const one=membershipClient({superUser:true,noMembership:true,target:{role:'main_admin'}});
+ await assert.rejects(setClubMemberActive(one.supabase,expected,false),/最低1人/);assert(!one.calls.some(c=>c.method==='PATCH'));
+ const changed=membershipClient({target:{role:'sub_admin'}});await assert.rejects(setClubMemberActive(changed.supabase,snapshot,false),/変更されています/);
+ assert(!changed.calls.some(c=>c.method==='PATCH'));
+});
+test('連携済み本人の名前もグループ用ハンドラでは変更せず、未連携選手のみ条件付きで保存する',async()=>{
+ const linked=membershipClient({linked:userId});await assert.rejects(saveUnlinkedClubMemberName(linked.supabase,snapshot,'変更名'),/プロフィール画面/);assert(!linked.calls.some(c=>c.method==='PATCH'));
+ const unlinked=membershipClient();await saveUnlinkedClubMemberName(unlinked.supabase,snapshot,'変更名');
+ const patch=unlinked.calls.find(c=>c.method==='PATCH');assert.equal(patch.table,'player_profiles');assert.deepEqual(patch.body,{display_name:'変更名'});assert.equal(patch.url.searchParams.get('linked_auth_user_id'),'is.null');assert.equal(patch.url.searchParams.get('display_name'),'eq.選手');
+});
+test('名前保存中のアカウント連携競合を成功にしない',async()=>{
+ const {supabase}=membershipClient({patch:()=>({data:[]})});await assert.rejects(saveUnlinkedClubMemberName(supabase,snapshot,'変更名'),/確認できません/);
+});
+test('連携済み選手の役職変更は表示名・在籍状態・連携を更新しない',async()=>{
+ const {supabase,calls}=membershipClient({linked:userId});assert.equal((await saveClubMemberRole(supabase,snapshot,'sub_admin')).role,'sub_admin');
+ const patch=calls.find(c=>c.method==='PATCH');assert.equal(patch.table,'club_members');assert.deepEqual(patch.body,{role:'sub_admin'});
+});
+
+const { fetchActiveClubMemberParticipants } = require('../lib/event-participants.ts');
+const { getHistoricalGroupMatchTeams } = require('../lib/friendly-match-results.ts');
+test('新規イベント候補は所属のis_activeだけで取得し、旧状態列を要求しない',async()=>{
+ const {supabase,calls}=client(call=>{
+   if(call.table==='club_members') {assert.equal(call.url.searchParams.get('is_active'),'eq.true');assert(!call.url.searchParams.has('status'));assert.equal(call.url.searchParams.get('select'),'player_profile_id,profile_id');return {data:[{player_profile_id:detailId,profile_id:null}]};}
+   return {data:[{id:detailId,display_name:'復帰した選手',is_active:true}]};
+ });
+ assert.deepEqual(await fetchActiveClubMemberParticipants(supabase,groupId),[{playerProfileId:detailId,displayName:'復帰した選手'}]);assert(calls.every(c=>c.method==='GET'));
+});
+test('退会者がいる過去の試合も4人の参加記録で成立判定し、残る在籍選手の試合を失わない',()=>{
+ const players=[{participant_id:'退会したA',team:'A'},{participant_id:'在籍B',team:'A'},{participant_id:'在籍C',team:'B'},{participant_id:'在籍D',team:'B'}];
+ const history=new Set(players.map(p=>p.participant_id));
+ const before=getHistoricalGroupMatchTeams(players,history);const after=getHistoricalGroupMatchTeams(players,history);
+ assert.deepEqual(after,before);assert.deepEqual(after.teamB,['在籍C','在籍D']);assert(after.teamA.includes('退会したA'));
+ assert.equal(getHistoricalGroupMatchTeams([...players,{participant_id:'重複',team:'B'}],history),null);
+ assert.equal(getHistoricalGroupMatchTeams(players,new Set(['在籍B','在籍C','在籍D'])),null);
+});
+
+
+const { fetchHistoricalPlayerNames, historicalPlayerName } = require('../lib/event-participants.ts');
+test('退会者のチーム戦・公式戦の名前を在籍候補から切り離して読み、過去のスコア・参照を変更しない',async()=>{
+ const {supabase,calls}=client(call=>{assert.equal(call.table,'player_profiles');return {data:[{id:detailId,display_name:'退会した本人の正式名'}]};});
+ const names=await fetchHistoricalPlayerNames(supabase,[detailId,null,detailId]);
+ assert.equal(historicalPlayerName(detailId,null,names),'退会した本人の正式名');
+ assert.equal(historicalPlayerName(detailId,'古い登録名',names),'退会した本人の正式名');
+ assert.equal(historicalPlayerName(null,'イベントゲスト',names),'イベントゲスト');
+ assert(calls.every(call=>call.method==='GET'));assert(!calls.some(call=>call.table==='club_members'));
 });

@@ -16,3 +16,7 @@ export const canSubAdminEditTarget = (ctx: Ctx, targetRole: "main_admin" | "sub_
 };
 
 export const canDeactivateSelf = (memberProfileId: string | null, myProfileId: string | null) => memberProfileId !== myProfileId;
+
+// 名前・役職・在籍操作は連携の有無ではなく、管理者と対象役職から判定する。
+export const canManageTargetMember = (ctx: Ctx, targetRole: "main_admin" | "sub_admin" | "member") =>
+  canManageMembers(ctx) && canSubAdminEditTarget(ctx, targetRole);

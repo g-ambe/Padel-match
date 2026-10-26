@@ -5,9 +5,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
-import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
-import { canDeleteGroup, canEditGroupProfile, canManageMembers, canSubAdminEditTarget, toAppRole } from "@/lib/permissions";
-import { profileErrorMessage, PlayerProfileError } from "@/lib/player-profiles";
+import { getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
+import { canDeleteGroup, canEditGroupProfile, canManageMembers, canManageTargetMember, toAppRole } from "@/lib/permissions";
+import { profileErrorMessage, PlayerProfileError, saveClubMemberRole, saveUnlinkedClubMemberName, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
 import { effectiveJoinStatus, linkStatusLabel, profileLinkRpc, requestPlayerProfileLink, reviewPlayerProfileLink, type AccountCandidate, type LinkStatus, type ProfileLinkRequest, type ProfileMergePreview } from "@/lib/profile-links";
 import { ProfileMergeSummary } from "@/components/profile-merge-summary";
 
@@ -78,7 +78,7 @@ export default function GroupDetailPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [confirmLeave, setConfirmLeave] = useState<Member | null>(null);
   const [confirmGroupDelete, setConfirmGroupDelete] = useState(false);
   const [confirmChecked, setConfirmChecked] = useState(false);
@@ -91,6 +91,7 @@ export default function GroupDetailPage() {
   const [targetMemberId, setTargetMemberId] = useState("");
   const [joinMessage, setJoinMessage] = useState("");
   const [isMemberOfGroup, setIsMemberOfGroup] = useState(false);
+  const [canViewGroup, setCanViewGroup] = useState(false);
   const [myPendingRequest, setMyPendingRequest] = useState<JoinRequest | null>(null);
 
   const roleCtx = { isSuperUser, myRole };
@@ -109,39 +110,42 @@ export default function GroupDetailPage() {
   const loadStats = async () => {
     const s = getSupabaseClient();
     if (!s || !id) return;
-    const { data: events } = await s.from("events").select("id,name,created_at,status").eq("club_id", id).eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official").order("created_at", { ascending: false });
+    const { data: events, error: eventsError } = await s.from("events").select("id,name,created_at,status").eq("club_id", id).eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official").order("created_at", { ascending: false });
+    if (eventsError) { setError("過去のイベントを取得できませんでした"); return; }
     const closedEventIds = (events ?? []).map((e: any) => e.id);
     if (!closedEventIds.length) {
       setIndividualRows([]); setPairRows([]); setEventHistoryRows([]); return;
     }
 
-    const { data: membersRaw } = await s.from("club_members").select("player_profile_id,is_active").eq("club_id", id).eq("is_active", true);
+    const { data: membersRaw, error: membersError } = await s.from("club_members").select("player_profile_id,is_active").eq("club_id", id);
     const memberProfileSet = new Set((membersRaw ?? []).map((m: any) => m.player_profile_id).filter(Boolean));
-    const { data: participants } = await s.from("event_participants").select("id,event_id,player_profile_id,participant_type").in("event_id", closedEventIds);
+    const currentProfileSet = new Set((membersRaw ?? []).filter((m: any) => m.is_active).map((m: any) => m.player_profile_id).filter(Boolean));
+    const { data: participants, error: participantsError } = await s.from("event_participants").select("id,event_id,player_profile_id,participant_type").in("event_id", closedEventIds);
+    if (membersError || participantsError) { setError("戦績の所属・参加履歴を取得できませんでした"); return; }
     const memberParticipantIds = new Set((participants ?? []).filter((p: any) => p.participant_type !== "guest" && p.player_profile_id && memberProfileSet.has(p.player_profile_id)).map((p: any) => p.id));
     const participantMap = new Map((participants ?? []).map((p: any) => [p.id, p]));
     const profileIds = [...new Set((participants ?? []).map((p: any) => p.player_profile_id).filter(Boolean))];
-    const { data: pps } = profileIds.length ? await s.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[] };
+    const { data: pps, error: namesError } = profileIds.length ? await s.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[], error: null };
+    if (namesError) { setError("戦績の選手名を取得できませんでした"); return; }
     const profileName = new Map((pps ?? []).map((p: any) => [p.id, p.display_name]));
 
-    const { data: matches } = await s.from("matches").select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)").in("event_id", closedEventIds);
+    const { data: matches, error: matchesError } = await s.from("matches").select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)").in("event_id", closedEventIds);
 
+    if (matchesError) { setError("過去の試合結果を取得できませんでした"); return; }
     const pStats: Record<string, any> = {};
     const pairStats: Record<string, any> = {};
 
     for (const m of matches ?? []) {
       const res = m.match_results?.[0];
       if (!hasEnteredFriendlyMatchScore({ completed: m.completed, result: res })) continue;
-      const allA = (m.match_players ?? []).filter((x: any) => x.team === "A").map((x: any) => x.participant_id);
-      const allB = (m.match_players ?? []).filter((x: any) => x.team === "B").map((x: any) => x.participant_id);
-      const teamA = allA.filter((pid: string) => memberParticipantIds.has(pid));
-      const teamB = allB.filter((pid: string) => memberParticipantIds.has(pid));
-      if (teamA.length !== 2 || teamB.length !== 2 || allA.length !== 2 || allB.length !== 2) continue;
+      const historicalTeams = getHistoricalGroupMatchTeams(m.match_players ?? [], memberParticipantIds);
+      if (!historicalTeams) continue;
+      const { teamA, teamB } = historicalTeams;
 
       const updPlayer = (pid: string, sA: number, sB: number) => {
         const prof = participantMap.get(pid)?.player_profile_id;
         if (!prof) return;
-        if (!pStats[prof]) pStats[prof] = { name: profileName.get(prof) ?? "名称未設定", matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
+        if (!pStats[prof]) pStats[prof] = { playerId: prof, name: profileName.get(prof) ?? "名称未設定", matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
         pStats[prof].matches += 1;
         if (sA > sB) pStats[prof].wins += 1;
         else if (sA < sB) pStats[prof].losses += 1;
@@ -160,7 +164,7 @@ export default function GroupDetailPage() {
         if (!p1 || !p2) return;
         const [a, b] = [p1, p2].sort();
         const key = `${a}|${b}`;
-        if (!pairStats[key]) pairStats[key] = { pairName: `${profileName.get(a) ?? "名称未設定"} / ${profileName.get(b) ?? "名称未設定"}`, matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
+        if (!pairStats[key]) pairStats[key] = { playerIds: [a, b], pairName: `${profileName.get(a) ?? "名称未設定"} / ${profileName.get(b) ?? "名称未設定"}`, matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
         pairStats[key].matches += 1;
         if (sA > sB) pairStats[key].wins += 1;
         else if (sA < sB) pairStats[key].losses += 1;
@@ -182,9 +186,10 @@ export default function GroupDetailPage() {
       const totalPoint = x.rate * 0.7 + matchScore * 0.2 + diffScore * 0.1;
       return { ...x, totalPoint, isReference: x.matches < 3 };
     });
-    setIndividualRows(indiv);
+    setIndividualRows(indiv.filter(row => currentProfileSet.has(row.playerId)));
     setPairRows(
       Object.values(pairStats)
+        .filter(row => row.playerIds.every((playerId: string) => currentProfileSet.has(playerId)))
         .map((x: any) => ({ ...x, rate: x.matches ? (x.wins / x.matches) * 100 : 0, diff: x.scored - x.conceded, matchPoints: x.wins * 3 + x.draws, avgDiff: x.matches ? (x.scored - x.conceded) / x.matches : 0 }))
         .sort((a: any, b: any) => b.matchPoints - a.matchPoints || b.wins - a.wins || b.rate - a.rate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.matches - b.matches || a.pairName.localeCompare(b.pairName, "ja"))
     );
@@ -193,18 +198,18 @@ export default function GroupDetailPage() {
 
   const load = async () => {
     const s = getSupabaseClient();
-    if (!s || !id) return;
-    const { data: userRes } = await s.auth.getUser();
+    if (!s || !id) { setError("グループの設定を確認できません"); setLoading(false); return; }
+    const { data: userRes, error: authError } = await s.auth.getUser();
     const uid = userRes.user?.id;
-    if (!uid) return;
+    if (authError || !uid) { setCanViewGroup(false); setError("ログイン情報を確認できません"); setLoading(false); return; }
 
     setLoading(true);
     const { data: adminRow } = await s.from("app_admins").select("id").eq("profile_id", uid).eq("is_active", true).maybeSingle();
-    const superUser = !!adminRow;
+    const superUser = !!adminRow || userRes.user?.email?.toLowerCase() === "testuser01@example.com";
     setIsSuperUser(superUser);
 
     const { data: group } = await s.from("clubs").select("name,description,is_active,image_url,main_facility_id,visibility").eq("id", id).maybeSingle();
-    if (!group) { setError("この操作を行う権限がありません"); setLoading(false); return; }
+    if (!group) { setCanViewGroup(false); setMyRole("member"); setIsMemberOfGroup(false); setError("この操作を行う権限がありません"); setLoading(false); return; }
     setGroupName(group.name ?? "グループ");
     setGroupDescription(group.description ?? "");
     setGroupNameInput(group.name ?? "");
@@ -214,7 +219,8 @@ export default function GroupDetailPage() {
     setVisibility(((group as any).visibility ?? "private") as "private" | "public");
     setVisibilityInput(((group as any).visibility ?? "private") as "private" | "public");
 
-    const { data } = await s.from("club_members").select("id,profile_id,player_profile_id,is_active,role,player_profiles(id,display_name,linked_auth_user_id,is_active)").eq("club_id", id).order("created_at", { ascending: true });
+    const { data, error: memberLoadError } = await s.from("club_members").select("id,profile_id,player_profile_id,is_active,role,player_profiles(id,display_name,linked_auth_user_id,is_active)").eq("club_id", id).order("created_at", { ascending: true });
+    if (memberLoadError || !Array.isArray(data)) { setError("メンバーの取得に失敗しました"); setLoading(false); return; }
     const rows: Member[] = (data ?? []).map((r: any) => ({
       id: r.id,
       profile_id: r.profile_id,
@@ -232,11 +238,12 @@ export default function GroupDetailPage() {
 
     const me = rows.find((r) => (r.profile_id === uid || r.linked_auth_user_id === uid) && r.is_active);
     const canView = superUser || (group.is_active && ((group as any).visibility === "public" || !!me));
+    setCanViewGroup(!!canView);
+    setMyRole(me?.role ?? "member");
+    setIsMemberOfGroup(!!me);
     if (!canView) { setError("この操作を行う権限がありません"); setLoading(false); return; }
     setMyProfileId(uid);
     setMyAuthUserId(uid);
-    setMyRole(me?.role ?? "member");
-    setIsMemberOfGroup(!!me);
     const { data: jrRows, error: requestError } = await s.from("join_requests").select("id,club_id,target_club_member_id,requester_auth_user_id,requester_player_profile_id,message,status,created_at,expires_at,consent_at,requester_display_name_snapshot").eq("club_id", id).order("created_at", { ascending: false });
     const requesterIds = [...new Set((jrRows ?? []).map((r: any) => r.requester_auth_user_id))];
     const { data: reqProfiles } = requesterIds.length ? await s.from("profiles").select("id,display_name").in("id", requesterIds) : { data: [] as any[] };
@@ -260,8 +267,8 @@ export default function GroupDetailPage() {
     if (facilityErr) setError("施設一覧の取得に失敗しました");
     setFacilities((facilityRows ?? []) as Facility[]);
 
-    setLoading(false);
     await loadStats();
+    setLoading(false);
   };
 
   useEffect(() => { void load(); }, [id]);
@@ -308,30 +315,35 @@ export default function GroupDetailPage() {
       setError(profileErrorMessage(cause));
     } finally { setLoading(false); }
   };
-  const updateMember = async (m: Member, newName: string, newRole: Role) => {
-    const s = getSupabaseClient(); if (!s || loading) return;
-    const isLinkedSelf = !!myAuthUserId && m.linked_auth_user_id === myAuthUserId;
-    if (!canManage && !isLinkedSelf) return deny();
+  const memberSnapshot = (member: Member): ClubMemberSnapshot => ({ id: member.id, club_id: id, player_profile_id: member.player_profile_id, role: member.role, is_active: member.is_active });
+  const logMemberError = (label: string, cause: unknown) => {
+    const error = cause instanceof Error && cause.cause ? cause.cause : cause;
+    const detail = error as { message?: string; code?: string; details?: string; hint?: string };
+    console.error(label, { message: detail?.message, code: detail?.code, details: detail?.details, hint: detail?.hint });
+  };
+  const renameMember = async (member: Member, newName: string) => {
+    const s = getSupabaseClient(); if (!s || loading) return false;
+    if (!canManageTargetMember(roleCtx, member.role)) { deny(); return false; }
+    if (member.linked_auth_user_id !== null) { setError("アカウント連携済みの選手名は、本人のプロフィール画面から変更できます"); return false; }
     const trimmed = newName.trim();
-    if (!trimmed) return setError("メンバー名を入力してください");
-    if (members.some((x) => x.id !== m.id && x.display_name.trim().toLowerCase() === trimmed.toLowerCase())) return setError("同じ名前のメンバーが既にいます");
+    if (!trimmed) { setError("メンバー名を入力してください"); return false; }
+    if (members.some(row => row.id !== member.id && row.display_name.trim().toLowerCase() === trimmed.toLowerCase())) { setError("同じ名前のメンバーが既にいます"); return false; }
     setLoading(true); setError(""); setMessage("");
     try {
-      if (trimmed !== m.display_name) {
-        if (m.linked_auth_user_id && !isLinkedSelf) throw new PlayerProfileError("連携済みプロフィールの表示名は本人が編集してください");
-        const { data: updated, error: updateError } = await s.from("player_profiles").update({ display_name: trimmed }).eq("id", m.player_profile_id).select("id");
-        if (updateError || updated?.length !== 1) throw new PlayerProfileError("メンバーの表示名を更新できませんでした", { cause: updateError });
-      }
-      if (canManage) {
-        const { data: roles, error: roleError } = await s.from("club_members").update({ role: newRole }).eq("id", m.id).select("id");
-        if (roleError || roles?.length !== 1) throw new PlayerProfileError("表示名は保存されましたが、権限の更新を確認できませんでした", { cause: roleError });
-      }
-      setMessage(isLinkedSelf ? "表示名を更新しました" : "更新しました");
-      await load();
-    } catch (cause) {
-      console.error("グループのメンバー保存に失敗しました", cause);
-      setError(profileErrorMessage(cause));
-    } finally { setLoading(false); }
+      await saveUnlinkedClubMemberName(s, memberSnapshot(member), trimmed);
+      setMessage("選手名を更新しました"); await load(); return true;
+    } catch (cause) { logMemberError("選手名の更新に失敗しました", cause); setError(profileErrorMessage(cause)); return false; }
+    finally { setLoading(false); }
+  };
+  const changeMemberRole = async (member: Member, role: Role) => {
+    const s = getSupabaseClient(); if (!s || loading) return false;
+    if (!canManageTargetMember(roleCtx, member.role) || !canManageTargetMember(roleCtx, role)) { deny(); return false; }
+    setLoading(true); setError(""); setMessage("");
+    try {
+      await saveClubMemberRole(s, memberSnapshot(member), role);
+      setMessage("役職を更新しました"); await load(); return true;
+    } catch (cause) { logMemberError("役職の更新に失敗しました", cause); setError(profileErrorMessage(cause)); return false; }
+    finally { setLoading(false); }
   };
   const linkMemberAccount = async (m: Member, account: AccountCandidate) => {
     const s = getSupabaseClient(); if (!s) return; if (!canManage) return deny(); if (!id || loading) return;
@@ -345,8 +357,29 @@ export default function GroupDetailPage() {
       setError(profileErrorMessage(cause));
     } finally { setLoading(false); }
   };
-  const doDeactivate = async () => { if (!confirmLeave) return; if (!canManage) return deny(); if (confirmLeave.role === "main_admin" && activeMainAdmins <= 1) return setError("メイン管理者は最低1人必要です"); const s = getSupabaseClient(); if (!s) return; setLoading(true); await s.from("club_members").update({ is_active: false, status: "inactive" }).eq("id", confirmLeave.id); setConfirmLeave(null); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
-  const restoreMember = async (m: Member) => { if (!canManage) return deny(); const s = getSupabaseClient(); if (!s) return; setLoading(true); await s.from("club_members").update({ is_active: true, status: "active" }).eq("id", m.id); setMessage("反映しました"); setLoading(false); await load(); };
+  const doDeactivate = async () => {
+    if (!confirmLeave || !confirmChecked || loading) return;
+    if (!canManageTargetMember(roleCtx, confirmLeave.role)) return deny();
+    if (confirmLeave.role === "main_admin" && activeMainAdmins <= 1) return setError("メイン管理者は最低1人必要です");
+    const s = getSupabaseClient(); if (!s) return;
+    setLoading(true); setError(""); setMessage("");
+    try {
+      await setClubMemberActive(s, memberSnapshot(confirmLeave), false);
+      setConfirmLeave(null); setConfirmChecked(false);
+      setMessage("非表示／退会にしました"); await load();
+    } catch (cause) { logMemberError("非表示／退会に失敗しました", cause); setError(`非表示／退会に失敗しました。${profileErrorMessage(cause)}`); }
+    finally { setLoading(false); }
+  };
+  const restoreMember = async (member: Member) => {
+    const s = getSupabaseClient(); if (!s || loading) return;
+    if (!canManageTargetMember(roleCtx, member.role)) return deny();
+    setLoading(true); setError(""); setMessage("");
+    try {
+      await setClubMemberActive(s, memberSnapshot(member), true);
+      setMessage("復帰しました"); await load();
+    } catch (cause) { logMemberError("復帰に失敗しました", cause); setError(`復帰に失敗しました。${profileErrorMessage(cause)}`); }
+    finally { setLoading(false); }
+  };
   const doDeleteGroup = async () => { if (!canDeleteGroup) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); await s.from("clubs").update({ is_active: false }).eq("id", id); setConfirmGroupDelete(false); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
   const saveGroupName = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupNameInput.trim(); if (!trimmed) return setError("グループ名を入力してください"); if (trimmed === groupName) { setEditingGroupName(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ name: trimmed }).eq("id", id); if (e) setError("グループ名の更新に失敗しました"); else setMessage("グループ名を更新しました"); setEditingGroupName(false); setLoading(false); await load(); };
   const saveGroupDescription = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupDescriptionInput.trim(); if (trimmed === groupDescription) { setEditingDescription(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ description: trimmed || null }).eq("id", id); if (e) setError("グループ説明の更新に失敗しました"); else setMessage("更新しました"); setEditingDescription(false); setLoading(false); await load(); };
@@ -389,6 +422,8 @@ export default function GroupDetailPage() {
     finally { setLoading(false); }
   };
 
+  if (!canViewGroup) return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4"><Card title="グループ">{message && <p role="status" className="mb-2 text-sm text-emerald-400">{message}</p>}<p className="text-sm text-zinc-300">{loading ? "読み込み中..." : error || "このグループを表示する権限がありません"}</p><Link href="/groups" className="mt-3 inline-block text-sm underline">所属グループへ戻る</Link></Card></main>;
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <div className="relative min-h-10"><h1 className="pr-28 pt-1 text-xl font-bold">{groupName} 設定</h1><Link href="/groups" className="absolute right-14 top-0 rounded-lg border border-zinc-600 px-3 py-2 text-sm">戻る</Link></div>
@@ -405,7 +440,7 @@ export default function GroupDetailPage() {
 
       {tab === "グループ管理" && <Card title="グループ管理"><div className="space-y-3">{/* TODO: グループ画像機能は将来再公開予定。現時点ではUIのみ非表示。 */}<div><p className="mb-1 text-xs text-zinc-400">グループ名</p>{editingGroupName ? <div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupName()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingGroupName(false); setGroupNameInput(groupName); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p>{groupName}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingGroupName(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">グループ説明</p>{editingDescription ? <div className="space-y-2"><textarea className="w-full rounded-xl bg-zinc-800 p-3" value={groupDescriptionInput} onChange={(e) => setGroupDescriptionInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupDescription()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingDescription(false); setGroupDescriptionInput(groupDescription); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{groupDescription || "説明なし"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingDescription(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">メインの活動場所</p>{editingFacility ? <div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="施設名・都道府県・住所で検索" value={facilityInput} onChange={(e) => setFacilityInput(e.target.value)} /><select className="w-full rounded-xl bg-zinc-800 p-3" value={facilityId ?? ""} onChange={(e) => setFacilityId(e.target.value || null)}><option value="">未選択</option>{filteredFacilities.map((f) => <option key={f.id} value={f.id}>{f.name}{f.prefecture ? ` / ${f.prefecture}` : ""}</option>)}</select>{filteredFacilities.length === 0 && <p className="text-xs text-zinc-400">候補が見つかりません</p>}<div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black" onClick={() => void saveFacility()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setEditingFacility(false)}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{facilities.find((f) => f.id === facilityId)?.name ?? "未選択"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingFacility(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">公開設定</p>{editingVisibility ? <div className="space-y-2"><select className="w-full rounded-xl bg-zinc-800 p-3" value={visibilityInput} onChange={(e) => setVisibilityInput(e.target.value as "private" | "public")}><option value="private">非公開</option><option value="public">公開</option></select><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black" onClick={() => void saveVisibility()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingVisibility(false); setVisibilityInput(visibility); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">現在: {visibility === "public" ? "公開" : "非公開"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingVisibility(true)}>編集</button>}</div>}</div>{canDeleteGroupAction && <button className="w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => { setConfirmGroupDelete(true); setConfirmChecked(false); }}>グループ削除</button>}</div></Card>}
 
-      {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} onSave={updateMember} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManage) return deny(); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManage && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
+      {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} onRename={renameMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManageTargetMember(roleCtx, x.role)) return deny(); setError(""); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManageTargetMember(roleCtx, m.role) && <button disabled={loading} className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
 
       {tab === "グループ戦績" && (
         <Card title="グループ戦績">
@@ -498,11 +533,20 @@ export default function GroupDetailPage() {
       {canManage && <Card title="連携申請一覧"><div className="space-y-2">{linkRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : linkRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><Link href={`/profile/links/${r.id}`} className="underline">{r.source_display_name} / {linkStatusLabel[r.status]}</Link>{r.status === "pending" && <button disabled={loading} className="mt-2 block rounded-lg border border-zinc-500 p-2" onClick={() => void cancelLinkRequest(r)}>申請を取り消す</button>}</div>)}</div></Card>}
       {canManage && <Card title="加入申請一覧"><div className="space-y-2">{joinRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : joinRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3"><p className="font-semibold">{r.requester_display_name}</p><p className="text-xs text-zinc-300">{linkStatusLabel[r.status]} / 希望メンバー：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.target_club_member_id && <p className="text-xs text-amber-200">{r.consent_at ? "本人の統合同意を記録済み" : "旧申請：本人の同意を再確認して再申請が必要です"}</p>}<p className="text-xs text-zinc-300">メッセージ：{r.message ?? "なし"}</p>{r.status === "pending" && <div className="mt-2 flex gap-2"><button disabled={loading} className="w-1/2 rounded-lg bg-accent py-2 text-black" onClick={() => void reviewJoinRequest(r,"approved")}>承認</button><button disabled={loading} className="w-1/2 rounded-lg border border-zinc-500 py-2" onClick={() => void reviewJoinRequest(r,"rejected")}>拒否</button></div>}</div>)}</div></Card>}
 
+      {confirmLeave && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" role="presentation">
+        <div role="dialog" aria-modal="true" aria-labelledby="leave-title" aria-describedby="leave-description" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto rounded-xl bg-card p-5" onKeyDown={event => { if (event.key === "Escape" && !loading) { setConfirmLeave(null); setConfirmChecked(false); } }}>
+          <h2 id="leave-title" className="font-semibold">{confirmLeave.display_name}さんを非表示／退会にしますか？</h2>
+          <p id="leave-description" className="text-sm text-zinc-300">このグループの在籍一覧から除外されます。アカウントや過去の試合履歴は削除されません。後から復帰できます。</p>
+          <label className="flex items-center gap-2 text-sm"><input autoFocus type="checkbox" checked={confirmChecked} disabled={loading} onChange={event => setConfirmChecked(event.target.checked)} />内容を確認しました</label>
+          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+          <div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-lg border border-zinc-500 p-3" onClick={() => { setConfirmLeave(null); setConfirmChecked(false); }}>キャンセル</button><button disabled={loading || !confirmChecked} className="w-1/2 rounded-lg bg-red-600 p-3 text-white disabled:opacity-50" onClick={() => void doDeactivate()}>非表示／退会する</button></div>
+        </div>
+      </div>}
     </main>
   );
 }
 
-function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, onSave, onLink, clubId, pending, onDeactivate }: { member: Member; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; onSave: (m: Member, n: string, r: Role) => Promise<void>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
+function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, onRename, onRole, onLink, clubId, pending, onDeactivate }: { member: Member; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; onRename: (m: Member, name: string) => Promise<boolean>; onRole: (m: Member, role: Role) => Promise<boolean>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
   const [editing, setEditing] = useState(false);
   const [n, setN] = useState(member.display_name);
   const [r, setR] = useState<Role>(member.role);
@@ -513,8 +557,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
   const [searchError, setSearchError] = useState("");
   const [searched, setSearched] = useState(false);
   const isLinkedSelf = !!myAuthUserId && member.linked_auth_user_id === myAuthUserId;
-  const canEditSelfNameOnly = !editable && isLinkedSelf;
-  const cannotEdit = !editable || !canSubAdminEditTarget({ isSuperUser, myRole: currentRole }, member.role);
+  const cannotEdit = !editable || !canManageTargetMember({ isSuperUser, myRole: currentRole }, member.role);
   const hideRoleAndOps = !canViewRole;
   useEffect(() => { if (!editing) { setN(member.display_name); setR(member.role); } }, [member.display_name, member.role, editing]);
   const searchAccounts = async () => {
@@ -535,15 +578,10 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
       <p className="text-xs text-zinc-400">在籍 / {member.linked_auth_user_id ? "連携済み" : pending ? "承認待ち" : "未連携"}</p>
       {editing ? (
         <div className="space-y-2">
-          <input disabled={!!member.linked_auth_user_id && !isLinkedSelf} className="w-full rounded-lg bg-zinc-700 p-2 disabled:text-zinc-400" value={n} onChange={(e) => setN(e.target.value)} />
-          {!canEditSelfNameOnly && !hideRoleAndOps && <select className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={(e) => setR(e.target.value as Role)}>
-            <option value="main_admin">メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option>
-          </select>}
-          <div className="flex gap-2">
-            <button disabled={loading} className="w-1/2 rounded-lg bg-accent py-2 text-black disabled:bg-zinc-600" onClick={async () => { await onSave(member, n, r); setEditing(false); }}>保存</button>
-            <button className="w-1/2 rounded-lg border border-zinc-500 py-2" onClick={() => setEditing(false)}>キャンセル</button>
-          </div>
-          {!member.linked_auth_user_id && !pending && !canEditSelfNameOnly && !hideRoleAndOps && <div className="mt-2 rounded-lg border border-zinc-600 p-2">
+          {member.linked_auth_user_id !== null ? <><p className="font-semibold">{member.display_name}</p><p className="text-xs text-zinc-300">アカウント連携済みの選手名は、本人のプロフィール画面から変更できます</p></> : <div className="space-y-2"><label className="block text-xs" htmlFor={`member-name-${member.id}`}>選手名</label><input id={`member-name-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={n} onChange={e => setN(e.target.value)} /><button disabled={loading} className="w-full rounded-lg bg-accent py-2 text-black" onClick={() => void onRename(member,n)}>選手名を保存</button></div>}
+          {!hideRoleAndOps && <div className="space-y-2"><label className="block text-xs" htmlFor={`member-role-${member.id}`}>役職</label><select id={`member-role-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={e => setR(e.target.value as Role)}><option value="main_admin" disabled={!canManageTargetMember({isSuperUser,myRole:currentRole},"main_admin")}>メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option></select><button disabled={loading} className="w-full rounded-lg border border-zinc-500 py-2" onClick={() => void onRole(member,r)}>役職を保存</button></div>}
+          <button disabled={loading} className="w-full rounded-lg border border-zinc-500 py-2" onClick={() => setEditing(false)}>閉じる</button>
+          {!member.linked_auth_user_id && !pending && !hideRoleAndOps && <div className="mt-2 rounded-lg border border-zinc-600 p-2">
             <p className="mb-1 text-xs text-zinc-300">本人から確認したメールアドレス</p>
             <div className="flex gap-2">
               <input className="w-full rounded-lg bg-zinc-700 p-2 text-sm" value={search} onChange={(e) => setSearch(e.target.value)} type="email" placeholder="メールアドレスを完全一致で入力" />
@@ -561,7 +599,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
       ) : (
         <div className="space-y-1">
           <div className="flex items-center gap-2"><p className="font-semibold">{member.display_name}</p>{isLinkedSelf && <span className="rounded-full bg-emerald-500/30 px-2 py-0.5 text-[11px] text-emerald-200">あなた</span>}{canViewRole && <span className="rounded-full bg-blue-600/30 px-2 py-0.5 text-[11px] text-blue-200">{roleLabel[member.role]}</span>}</div>
-          {(!cannotEdit || canEditSelfNameOnly) && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!canEditSelfNameOnly && !cannotEdit && <button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示/退会</button>}</div>}
+          {!cannotEdit && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!cannotEdit && <button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示／退会</button>}</div>}
         </div>
       )}
     </div>

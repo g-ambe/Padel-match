@@ -199,3 +199,10 @@ body {
 [data-theme="light"] .bg-yellow-900\/20 {
   background-color: #fef3c7 !important;
 }
+
+/* メニューの白テーマでもログアウトの色を維持し、ホバー時の白文字を読めるようにする。 */
+[data-theme="light"] #global-menu-panel button[data-menu-action="logout"],
+[data-theme="light"] #global-menu-panel button[data-menu-action="logout"]:hover {
+  background-color: var(--app-danger) !important;
+  color: #ffffff !important;
+}

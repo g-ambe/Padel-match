@@ -43,7 +43,7 @@ export async function readProfileRows<T>(query: (start: number, end: number) => 
 
 export async function fetchLinkedPlayerProfiles(supabase: SupabaseClient, userId: string): Promise<PlayerProfile[]> {
   return readProfileRows<PlayerProfile>((start, end) => supabase.from("player_profiles")
-    .select(PLAYER_PROFILE_COLUMNS).eq("linked_auth_user_id", userId).order("id").range(start, end));
+    .select(PLAYER_PROFILE_COLUMNS).eq("linked_auth_user_id", userId).eq("is_active", true).order("id").range(start, end));
 }
 
 export function profileDetailCount(profile: PlayerProfile) {
@@ -79,19 +79,12 @@ export async function fetchProfileUsage(supabase: SupabaseClient, profiles: Play
   return usage;
 }
 
-// 最新順・最古順や参照数の大小だけで別選手のプロフィールを決めない。
-// 複数の情報保持レコードは統合せず、本人の明示選択を必要とする。
-export function choosePlayerProfile(profiles: PlayerProfile[], usage: Map<string, ProfileUsage>, preferredId?: string | null): PlayerProfile | null {
-  const preferred = profiles.find((profile) => profile.id === preferredId);
+// 既存の明示選択は表示用に尊重する。複数件を設定・日時・参照数で自動選択しない。
+export function choosePlayerProfile(profiles: PlayerProfile[], _usage: Map<string, ProfileUsage>, preferredId?: string | null): PlayerProfile | null {
+  const active = profiles.filter((profile) => profile.is_active);
+  const preferred = active.find((profile) => profile.id === preferredId);
   if (preferred) return preferred;
-  if (profiles.length === 1) return profiles[0];
-  const meaningful = profiles.filter((profile) => {
-    const entry = usage.get(profile.id);
-    return profileDetailCount(profile) > 0 || (entry && entry.memberships + entry.participants + entry.teamMatches + entry.officialMatches + entry.joinRequests > 0);
-  });
-  if (meaningful.length === 1) return meaningful[0];
-  if (meaningful.length > 1) return null;
-  return profiles.find((profile) => profile.id === profile.linked_auth_user_id) ?? null;
+  return active.length === 1 ? active[0] : null;
 }
 
 export function preferredPlayerProfileId(userId: string): string | null {
@@ -113,26 +106,24 @@ export async function resolveLinkedPlayerProfile(supabase: SupabaseClient, userI
   const profiles = await fetchLinkedPlayerProfiles(supabase, userId);
   if (preferredId && !profiles.some((profile) => profile.id === preferredId)) fail("選択した選手との連携が変わっています。プロフィール画面で選び直してください");
   if (!profiles.length) return null;
-  const usage = profiles.length > 1 ? await fetchProfileUsage(supabase, profiles) : new Map<string, ProfileUsage>();
-  const profile = choosePlayerProfile(profiles, usage, preferredId);
-  if (!profile) fail("プロフィールが複数あります。プロフィール画面で利用する選手を選択してください");
-  return profile;
+  if (profiles.length !== 1) fail("正規プロフィールを一意に特定できません。既存の連携と本人の選択を管理者に確認してください");
+  return profiles[0];
 }
 
-// 登録・グループ作成など明示的な操作でのみ呼ぶ。表示時には呼ばない。
-// 未登録時はauth userと同じ主キーを使い、同時実行・再試行でも増殖させない。
+// 登録・プロフィール作成など本人の明示操作でのみ呼ぶ。DB内の直列化と一意制約で再試行を保護する。
 export async function ensureLinkedPlayerProfile(supabase: SupabaseClient, userId: string, displayName: string, preferredId?: string | null): Promise<PlayerProfile> {
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || auth.user?.id !== userId) fail("本人のログイン情報を確認できません", authError);
   const existing = await resolveLinkedPlayerProfile(supabase, userId, preferredId);
   if (existing) return existing;
-  const { data, error } = await supabase.from("player_profiles").insert({
-    id: userId, linked_auth_user_id: userId, display_name: displayName.trim() || "名称未設定", is_active: true
-  }).select(PLAYER_PROFILE_COLUMNS).single();
-  if (error?.code === "23505") {
-    const raced = await resolveLinkedPlayerProfile(supabase, userId, preferredId);
-    if (raced) return raced;
+  const { data, error } = await supabase.rpc("ensure_my_player_profile", {
+    p_display_name: displayName.trim(), p_expected_profile_id: preferredId ?? null
+  });
+  const created = Array.isArray(data) ? data[0] : data;
+  if (error || !created || created.linked_auth_user_id !== userId || !created.is_active) {
+    fail("プロフィールの作成に失敗しました。既存データは上書きしていません。DBの適用状態を確認してください", error);
   }
-  if (error || !data || data.id !== userId || data.linked_auth_user_id !== userId) fail("プロフィールの作成に失敗しました。既存データは上書きしていません", error);
-  return data as PlayerProfile;
+  return created as PlayerProfile;
 }
 
 export async function saveLinkedPlayerProfile(supabase: SupabaseClient, userId: string, profileId: string, values: ProfileValues, expected: ProfileValues): Promise<PlayerProfile> {
@@ -155,13 +146,4 @@ export async function saveLinkedPlayerProfile(supabase: SupabaseClient, userId: 
     fail("保存後の内容が一致しません。再読み込みして確認してください");
   }
   return saved as PlayerProfile;
-}
-
-export async function setPlayerProfileAccountLink(supabase: SupabaseClient, profileId: string, userId: string | null, previousUserId: string | null) {
-  let query = supabase.from("player_profiles").update({ linked_auth_user_id: userId }).eq("id", profileId);
-  query = previousUserId ? query.eq("linked_auth_user_id", previousUserId) : query.is("linked_auth_user_id", null);
-  const { data, error } = await query.select("id,linked_auth_user_id");
-  if (error || !data || data.length !== 1 || data[0].id !== profileId || data[0].linked_auth_user_id !== userId) {
-    fail("アカウント連携の更新を確認できませんでした。メンバーを再読み込みしてください", error);
-  }
 }

@@ -4,7 +4,7 @@ import { PlayerProfileError, type PlayerProfile } from "./player-profiles";
 export type LinkStatus = "pending" | "approved" | "rejected" | "cancelled" | "expired";
 export const linkStatusLabel: Record<LinkStatus, string> = { pending: "承認待ち", approved: "承認済み", rejected: "拒否済み", cancelled: "取消済み", expired: "期限切れ" };
 export type ProfileMergePreview = {
-  source: PlayerProfile;
+  source: Pick<PlayerProfile, "id" | "display_name">;
   target_profile_id: string | null;
   target_display_name: string | null;
   memberships: { id: string; club_name: string; role: string; status: string; is_active: boolean; created_at: string }[];

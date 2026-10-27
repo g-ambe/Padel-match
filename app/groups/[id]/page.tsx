@@ -7,7 +7,7 @@ import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { canDeleteGroup, canEditGroupProfile, canManageMembers, canManageTargetMember, toAppRole } from "@/lib/permissions";
-import { profileErrorMessage, PlayerProfileError, saveClubMemberRole, saveUnlinkedClubMemberName, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
+import { fetchLegacyMemberProfiles, profileErrorMessage, PlayerProfileError, saveClubMemberRole, saveUnlinkedClubMemberName, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
 import { effectiveJoinStatus, linkStatusLabel, profileLinkRpc, requestPlayerProfileLink, reviewPlayerProfileLink, type AccountCandidate, type LinkStatus, type ProfileLinkRequest, type ProfileMergePreview } from "@/lib/profile-links";
 import { ProfileMergeSummary } from "@/components/profile-merge-summary";
 
@@ -117,17 +117,24 @@ export default function GroupDetailPage() {
       setIndividualRows([]); setPairRows([]); setEventHistoryRows([]); return;
     }
 
-    const { data: membersRaw, error: membersError } = await s.from("club_members").select("player_profile_id,is_active").eq("club_id", id);
-    const memberProfileSet = new Set((membersRaw ?? []).map((m: any) => m.player_profile_id).filter(Boolean));
-    const currentProfileSet = new Set((membersRaw ?? []).filter((m: any) => m.is_active).map((m: any) => m.player_profile_id).filter(Boolean));
-    const { data: participants, error: participantsError } = await s.from("event_participants").select("id,event_id,player_profile_id,participant_type").in("event_id", closedEventIds);
+    const { data: membersRaw, error: membersError } = await s.from("club_members").select("player_profile_id,profile_id,is_active").eq("club_id", id);
+    const { data: participantRows, error: participantsError } = await s.from("event_participants").select("id,event_id,profile_id,player_profile_id,participant_type,guest_name").in("event_id", closedEventIds);
+    const legacyAccounts = [...new Set([...(membersRaw ?? []).map((m: any) => m.profile_id), ...(participantRows ?? []).filter((p: any) => !p.player_profile_id).map((p: any) => p.profile_id)].filter(Boolean))];
+    let legacyProfiles: Awaited<ReturnType<typeof fetchLegacyMemberProfiles>>;
+    try { legacyProfiles = await fetchLegacyMemberProfiles(s, legacyAccounts); }
+    catch { setError("旧形式の所属を確認できませんでした"); return; }
+    const idsOfMember = (m: any): string[] => m.player_profile_id ? [m.player_profile_id] : [m.profile_id, legacyProfiles.get(m.profile_id)?.id].filter(Boolean);
+    const memberProfileSet = new Set((membersRaw ?? []).flatMap(idsOfMember));
+    const currentProfileSet = new Set((membersRaw ?? []).filter((m: any) => m.is_active).flatMap(idsOfMember));
+    const participants = (participantRows ?? []).map((p: any) => ({ ...p, player_profile_id: p.player_profile_id ?? legacyProfiles.get(p.profile_id)?.id ?? p.profile_id }));
     if (membersError || participantsError) { setError("戦績の所属・参加履歴を取得できませんでした"); return; }
     const memberParticipantIds = new Set((participants ?? []).filter((p: any) => p.participant_type !== "guest" && p.player_profile_id && memberProfileSet.has(p.player_profile_id)).map((p: any) => p.id));
     const participantMap = new Map((participants ?? []).map((p: any) => [p.id, p]));
     const profileIds = [...new Set((participants ?? []).map((p: any) => p.player_profile_id).filter(Boolean))];
     const { data: pps, error: namesError } = profileIds.length ? await s.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[], error: null };
     if (namesError) { setError("戦績の選手名を取得できませんでした"); return; }
-    const profileName = new Map((pps ?? []).map((p: any) => [p.id, p.display_name]));
+    const profileName = new Map<string, string>((pps ?? []).map((p: any) => [p.id, p.display_name]));
+    for (const participant of participants) if (participant.player_profile_id && participant.guest_name && !profileName.has(participant.player_profile_id)) profileName.set(participant.player_profile_id, participant.guest_name);
 
     const { data: matches, error: matchesError } = await s.from("matches").select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)").in("event_id", closedEventIds);
 
@@ -221,17 +228,28 @@ export default function GroupDetailPage() {
 
     const { data, error: memberLoadError } = await s.from("club_members").select("id,profile_id,player_profile_id,is_active,role,player_profiles(id,display_name,linked_auth_user_id,is_active)").eq("club_id", id).order("created_at", { ascending: true });
     if (memberLoadError || !Array.isArray(data)) { setError("メンバーの取得に失敗しました"); setLoading(false); return; }
-    const rows: Member[] = (data ?? []).map((r: any) => ({
+    let legacyMembers: Awaited<ReturnType<typeof fetchLegacyMemberProfiles>>;
+    try { legacyMembers = await fetchLegacyMemberProfiles(s, data.filter(r => !r.player_profile_id).map(r => r.profile_id)); }
+    catch { setError("旧形式のメンバー情報を取得できませんでした"); setLoading(false); return; }
+    let rows: Member[] = (data ?? []).map((r: any) => {
+      const profile = getProfileRow(r.player_profiles) ?? legacyMembers.get(r.profile_id);
+      return {
       id: r.id,
       profile_id: r.profile_id,
       player_profile_id: r.player_profile_id,
-      display_name: resolveDisplayName(r.player_profiles),
-      linked_auth_user_id: getProfileRow(r.player_profiles)?.linked_auth_user_id ?? null,
+      display_name: resolveDisplayName(profile),
+      linked_auth_user_id: profile?.linked_auth_user_id ?? null,
       is_active: r.is_active !== false,
-      player_active: !r.player_profile_id || !!getProfileRow(r.player_profiles)?.is_active,
+      player_active: !r.player_profile_id || !!profile?.is_active,
       role: (r.role ?? "member") as Role
-    }));
+    }; });
 
+    const hasMembershipAccess = superUser || rows.some(r => r.is_active && (r.profile_id === uid || r.linked_auth_user_id === uid));
+    if (!hasMembershipAccess && group.visibility === "public") {
+      const { data: candidates, error: candidateError } = await s.rpc("get_public_join_candidates", { p_club: id });
+      if (candidateError) { setError("加入候補の取得に失敗しました"); setLoading(false); return; }
+      rows = (candidates ?? []).map((candidate: any) => ({ ...candidate, profile_id: null, linked_auth_user_id: null, role: "member", is_active: true, player_active: true }));
+    }
     const sorted = sortMembers(rows);
     setMembers(sorted.filter((m) => m.is_active && m.player_active));
     setInactiveMembers(sorted.filter((m) => !m.is_active && m.player_active));
@@ -380,7 +398,7 @@ export default function GroupDetailPage() {
     } catch (cause) { logMemberError("復帰に失敗しました", cause); setError(`復帰に失敗しました。${profileErrorMessage(cause)}`); }
     finally { setLoading(false); }
   };
-  const doDeleteGroup = async () => { if (!canDeleteGroup) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); await s.from("clubs").update({ is_active: false }).eq("id", id); setConfirmGroupDelete(false); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
+  const doDeleteGroup = async () => { if (!canDeleteGroupAction) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: deleteError } = await s.from("clubs").update({ is_active: false }).eq("id", id).select("id").single(); if (deleteError) { setLoading(false); return setError("グループの論理削除に失敗しました"); } setConfirmGroupDelete(false); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
   const saveGroupName = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupNameInput.trim(); if (!trimmed) return setError("グループ名を入力してください"); if (trimmed === groupName) { setEditingGroupName(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ name: trimmed }).eq("id", id); if (e) setError("グループ名の更新に失敗しました"); else setMessage("グループ名を更新しました"); setEditingGroupName(false); setLoading(false); await load(); };
   const saveGroupDescription = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupDescriptionInput.trim(); if (trimmed === groupDescription) { setEditingDescription(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ description: trimmed || null }).eq("id", id); if (e) setError("グループ説明の更新に失敗しました"); else setMessage("更新しました"); setEditingDescription(false); setLoading(false); await load(); };
   const saveFacility = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ main_facility_id: facilityId }).eq("id", id); if (e) setError("メインの活動場所の更新に失敗しました"); else setMessage("メインの活動場所を更新しました"); setEditingFacility(false); setLoading(false); await load(); };

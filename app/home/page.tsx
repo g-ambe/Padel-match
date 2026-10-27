@@ -125,22 +125,10 @@ export default function HomePage() {
     const loadActiveMemberships = async (column: "player_profile_id" | "profile_id", ids: string[]) => {
       if (!ids.length) return [] as any[];
 
-      const fetchMemberships = async (withStatus: boolean) => {
-        let query: any = supabase
-          .from("club_members")
-          .select("club_id")
-          .eq("is_active", true);
-        query = ids.length === 1 ? query.eq(column, ids[0]) : query.in(column, ids);
-        if (withStatus) query = query.eq("status", "active");
-        return await query;
-      };
-
-      let { data, error } = await fetchMemberships(true);
-      if (error && isMissingColumnError(error, "status")) {
-        const fallback = await fetchMemberships(false);
-        data = fallback.data;
-        error = fallback.error;
-      }
+      // 現行の退会・復帰操作とDBの認可はis_activeを正本にする。
+      let query = supabase.from("club_members").select("club_id").eq("is_active", true);
+      query = ids.length === 1 ? query.eq(column, ids[0]) : query.in(column, ids);
+      const { data, error } = await query;
       if (error) {
         setError("所属グループ取得に失敗しました");
         return [] as any[];

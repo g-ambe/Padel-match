@@ -64,9 +64,6 @@ export default function GroupsPage() {
         .eq("is_active", true)
         .eq("clubs.is_active", true);
       memberRows = data ?? [];
-      console.log("[groups] current auth user id:", userId);
-      console.log("[groups] matched player_profile ids:", linkedProfileIds);
-      console.log("[groups] loaded club_members count:", memberRows.length);
     }
 
     if (!memberRows.length) {
@@ -85,7 +82,6 @@ export default function GroupsPage() {
     for (const g of ownedRows) memberMap.set(g.id, g);
     const memberRowsUnique = [...memberMap.values()];
 
-    console.log("[groups] loaded member groups count:", memberRowsUnique.length);
     setMemberGroups(memberRowsUnique);
   };
 

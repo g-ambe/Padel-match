@@ -36,7 +36,7 @@ test('54件を正常に読み取り、繰り返してもINSERTしない', async 
   const { supabase, calls } = client(() => ({ data: rows }));
   for (let index = 0; index < 3; index++) assert.equal((await fetchLinkedPlayerProfiles(supabase, userId)).length, 54);
   assert(calls.every(call => call.method === 'GET'));
-  assert(calls.every(call => call.url.searchParams.get('linked_auth_user_id') === `eq.${userId}`));
+  assert(calls.every(call => call.table === 'get_my_player_profiles' && !call.url.searchParams.has('user_id')));
 });
 
 test('取得エラー時は未登録と判断せず作成を中止する', async () => {
@@ -91,7 +91,7 @@ test('設定レコードと履歴レコードが分かれている場合も本�
 });
 
 test('関連情報の取得失敗でも新しいプロフィールを作らない', async () => {
-  const { supabase, calls } = client(call => call.table === 'player_profiles'
+  const { supabase, calls } = client(call => call.table === 'get_my_player_profiles'
     ? { data: [profile(detailId, values), profile('空')] }
     : { status: 500, data: { code: 'XX000', message: '関連情報の取得失敗' } });
   await assert.rejects(fetchProfileUsage(supabase, [profile()]), /取得に失敗/);
@@ -102,7 +102,7 @@ test('関連情報の取得失敗でも新しいプロフィールを作らな�
 test('既存54件の連携が曖昧なら停止し、設定や選択済みIDを上書きしない', async () => {
   const detailed = profile(detailId, values);
   const rows = [detailed, ...Array.from({ length: 53 }, (_, index) => profile(`空-${index}`))];
-  const { supabase, calls } = client(call => ({ data: call.table === 'player_profiles' ? rows : [] }));
+  const { supabase, calls } = client(call => ({ data: call.table === 'get_my_player_profiles' ? rows : [] }));
   await assert.rejects(ensureLinkedPlayerProfile(supabase, userId, '登録フォームの別名', detailId), /一意に特定/);
   assert(calls.every(call => call.method === 'GET'));
 });
@@ -145,39 +145,40 @@ test('認証側プロフィールは同じ主キーを使い、既存の表示�
 
 test('保存では選手IDとアカウントIDを限定し、更新1件と再取得内容を確認する', async () => {
   const saved = profile(detailId, values);
-  const { supabase, calls } = client(call => ({ data: call.method === 'PATCH' ? [saved] : saved, headers: call.method === 'PATCH' ? { 'Content-Range': '0-0/1' } : {} }));
+  const { supabase, calls } = client(call => ({ data: call.method === 'POST' ? [saved] : saved, headers: call.method === 'POST' ? { 'Content-Range': '0-0/1' } : {} }));
   assert.deepEqual(await saveLinkedPlayerProfile(supabase, userId, detailId, values, profile()), saved);
-  assert.deepEqual(calls.map(call => call.method), ['PATCH', 'GET']);
-  for (const call of calls) {
-    assert.equal(call.url.searchParams.get('id'), `eq.${detailId}`);
-    assert.equal(call.url.searchParams.get('linked_auth_user_id'), `eq.${userId}`);
-  }
+  assert.deepEqual(calls.map(call => call.method), ['POST', 'GET']);
+  assert.equal(calls[0].table, 'save_my_player_profile');
+  assert.equal(calls[0].body.p_id, detailId);
+  assert.deepEqual(calls[0].body.p_values, values);
+  assert.equal(calls[1].table, 'get_my_player_profiles');
+  assert.equal(calls[1].url.searchParams.get('id'), `eq.${detailId}`);
 });
 
 test('RLSなどで更新0件の場合は成功を返さない', async () => {
   const { supabase, calls } = client(() => ({ data: [], headers: { 'Content-Range': '*/0' } }));
   await assert.rejects(saveLinkedPlayerProfile(supabase, userId, detailId, values, profile()), /更新対象を確認できません/);
-  assert.deepEqual(calls.map(call => call.method), ['PATCH']);
+  assert.deepEqual(calls.map(call => call.method), ['POST']);
 });
 
 test('編集前の値も更新条件に含め、他画面で変更済みの設定を上書きしない', async () => {
   const current = profile(detailId, { bio: '別の画面で保存された自己紹介' });
   const { supabase, calls } = client(call => {
-    assert.equal(call.url.searchParams.get('bio'), 'is.null');
-    assert.equal(call.url.searchParams.get('display_name'), 'eq.選手');
+    assert.equal(call.body.p_expected.bio, null);
+    assert.equal(call.body.p_expected.display_name, '選手');
     return { data: [], headers: { 'Content-Range': '*/0' } };
   });
   await assert.rejects(saveLinkedPlayerProfile(supabase, userId, detailId, values, profile()), /別の画面で変更/);
   assert.equal(current.bio, '別の画面で保存された自己紹介');
-  assert.deepEqual(calls.map(call => call.method), ['PATCH']);
+  assert.deepEqual(calls.map(call => call.method), ['POST']);
 });
 
 test('更新エラー・保存後の取得エラー・保存内容不一致は成功を返さない', async t => {
   for (const mode of ['更新エラー', '再取得エラー', '内容不一致']) await t.test(mode, async () => {
     const saved = profile(detailId, values);
     const { supabase } = client(call => {
-      if ((mode === '更新エラー' && call.method === 'PATCH') || (mode === '再取得エラー' && call.method === 'GET')) return { status: 403, data: { code: '42501', message: 'アクセス拒否' } };
-      return { data: call.method === 'PATCH' ? [saved] : { ...saved, ...(mode === '内容不一致' ? { bio: '保存されていない' } : {}) } };
+      if ((mode === '更新エラー' && call.method === 'POST') || (mode === '再取得エラー' && call.method === 'GET')) return { status: 403, data: { code: '42501', message: 'アクセス拒否' } };
+      return { data: call.method === 'POST' ? [saved] : { ...saved, ...(mode === '内容不一致' ? { bio: '保存されていない' } : {}) } };
     });
     await assert.rejects(saveLinkedPlayerProfile(supabase, userId, detailId, values, profile()));
   });
@@ -233,6 +234,11 @@ function membershipClient(options={}) {
   return client(call=>{
     if(call.table==='app_admins') return {data:options.superUser?[{id:'管理者ID'}]:[]};
     if(call.table==='club_members' && call.method==='GET') return {data:[target,...(options.noMembership?[]:[manager])]};
+    if(call.table==='player_profiles' && call.method==='GET' && options.legacyAccount) {
+      assert.equal(call.url.searchParams.get('linked_auth_user_id'),`in.(${options.legacyAccount})`);
+      assert.equal(call.url.searchParams.get('is_active'),'eq.true');
+      return {data:[{id:detailId,display_name:'本人',linked_auth_user_id:options.legacyAccount,is_active:true}]};
+    }
     if(call.method==='PATCH') {
       if(options.patch) return options.patch(call);
       return {data:[call.table==='player_profiles'?{id:detailId,display_name:call.body.display_name,linked_auth_user_id:null}:{...snapshot,...options.target,...call.body}],headers:{'Content-Range':'0-0/1'}};
@@ -251,6 +257,16 @@ test('連携済み選手も対象所属だけ退会・復帰でき、役職・�
     for(const [key,value] of Object.entries({id:memberId,club_id:groupId,player_profile_id:detailId,role:'member',is_active:String(!active)})) assert.equal(call.url.searchParams.get(key),`eq.${value}`);
     assert(!calls.some(c=>c.method==='POST'||c.method==='DELETE'||c.url.searchParams.get('select')?.split(',').includes('status')));
   }
+});
+test('旧アカウントIDだけの所属も連携先で本人を確認し、所属IDを移管せず復帰できる',async()=>{
+  const account='77777777-7777-4777-8777-777777777777';
+  const target={profile_id:account,player_profile_id:null,player_profiles:null,is_active:false};
+  const expected={...snapshot,player_profile_id:null,is_active:false};
+  const {supabase,calls}=membershipClient({legacyAccount:account,target});
+  assert.equal((await setClubMemberActive(supabase,expected,true)).player_profile_id,null);
+  const patches=calls.filter(c=>c.method==='PATCH');assert.equal(patches.length,1);
+  assert.deepEqual(patches[0].body,{is_active:true});
+  assert.equal(patches[0].url.searchParams.get('player_profile_id'),'is.null');
 });
 for(const [name,response] of [
  ['0件',{data:[],headers:{'Content-Range':'*/0'}}],
@@ -292,12 +308,13 @@ test('連携済み選手の役職変更は表示名・在籍状態・連携を�
 
 const { fetchActiveClubMemberParticipants } = require('../lib/event-participants.ts');
 const { getHistoricalGroupMatchTeams } = require('../lib/friendly-match-results.ts');
-test('新規イベント候補は所属のis_activeだけで取得し、旧状態列を要求しない',async()=>{
+test('新規イベント候補は必要な名簿情報だけを返すRPCで取得する',async()=>{
  const {supabase,calls}=client(call=>{
-   if(call.table==='club_members') {assert.equal(call.url.searchParams.get('is_active'),'eq.true');assert(!call.url.searchParams.has('status'));assert.equal(call.url.searchParams.get('select'),'player_profile_id,profile_id');return {data:[{player_profile_id:detailId,profile_id:null}]};}
-   return {data:[{id:detailId,display_name:'復帰した選手',is_active:true}]};
+   assert.equal(call.table,'get_club_players');assert.equal(call.body.p_club,groupId);
+   return {data:[{player_profile_id:detailId,display_name:'復帰した選手'}]};
  });
- assert.deepEqual(await fetchActiveClubMemberParticipants(supabase,groupId),[{playerProfileId:detailId,displayName:'復帰した選手'}]);assert(calls.every(c=>c.method==='GET'));
+ assert.deepEqual(await fetchActiveClubMemberParticipants(supabase,groupId),[{playerProfileId:detailId,displayName:'復帰した選手'}]);
+ assert.equal(calls.length,1);
 });
 test('退会者がいる過去の試合も4人の参加記録で成立判定し、残る在籍選手の試合を失わない',()=>{
  const players=[{participant_id:'退会したA',team:'A'},{participant_id:'在籍B',team:'A'},{participant_id:'在籍C',team:'B'},{participant_id:'在籍D',team:'B'}];
@@ -311,7 +328,7 @@ test('退会者がいる過去の試合も4人の参加記録で成立判定し�
 
 const { fetchHistoricalPlayerNames, historicalPlayerName } = require('../lib/event-participants.ts');
 test('退会者のチーム戦・公式戦の名前を在籍候補から切り離して読み、過去のスコア・参照を変更しない',async()=>{
- const {supabase,calls}=client(call=>{assert.equal(call.table,'player_profiles');return {data:[{id:detailId,display_name:'退会した本人の正式名'}]};});
+ const {supabase,calls}=client(call=>{assert.equal(call.table,'get_player_names');return {data:[{id:detailId,display_name:'退会した本人の正式名'}]};});
  const names=await fetchHistoricalPlayerNames(supabase,[detailId,null,detailId]);
  assert.equal(historicalPlayerName(detailId,null,names),'退会した本人の正式名');
  assert.equal(historicalPlayerName(detailId,'古い登録名',names),'退会した本人の正式名');

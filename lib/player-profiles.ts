@@ -43,8 +43,21 @@ export async function readProfileRows<T>(query: (start: number, end: number) => 
 }
 
 export async function fetchLinkedPlayerProfiles(supabase: SupabaseClient, userId: string): Promise<PlayerProfile[]> {
-  return readProfileRows<PlayerProfile>((start, end) => supabase.from("player_profiles")
-    .select(PLAYER_PROFILE_COLUMNS).eq("linked_auth_user_id", userId).eq("is_active", true).order("id").range(start, end));
+  const { data: auth, error: authError } = await supabase.auth.getUser();
+  if (authError || auth.user?.id !== userId) fail("本人のログイン情報を確認できません", authError);
+  return readProfileRows<PlayerProfile>((start, end) => supabase.rpc("get_my_player_profiles", {}, { get: true }).order("id").range(start, end));
+}
+
+// 旧所属のprofile_idはアカウントID。選手の主キーとの同値比較では結び付けない。
+export async function fetchLegacyMemberProfiles(supabase: SupabaseClient, accountIds: (string | null)[]) {
+  const ids = [...new Set(accountIds.filter((id): id is string => !!id))];
+  const profiles = new Map<string, Pick<PlayerProfile, "id" | "display_name" | "linked_auth_user_id" | "is_active">>();
+  for (let index = 0; index < ids.length; index += 40) {
+    const rows = await readProfileRows<Pick<PlayerProfile, "id" | "display_name" | "linked_auth_user_id" | "is_active">>((start, end) => supabase.from("player_profiles")
+      .select("id,display_name,linked_auth_user_id,is_active").in("linked_auth_user_id", ids.slice(index, index + 40)).eq("is_active", true).order("id").range(start, end));
+    for (const row of rows) if (row.linked_auth_user_id) profiles.set(row.linked_auth_user_id, row);
+  }
+  return profiles;
 }
 
 export function profileDetailCount(profile: PlayerProfile) {
@@ -130,18 +143,13 @@ export async function ensureLinkedPlayerProfile(supabase: SupabaseClient, userId
 export async function saveLinkedPlayerProfile(supabase: SupabaseClient, userId: string, profileId: string, values: ProfileValues, expected: ProfileValues): Promise<PlayerProfile> {
   const { data: auth, error: authError } = await supabase.auth.getUser();
   if (authError || auth.user?.id !== userId) fail("ログイン情報が変わりました。プロフィールを再読み込みしてください", authError);
-  let query = supabase.from("player_profiles").update(values, { count: "exact" }).eq("id", profileId).eq("linked_auth_user_id", userId);
-  // 編集開始後に別の画面で保存された値も、古いフォームで上書きしない。
-  for (const field of Object.keys(values) as (keyof ProfileValues)[]) {
-    query = expected[field] === null ? query.is(field, null) : query.eq(field, expected[field]);
-  }
-  const { data, error, count } = await query.select(PLAYER_PROFILE_COLUMNS);
-  if (error) fail("プロフィールの更新に失敗しました", error);
-  if (!data || data.length !== 1 || (count !== null && count !== 1) || data[0].id !== profileId || data[0].linked_auth_user_id !== userId) {
-    fail("更新対象を確認できませんでした。別の画面で変更された可能性があります。プロフィールを再読み込みしてください");
-  }
-  const { data: saved, error: readError } = await supabase.from("player_profiles").select(PLAYER_PROFILE_COLUMNS)
-    .eq("id", profileId).eq("linked_auth_user_id", userId).single();
+  const expectedFields = Object.fromEntries((Object.keys(values) as (keyof ProfileValues)[]).map(field => [field, expected[field]]));
+  const { data, error } = await supabase.rpc("save_my_player_profile", { p_id: profileId, p_values: values, p_expected: expectedFields });
+  if (error) fail(error.code === "P0001" ? error.message : "プロフィールの更新に失敗しました", error);
+  const updated = Array.isArray(data) ? (data.length === 1 ? data[0] : null) : data;
+  if (!updated || updated.id !== profileId || updated.linked_auth_user_id !== userId) fail("更新対象を確認できませんでした。別の画面で変更された可能性があります");
+  const { data: savedData, error: readError } = await supabase.rpc("get_my_player_profiles", {}, { get: true }).eq("id", profileId).single();
+  const saved = savedData as PlayerProfile | null;
   if (readError || !saved || saved.id !== profileId || saved.linked_auth_user_id !== userId) fail("保存後のプロフィールを確認できませんでした。再読み込みして確認してください", readError);
   if ((Object.keys(values) as (keyof ProfileValues)[]).some((field) => (saved[field] ?? "") !== (values[field] ?? ""))) {
     fail("保存後の内容が一致しません。再読み込みして確認してください");
@@ -168,7 +176,8 @@ async function readManagedMember(supabase: SupabaseClient, expected: ClubMemberS
     .select("id,club_id,profile_id,player_profile_id,role,is_active,player_profiles(display_name,linked_auth_user_id,is_active)")
     .eq("club_id", expected.club_id).order("id").range(start, end))
     .catch(cause => fail("メンバーと管理権限の取得に失敗しました", cause instanceof Error ? cause.cause ?? cause : cause));
-  const profileOf = (row: ManagedClubMember) => Array.isArray(row.player_profiles) ? row.player_profiles[0] : row.player_profiles;
+  const legacy = await fetchLegacyMemberProfiles(supabase, rows.filter(row => !row.player_profile_id).map(row => row.profile_id));
+  const profileOf = (row: ManagedClubMember) => (Array.isArray(row.player_profiles) ? row.player_profiles[0] : row.player_profiles) ?? (row.profile_id ? legacy.get(row.profile_id) : null);
   const mine = rows.filter(row => row.is_active && (row.profile_id === auth.user!.id || (profileOf(row)?.is_active && profileOf(row)?.linked_auth_user_id === auth.user!.id)));
   const myRole = mine.some(row => row.role === "main_admin") ? "main_admin" : mine.some(row => row.role === "sub_admin") ? "sub_admin" : "member";
   const context = { isSuperUser: !!admin || auth.user.email?.toLowerCase() === "testuser01@example.com", myRole } as const;

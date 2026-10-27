@@ -32,30 +32,30 @@ export default function SharedOfficialEventPage() {
   const [event, setEvent] = useState<OfficialEvent | null>(null);
   const [opponents, setOpponents] = useState<OfficialOpponent[]>([]);
   const [matches, setMatches] = useState<OfficialMatch[]>([]);
-  const [names, setNames] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState("");
 
-  useEffect(() => { void (async () => {
+  useEffect(() => {
+    let active = true;
+    setEvent(null); setError(""); setMatches([]); setOpponents([]);
+    void (async () => {
     const supabase = getSupabaseClient(); if (!supabase || !token) return;
-    const { data: eventRow } = await supabase.from("official_events").select("id,title,event_date,description,memo,status,is_deleted,share_enabled,club_id,clubs(name)").eq("share_token", token).eq("is_deleted", false).maybeSingle();
-    const officialEvent = eventRow as unknown as OfficialEvent | null;
-    if (!officialEvent || !officialEvent.share_enabled || officialEvent.status !== "closed") return setError("この共有リンクは無効です");
-    setEvent(officialEvent);
-    const { data: opponentRows } = await supabase.from("official_opponents").select("id,opponent_team_name,memo").eq("official_event_id", officialEvent.id).order("created_at");
-    const { data: matchRows } = await supabase.from("official_matches").select("id,official_opponent_id,match_order,created_at,our_player1_profile_id,our_player2_profile_id,our_player1_guest_name,our_player2_guest_name,opponent_player1_name,opponent_player2_name,our_score,opponent_score,result,score_detail,memo,youtube_url").eq("official_event_id", officialEvent.id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
-    const rows = (matchRows ?? []) as unknown as OfficialMatch[];
-    const profileIds = [...new Set(rows.flatMap((match) => [match.our_player1_profile_id, match.our_player2_profile_id]).filter(Boolean) as string[])];
-    const { data: profileRows } = profileIds.length ? await supabase.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[] };
-    setNames(new Map((profileRows ?? []).map((profile: any) => [profile.id, profile.display_name ?? "名称未設定"])));
-    setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
-    setMatches(rows);
-  })(); }, [token]);
+    try {
+      setError("");
+      const { data, error: shareError } = await supabase.rpc("get_shared_event", { p_token: token, p_kind: "official" });
+      if (!active) return;
+      if (shareError) return setError("共有データの取得に失敗しました");
+      if (!data) return setError("この共有リンクは無効です");
+      setEvent(data.event as OfficialEvent);
+      setOpponents(data.opponents as OfficialOpponent[]);
+      setMatches(data.matches as OfficialMatch[]);
+    } catch { if (active) setError("共有データの取得に失敗しました"); }
+  })(); return () => { active = false; }; }, [token]);
 
-  const memberName = (profileId: string | null, guestName: string | null) => guestName || (profileId ? names.get(profileId) : null) || "未入力";
+  const memberName = (profileId: string | null, guestName: string | null) => guestName || "未入力";
   const stats = useMemo(() => {
     if (!event) return null;
     return buildOfficialStats({ eventTitle: event.title, groupName: event.clubs?.name ?? "名称未設定", opponents, matches, memberName });
-  }, [event, opponents, matches, names]);
+  }, [event, opponents, matches]);
   const opponentMatches = (opponentId: string) => matches
     .filter((match) => match.official_opponent_id === opponentId)
     .sort((a, b) => a.match_order - b.match_order || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));

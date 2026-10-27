@@ -1,82 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { preferredPlayerProfileId, readProfileRows, resolveLinkedPlayerProfile } from "./player-profiles";
+import { preferredPlayerProfileId, resolveLinkedPlayerProfile } from "./player-profiles";
 
-type ClubMemberRow = {
-  player_profile_id?: string | null;
-  profile_id?: string | null;
-};
-
-type PlayerProfileRow = {
-  id: string;
-  display_name?: string | null;
-  is_active?: boolean | null;
-};
-
-type AccountProfileRow = {
-  id: string;
-  display_name?: string | null;
-};
-
-type ActiveClubMemberParticipant = {
-  playerProfileId: string;
-  displayName: string | null;
-};
-
-async function fetchActiveClubMemberRows(supabase: SupabaseClient, clubId: string) {
-  const { data, error } = await supabase.from("club_members")
-    .select("player_profile_id,profile_id").eq("club_id", clubId).eq("is_active", true);
-  if (error) throw error;
-  return (data ?? []) as ClubMemberRow[];
-}
-
-async function fetchActivePlayerProfiles(supabase: SupabaseClient, ids: string[]) {
-  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
-  if (!uniqueIds.length) return new Map<string, PlayerProfileRow>();
-
-  const { data, error } = await supabase
-    .from("player_profiles")
-    .select("id,display_name,is_active")
-    .in("id", uniqueIds);
-  if (error) throw error;
-
-  return new Map(
-    ((data ?? []) as PlayerProfileRow[])
-      .filter((profile) => profile.is_active !== false)
-      .map((profile) => [profile.id, profile])
-  );
-}
+type PlayerProfileRow = { id: string; display_name?: string | null; is_active?: boolean | null };
+type AccountProfileRow = { id: string; display_name?: string | null };
+type ActiveClubMemberParticipant = { playerProfileId: string; displayName: string | null };
 
 export async function fetchActiveClubMemberParticipants(supabase: SupabaseClient, clubId: string): Promise<ActiveClubMemberParticipant[]> {
-  const members = await fetchActiveClubMemberRows(supabase, clubId);
-  const primaryProfileIds = members.map((member) => member.player_profile_id).filter(Boolean) as string[];
-  const primaryProfiles = await fetchActivePlayerProfiles(supabase, primaryProfileIds);
-
-  const participants: ActiveClubMemberParticipant[] = [];
-  const addedIds = new Set<string>();
-
-  for (const member of members) {
-    const playerProfileId = member.player_profile_id;
-    if (!playerProfileId) continue;
-    const profile = primaryProfiles.get(playerProfileId);
-    if (!profile || addedIds.has(playerProfileId)) continue;
-    participants.push({ playerProfileId, displayName: profile.display_name ?? null });
-    addedIds.add(playerProfileId);
-  }
-
-  const fallbackProfileIds = members
-    .filter((member) => !member.player_profile_id && member.profile_id)
-    .map((member) => member.profile_id as string);
-  const fallbackProfiles = await fetchActivePlayerProfiles(supabase, fallbackProfileIds);
-
-  for (const member of members) {
-    if (member.player_profile_id || !member.profile_id) continue;
-    const profile = fallbackProfiles.get(member.profile_id);
-    if (!profile || addedIds.has(member.profile_id)) continue;
-    participants.push({ playerProfileId: member.profile_id, displayName: profile.display_name ?? null });
-    addedIds.add(member.profile_id);
-  }
-
-  return participants;
+  const { data, error } = await supabase.rpc("get_club_players", { p_club: clubId });
+  if (error) throw error;
+  return (data ?? []).map((row: { player_profile_id: string; display_name: string | null }) => ({ playerProfileId: row.player_profile_id, displayName: row.display_name }));
 }
 
 export async function addMissingClubMembersToEvent(supabase: SupabaseClient, eventId: string, clubId: string) {
@@ -161,9 +93,9 @@ export async function fetchHistoricalPlayerNames(supabase: SupabaseClient, profi
   const ids = [...new Set(profileIds.filter((id): id is string => !!id))];
   const names = new Map<string, string>();
   for (let index = 0; index < ids.length; index += 40) {
-    const rows = await readProfileRows<{ id: string; display_name: string }>((start, end) => supabase.from("player_profiles")
-      .select("id,display_name").in("id", ids.slice(index, index + 40)).order("id").range(start, end));
-    for (const row of rows) if (row.display_name?.trim()) names.set(row.id, row.display_name);
+    const { data: rows, error } = await supabase.rpc("get_player_names", { p_ids: ids.slice(index, index + 40) }, { get: true });
+    if (error) throw error;
+    for (const row of rows ?? []) if (row.display_name?.trim()) names.set(row.id, row.display_name);
   }
   return names;
 }

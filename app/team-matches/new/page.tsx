@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
 import { getOfficialAccess, officialStatusLabel, type OfficialGroup } from "@/lib/official-matches";
@@ -78,6 +78,8 @@ export default function NewFriendlyTeamMatchPage() {
 
   useEffect(() => { void loadInitialData(); }, []);
 
+  const pendingCreate = useRef<{ signature: string; request: string } | null>(null);
+
   const createEvent = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -85,29 +87,22 @@ export default function NewFriendlyTeamMatchPage() {
     const supabase = getSupabaseClient();
     if (!supabase) return;
     setLoading(true);
-    const { data: userResult } = await supabase.auth.getUser();
-    const creatorUserId = userResult.user?.id;
-    if (!creatorUserId) {
-      setLoading(false);
-      return setError("ログイン情報を確認できません");
-    }
-    const primaryClubId = teamAMode === "group" ? teamAClubId || null : teamBMode === "group" ? teamBClubId || null : null;
-    const { data, error: insertError } = await supabase.from("events").insert({
-      name: name.trim(), category: "club", court_count: 1, club_id: primaryClubId, event_mode: "team", stats_mode: "undecided", created_by_auth_user_id: creatorUserId,
-      description: description.trim() || null, memo: memo.trim() || null
-    }).select("id").single();
-    if (insertError || !data?.id) {
-      setLoading(false);
-      return setError("フレンドリーチームマッチの作成に失敗しました。DB変更SQLが未実行の場合は手順を実行してください");
-    }
-    const sides = [
-      { event_id: data.id, side: "team_a", club_id: teamAMode === "group" ? teamAClubId || null : null, team_name: teamAName.trim() || "チームA" },
-      { event_id: data.id, side: "team_b", club_id: teamBMode === "group" ? teamBClubId || null : null, team_name: teamBName.trim() || "チームB" }
-    ];
-    const { error: sideError } = await supabase.from("event_team_sides").insert(sides);
-    setLoading(false);
-    if (sideError) return setError("チーム設定の保存に失敗しました");
-    router.push(`/team-matches/${data.id}`);
+    try {
+      const sides = [
+        { side: "team_a", club_id: teamAMode === "group" ? teamAClubId || null : null, team_name: teamAName.trim() || "チームA" },
+        { side: "team_b", club_id: teamBMode === "group" ? teamBClubId || null : null, team_name: teamBName.trim() || "チームB" }
+      ];
+      const signature = JSON.stringify([name.trim(), description.trim(), memo.trim(), sides]);
+      if (pendingCreate.current?.signature !== signature) pendingCreate.current = { signature, request: crypto.randomUUID() };
+      const { data, error: insertError } = await supabase.rpc("create_friendly_team", {
+        p_request: pendingCreate.current.request, p_name: name.trim(), p_description: description.trim() || null,
+        p_memo: memo.trim() || null, p_sides: sides
+      });
+      if (insertError || !data?.event_id) return setError(insertError?.code === "P0001" ? insertError.message : "チームとイベントの保存に失敗しました。権限を確認して再試行してください");
+      pendingCreate.current = null;
+      router.push(`/team-matches/${data.event_id}`);
+    } catch { setError("チームとイベントの保存に失敗しました。再試行してください"); }
+    finally { setLoading(false); }
   };
 
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">

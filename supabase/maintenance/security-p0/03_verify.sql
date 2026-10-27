@@ -23,6 +23,12 @@ begin
   if to_regprocedure('public.get_shared_event(text)') is null then
     raise exception '共有RPCがありません。共有画面を公開する前にSQLを適用してください';
   end if;
+  if exists (select 1 from pg_constraint c join pg_attribute a on a.attrelid=c.conrelid and a.attname='profile_id'
+    where c.conrelid='public.player_stats'::regclass and c.contype='f' and a.attnum=any(c.conkey))
+    or (select count(*) from pg_trigger where tgname='security_p0_stats_identity_delete'
+      and tgrelid in ('public.profiles'::regclass,'public.player_profiles'::regclass) and tgenabled<>'D')<>2 then
+    raise exception '戦績IDの両形式対応または親ID削除時の保護が不完全です';
+  end if;
 end $$;
 
 select tablename,policyname,roles,cmd,qual,with_check from pg_policies

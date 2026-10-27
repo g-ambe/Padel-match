@@ -19,6 +19,11 @@ from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n
 where n.nspname='public' and c.relkind in ('r','p') and a.attnum>0 and not a.attisdropped;
 create table security_p0_backup_20261026.policies as
 select * from pg_policies where schemaname='public';
+-- 両ID形式の検証へ置換する前のアカウント用FKを記録する。
+create table security_p0_backup_20261026.stats_identity_constraints as
+select c.conname,pg_get_constraintdef(c.oid) as definition
+from pg_constraint c join pg_attribute a on a.attrelid=c.conrelid and a.attname='profile_id'
+where c.conrelid='public.player_stats'::regclass and c.contype='f' and a.attnum=any(c.conkey);
 create table security_p0_backup_20261026.functions as
 select n.nspname,p.oid::regprocedure::text as signature,p.proacl,p.proowner,
   pg_get_functiondef(p.oid) as definition

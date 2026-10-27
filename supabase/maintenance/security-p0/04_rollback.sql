@@ -18,6 +18,14 @@ do $$ declare r record; begin
     where signature='get_shared_event(text)' or signature='public.get_shared_event(text)') then
     raise exception 'P0以前から同名RPCが存在します。個別に復旧計画を確認してください';
   end if;
+  if to_regclass('security_p0_backup_20261026.stats_identity_constraints') is null then
+    raise exception '旧版のバックアップです。戦績IDのFKを確認して復旧計画を更新してください';
+  end if;
+  if exists (select 1 from security_p0_backup_20261026.stats_identity_constraints)
+    and exists (select 1 from public.player_stats s where s.profile_id is not null
+      and not exists (select 1 from public.profiles p where p.id=s.profile_id)) then
+    raise exception '旧アカウント用FKへ戻せない選手IDの戦績があります。データを変更せず復旧を中止します';
+  end if;
   -- 追加/削除された列へ古いACLを適用しない。
   for r in select * from security_p0_backup_20261026.columns loop
     if not exists (select 1 from pg_attribute a where a.attrelid=to_regclass(format('%I.%I',r.nspname,r.relname))
@@ -67,6 +75,12 @@ do $$ declare r record; begin
   end loop;
 end $$;
 drop schema if exists security_private;
+
+do $$ declare constraint_row record; begin
+  for constraint_row in select * from security_p0_backup_20261026.stats_identity_constraints loop
+    execute format('alter table public.player_stats add constraint %I %s',constraint_row.conname,constraint_row.definition);
+  end loop;
+end $$;
 
 -- anon/authenticated/PUBLICのACLを取得時へ戻す。service_roleや所有者は変更しない。
 -- PUBLIC/anonへの書込GRANTは復活させず、緊急修正を維持する。

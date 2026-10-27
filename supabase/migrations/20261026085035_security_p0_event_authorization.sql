@@ -26,6 +26,24 @@ do $$ begin
   end if;
 end $$;
 
+-- profile_idには旧アカウントIDと選手IDの両形式がある。
+-- アカウント専用FKは新規の選手IDを拒否するため、所属検証と削除triggerで保護する。
+-- 行の移管・再集計は行わない。未知のFK構成なら適用を中止する。
+do $$ declare constraint_row record; begin
+  for constraint_row in
+    select c.* from pg_constraint c
+    join pg_attribute a on a.attrelid=c.conrelid and a.attname='profile_id'
+    where c.conrelid='public.player_stats'::regclass and c.contype='f' and a.attnum=any(c.conkey)
+  loop
+    if constraint_row.confrelid <> 'public.profiles'::regclass
+      or array_length(constraint_row.conkey,1) <> 1
+      or constraint_row.confdeltype <> 'c' or constraint_row.confupdtype <> 'a' then
+      raise exception '戦績の選手ID外部キーが想定と異なります。個別確認が必要です';
+    end if;
+    execute format('alter table public.player_stats drop constraint %I',constraint_row.conname);
+  end loop;
+end $$;
+
 create schema if not exists security_private;
 revoke all on schema security_private from public, anon, authenticated;
 grant usage on schema security_private to authenticated;
@@ -101,9 +119,40 @@ language sql stable security definer set search_path = '' as $$
   select auth.uid() is not null and security_private.club_role(p_club) is not null
     and p_club is not null and p_profile is not null and exists (
     select 1 from public.club_members cm left join public.player_profiles pp on pp.id = cm.player_profile_id
-    where cm.club_id = p_club and (cm.profile_id = p_profile or pp.linked_auth_user_id = p_profile)
+    where cm.club_id = p_club and cm.is_active
+      and (cm.player_profile_id is null or pp.is_active)
+      and (cm.profile_id = p_profile or cm.player_profile_id = p_profile or pp.linked_auth_user_id = p_profile)
   );
 $$;
+
+-- グループ変更には変更元・変更先それぞれの管理権限が必要。
+-- 既存サイドを非公開関数から確認し、UPDATEポリシーの循環参照を避ける。
+create or replace function security_private.can_update_team_side(p_side uuid, p_event uuid, p_club uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select auth.uid() is not null and security_private.can_operate_event(p_event) and exists (
+    select 1 from public.event_team_sides previous_side
+    where previous_side.id=p_side and previous_side.event_id=p_event
+      and (previous_side.club_id is not distinct from p_club or (
+        (previous_side.club_id is null or security_private.club_role(previous_side.club_id) in ('super_user','main_admin','sub_admin'))
+        and (p_club is null or security_private.club_role(p_club) in ('super_user','main_admin','sub_admin'))
+      ))
+  );
+$$;
+
+-- 旧FKのアカウント削除時の連動削除を維持し、選手ID形式も同様に保護する。
+-- APIには公開しない。親行を削除できる既存の信頼済み処理からだけ実行される。
+create or replace function security_private.delete_stats_for_identity() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  delete from public.player_stats where profile_id=old.id;
+  return old;
+end $$;
+drop trigger if exists security_p0_stats_identity_delete on public.profiles;
+create trigger security_p0_stats_identity_delete after delete on public.profiles
+  for each row execute function security_private.delete_stats_for_identity();
+drop trigger if exists security_p0_stats_identity_delete on public.player_profiles;
+create trigger security_p0_stats_identity_delete after delete on public.player_profiles
+  for each row execute function security_private.delete_stats_for_identity();
 
 -- 行の移動や作成者の変更を拒否し、イベントの列ごとの操作権限を守る。
 create or replace function security_private.guard_event() returns trigger
@@ -201,9 +250,12 @@ begin
       end if;
     end if;
   elsif tg_table_name = 'player_stats' then
-    if (tg_op = 'INSERT' or new.club_id is distinct from old.club_id or new.profile_id is distinct from old.profile_id)
-      and not security_private.valid_stats_profile(new.club_id, new.profile_id) then
+    if not security_private.valid_stats_profile(new.club_id, new.profile_id) then
       raise exception '集計対象のグループと選手が一致しません' using errcode = '23514';
+    end if;
+  elsif tg_table_name = 'event_team_sides' and tg_op = 'UPDATE' then
+    if not security_private.can_update_team_side(old.id, new.event_id, new.club_id) then
+      raise exception '所属変更には変更元と変更先のグループ管理権限が必要です' using errcode = '42501';
     end if;
   end if;
   return new;
@@ -221,6 +273,7 @@ do $$ declare t text; args text; begin
       when 'match_players' then '''id'',''match_id'',''created_at'''
       when 'match_results' then '''id'',''match_id'',''created_at'''
       when 'player_stats' then '''id'',''club_id'',''profile_id'',''created_at'''
+      when 'event_team_sides' then '''id'',''event_id'',''side'',''created_at'''
       else '''id'',''event_id'',''created_at''' end;
     execute format('drop trigger if exists security_p0_parentage on public.%I',t);
     execute format('create trigger security_p0_parentage before insert or update on public.%I for each row execute function security_private.guard_parentage(%s)',t,args);
@@ -331,8 +384,8 @@ create policy security_p0_stats_insert on public.player_stats for insert to auth
   security_private.club_role(club_id) is not null and security_private.valid_stats_profile(club_id,profile_id)
 );
 create policy security_p0_stats_update on public.player_stats for update to authenticated
-  using (security_private.club_role(club_id) is not null and club_id is not null)
-  with check (security_private.club_role(club_id) is not null and club_id is not null);
+  using (security_private.valid_stats_profile(club_id,profile_id))
+  with check (security_private.valid_stats_profile(club_id,profile_id));
 create policy security_p0_stats_delete on public.player_stats for delete to authenticated using (security_private.club_role(club_id) is not null and club_id is not null);
 
 create policy security_p0_team_sides_select on public.event_team_sides for select to authenticated using (security_private.can_read_event(event_id));
@@ -340,13 +393,17 @@ create policy security_p0_team_sides_insert on public.event_team_sides for inser
   security_private.can_operate_event(event_id) and exists (select 1 from public.events e where e.id = event_id and e.event_mode = 'team')
 );
 create policy security_p0_team_sides_update on public.event_team_sides for update to authenticated
-  using (security_private.can_operate_event(event_id)) with check (security_private.can_operate_event(event_id));
-create policy security_p0_team_sides_delete on public.event_team_sides for delete to authenticated using (security_private.can_operate_event(event_id));
+  using (security_private.can_operate_event(event_id))
+  with check (security_private.can_update_team_side(id,event_id,club_id));
+-- 画面はサイドの更新を使う。削除→再登録による所属変更の迂回を許可しない。
+-- イベント削除に伴うFKの連動削除は維持する。
+create policy security_p0_team_sides_delete on public.event_team_sides for delete to authenticated using (false);
 
 revoke all on all functions in schema security_private from public,anon,authenticated;
 grant execute on function security_private.actor_super(), security_private.club_role(uuid), security_private.event_role(uuid),
   security_private.can_read_event(uuid), security_private.can_operate_event(uuid,boolean), security_private.can_manage_event(uuid),
-  security_private.can_delete_event(uuid), security_private.valid_stats_profile(uuid,uuid) to authenticated;
+  security_private.can_delete_event(uuid), security_private.valid_stats_profile(uuid,uuid),
+  security_private.can_update_team_side(uuid,uuid,uuid) to authenticated;
 
 -- 有効な共有トークンを提示した場合だけ、画面に必要な表示情報を返す。
 -- 非公開スキーマの関数だけがRLSを越えて読み取り、公開RPCは呼出者権限で委譲する。

@@ -49,6 +49,10 @@ from public.match_players mp left join public.matches m on m.id=mp.match_id
 left join public.event_participants ep on ep.id=mp.participant_id
 where m.id is null or ep.id is null or m.event_id is distinct from ep.event_id;
 select id,club_id,profile_id from public.player_stats where club_id is null;
+-- 旧アカウント専用FKは両ID形式の所属検証へ置き換える。未知の参照先なら適用しない。
+select c.conname,pg_get_constraintdef(c.oid) as definition
+from pg_constraint c join pg_attribute a on a.attrelid=c.conrelid and a.attname='profile_id'
+where c.conrelid='public.player_stats'::regclass and c.contype='f' and a.attnum=any(c.conkey);
 select id,club_id,created_by_auth_user_id from public.events
 where club_id is null and created_by_auth_user_id is null;
 select club_id,profile_id,count(*) from public.player_stats

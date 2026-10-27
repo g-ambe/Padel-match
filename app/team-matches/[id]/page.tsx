@@ -151,7 +151,13 @@ export default function FriendlyTeamMatchDetailPage() {
     await load();
   };
   const deleteMatch=async(mid:string)=>{ if(!window.confirm("試合カードを削除しますか？"))return; const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("event_team_matches").delete().eq("id",mid); if(e)return setError("試合カードの削除に失敗しました"); setNotice("試合カードを削除しました"); await load(); };
-  const updateSide=async(side:Side, clubId:string, name:string)=>{ const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("event_team_sides").update({club_id:clubId||null,team_name:name.trim()||null,updated_at:new Date().toISOString()}).eq("id",side.id); await load(); };
+  const updateSide=async(side:Side, clubId:string, name:string)=>{
+    const supabase=getSupabaseClient(); if(!supabase)return;
+    setError("");
+    const {error:sideError}=await supabase.from("event_team_sides").update({club_id:clubId||null,team_name:name.trim()||null,updated_at:new Date().toISOString()}).eq("id",side.id);
+    if(sideError) return setError(sideError.code==="42501" ? "所属変更には変更元と変更先のグループ管理権限が必要です" : "チーム設定の保存に失敗しました");
+    await load();
+  };
   const addGuest=async(side:TeamSideKey)=>{ setError(""); setNotice(""); if(!event) return setError("イベント情報を取得できていません"); if(!canManage||event.status==="closed") return setError("この操作を行う権限がありません"); const guestName=guestNames[side].trim(); if(!guestName) return setError("ゲスト名を入力してください"); const supabase=getSupabaseClient(); if(!supabase)return; const { error:e }=await supabase.from("event_team_guests").insert({ event_id:id, side, guest_name:guestName }); if(e) return setError("ゲストの追加に失敗しました"); setGuestNames((prev)=>({...prev,[side]:""})); setNotice("ゲストを追加しました"); await load(); };
   const closeOrReopen=async(status:"active"|"closed")=>{
     setError(""); setNotice("");

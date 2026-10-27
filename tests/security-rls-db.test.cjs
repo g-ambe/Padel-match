@@ -59,7 +59,7 @@ insert into matches(id,event_id,round_id,court_number,completed,youtube_url) val
 ('${matchA}','${eventA}','${roundA}',1,true,'https://example.test/private-video'),('${matchB}','${eventB}','${roundB}',1,true,null),('${closedMatch}','${closed}','${closedRound}',1,true,'https://example.test/public-video');
 insert into match_players(id,match_id,participant_id,team) values ('${matchPlayerA}','${matchA}','${participantA}','A'),('${matchPlayerB}','${matchB}','${participantB}','B'),('${closedMatchPlayer}','${closedMatch}','${closedParticipant}','A');
 insert into match_results(id,match_id,score_a,score_b,winner_team) values ('${resultA}','${matchA}',6,4,'A'),('${resultB}','${matchB}',4,6,'B'),('${closedResult}','${closedMatch}',6,4,'A');
-insert into player_stats(id,club_id,profile_id,match_count,win_count) values ('${statA}','${clubA}','${member}',2,1),('${statB}','${clubB}','${otherMain}',2,1),('${legacyNullStat}',null,'${member}',42,30);
+insert into player_stats(id,club_id,profile_id,match_count,win_count) values ('${statA}','${clubA}','${member}',2,2),('${statB}','${clubB}','${otherMain}',1,1),('${legacyNullStat}',null,'${member}',42,30);
 insert into event_video_links(id,event_id,title,video_url) values ('${id(1300)}','${closed}','全試合動画','https://example.test/all-video');
 `;
 const maintenance = name => readFileSync(join(__dirname,'../supabase/maintenance/security-p0',name),'utf8');
@@ -114,11 +114,11 @@ async function prevented(sql,params=[]) {
 }
 const protectedRows=[['events',eventA],['event_participants',participantA],['rounds',roundA],['matches',matchA],['match_players',matchPlayerA],['match_results',resultA],['player_stats',statA]];
 
-for(const [name,actor,role] of [['匿名',null,'anon'],['無関係ログイン',outsider,'authenticated'],['別グループ管理者',otherMain,'authenticated'],['退会メンバー',inactive,'authenticated'],['旧状態が非在籍のメンバー',staleStatus,'authenticated']]) test(`${name}は非公開の親子7テーブルを参照・更新・削除できない`,()=>scenario(async()=>{
+for(const [name,actor,role] of [['匿名',null,'anon'],['無関係ログイン',outsider,'authenticated'],['別グループ管理者',otherMain,'authenticated'],['退会メンバー',inactive,'authenticated']]) test(`${name}は非公開の親子7テーブルを参照・更新・削除できない`,()=>scenario(async()=>{
   await asUser(actor,async()=>{
     for(const [table,row] of protectedRows){
       if(role==='anon') await prevented(`select id from ${table} where id=$1`,[row]); else await zero(`select id from ${table} where id=$1`,[row]);
-      if(role==='anon') {
+      if(role==='anon' || table==='player_stats') {
         await rejected(`update ${table} set id=id where id=$1 returning id`,[row]);
         await rejected(`delete from ${table} where id=$1 returning id`,[row]);
       } else {
@@ -137,7 +137,7 @@ for(const [name,actor,role] of [['匿名',null,'anon'],['無関係ログイン',
   },role);
 }));
 
-for(const [name,actor] of [['一般メンバー',member],['サブ管理者',sub],['メイン管理者',main],['連携IDのメンバー',linkedMember],['スーパー管理者',superUser]]) test(`${name}は所属イベントの参加者・Round・結果CRUDと終了・再開を維持する`,()=>scenario(async()=>{
+for(const [name,actor] of [['一般メンバー',member],['サブ管理者',sub],['メイン管理者',main],['連携IDのメンバー',linkedMember],['旧statusを残す復帰メンバー',staleStatus],['スーパー管理者',superUser]]) test(`${name}は所属イベントの参加者・Round・結果CRUDと終了・再開を維持する`,()=>scenario(async()=>{
   await asUser(actor,async()=>{
     for(const [table,row] of protectedRows) assert.equal((await db.query(`select id from ${table} where id=$1`,[row])).rows.length,1);
     const e=id(2000), p=id(2001), r=id(2002), m=id(2003), mp=id(2004), result=id(2005);
@@ -332,8 +332,9 @@ test('有効な所属選手だけを自動反映し、グループ別集計を�
     await db.query("insert into event_participants(event_id,player_profile_id,participant_type,status) values ($1,$2,'member','active')",[activeShared,player(sub)]);
     await rejected("insert into event_participants(event_id,player_profile_id,participant_type,status) values ($1,$2,'member','active')",[eventA,player(otherMain)]);
     await rejected("insert into event_participants(event_id,profile_id,participant_type,status) values ($1,$2,'member','active')",[eventA,otherMain]);
-    await db.query('insert into player_stats(club_id,profile_id,match_count,win_count) values ($1,$2,3,2)',[clubA,sub]);
-    assert.equal((await db.query('update player_stats set match_count=3,win_count=2 where id=$1 returning id',[statA])).rows.length,1);
+    await rejected('insert into player_stats(club_id,profile_id,match_count,win_count) values ($1,$2,3,2)',[clubA,sub]);
+    await rejected('update player_stats set match_count=3 where id=$1',[statA]);
+    await db.query('update match_results set score_b=3 where id=$1',[resultA]);
     await rejected('insert into player_stats(club_id,profile_id) values ($1,$2)',[clubA,otherMain]);
     await rejected('insert into player_stats(profile_id) values ($1)',[member]);
   });
@@ -403,20 +404,30 @@ test('バックアップ後に列を追加した別作業があれば切り戻�
   await assert.rejects(db.exec(maintenance('04_rollback.sql')),/バックアップ後に列が追加/);
 }));
 
-test('参加者の旧アカウントIDと選手IDのみの両形式で戦績INSERT・UPDATEできる',()=>scenario(async()=>{
+let generatedId=3000;
+async function scoreParticipant(actor, accountId, playerId) {
+  const pid=id(generatedId++),rid=id(generatedId++),mid=id(generatedId++);
+  await asUser(actor,async()=>{
+    await db.query("insert into event_participants(id,event_id,profile_id,player_profile_id,participant_type,status) values ($1,$2,$3,$4,'member','active')",[pid,eventA,accountId,playerId]);
+    await db.query('insert into rounds(id,event_id,round_number) values ($1,$2,$3)',[rid,eventA,generatedId++]);
+    await db.query('insert into matches(id,event_id,round_id,court_number) values ($1,$2,$3,1)',[mid,eventA,rid]);
+    await db.query("insert into match_players(match_id,participant_id,team) values ($1,$2,'A')",[mid,pid]);
+    await db.query('select save_friendly_result($1,$2,6,4,$3)',[eventA,mid,id(generatedId++)]);
+    await db.query('select save_friendly_result($1,$2,4,6,$3)',[eventA,mid,id(generatedId++)]);
+  });
+  return mid;
+}
+
+test('参加者の旧アカウントIDと選手IDのみの両形式で正本の結果から戦績を更新できる',()=>scenario(async()=>{
   const unlinkedPlayer=id(2500);
   await asUser(main,async()=>db.query('select add_provisional_club_member($1,$2,$3)',[clubA,'未連携の所属選手',unlinkedPlayer]));
   await db.query("insert into club_members(club_id,profile_id,role) values ($1,$2,'member')",[clubA,outsider]);
-  await asUser(main,async()=>{
-    for(const [accountId,playerId] of [[outsider,null],[null,player(linkedMember)],[null,unlinkedPlayer]]) {
-      const participant=(await db.query("insert into event_participants(event_id,profile_id,player_profile_id,participant_type,status) values ($1,$2,$3,'member','active') returning profile_id,player_profile_id",[eventA,accountId,playerId])).rows[0];
-      // 画面のprofileMapと同じ優先順位。IDの移管や偽アカウント作成をしない。
-      const statsId=participant.profile_id??participant.player_profile_id;
-      const stat=(await db.query('insert into player_stats(club_id,profile_id,match_count,win_count) values ($1,$2,1,1) returning id',[clubA,statsId])).rows[0];
-      assert.equal((await db.query('update player_stats set match_count=2 where id=$1 returning id',[stat.id])).rows.length,1);
-    }
-    assert.equal((await db.query('update player_stats set match_count=3 where id=$1 returning id',[statA])).rows.length,1,'既存アカウント形式も維持');
-  });
+  for(const [accountId,playerId] of [[outsider,null],[null,player(linkedMember)],[null,unlinkedPlayer]]) {
+    await scoreParticipant(main,accountId,playerId);
+    const canonical=playerId??player(outsider);
+    const stat=(await db.query('select match_count,win_count,loss_count from player_stats where club_id=$1 and profile_id=$2',[clubA,canonical])).rows[0];
+    assert.deepEqual(stat,{match_count:1,win_count:0,loss_count:1});
+  }
   assert.equal((await db.query('select id from profiles where id=any($1::uuid[])',[[player(linkedMember),unlinkedPlayer]])).rows.length,0,'保存のためのアカウント行を作らない');
 }));
 
@@ -432,7 +443,7 @@ test('戦績の他グループ・未所属・無効所属・無効選手IDを拒
     }
   });
   await db.query('update club_members set is_active=false where id=$1',[id(202)]);
-  await asUser(main,async()=>zero('update player_stats set match_count=999 where id=$1 returning id',[statA]));
+  await asUser(main,async()=>rejected('update player_stats set match_count=999 where id=$1 returning id',[statA]));
   assert.equal((await db.query('select match_count from player_stats where id=$1',[statA])).rows[0].match_count,2);
 }));
 
@@ -443,7 +454,7 @@ test('NULLグループの旧戦績は適用・再適用でも不変で、一般�
   await asUser(member,async()=>zero('select id from player_stats where id=$1',[legacyNullStat]));
   await asUser(superUser,async()=>{
     assert.equal((await db.query('select id from player_stats where id=$1',[legacyNullStat])).rows.length,1);
-    await zero('update player_stats set match_count=999 where id=$1 returning id',[legacyNullStat]);
+    await rejected('update player_stats set match_count=999 where id=$1 returning id',[legacyNullStat]);
   });
 }));
 
@@ -463,6 +474,7 @@ test('チーム管理者でも第三者グループへの所属変更と削除�
 
 test('チーム戦の新規作成・相手サイド登録・双方の管理者による名称編集を維持する',()=>scenario(async()=>{
   const created=id(2520), sideA=id(2521), sideB=id(2522);
+  await db.query("insert into club_members(id,club_id,profile_id,player_profile_id,role) values ($1,$2,$3,$4,'sub_admin')",[id(2523),clubB,main,player(main)]);
   await asUser(main,async()=>{
     await db.query("insert into events(id,club_id,name,court_count,event_mode,stats_mode,created_by_auth_user_id) values ($1,$2,'作成テスト',1,'team','undecided',$3)",[created,clubA,main]);
     await db.query("insert into event_team_sides(id,event_id,side,club_id,team_name) values ($1,$2,'team_a',$3,'A'),($4,$2,'team_b',$5,'B')",[sideA,created,clubA,sideB,clubB]);
@@ -474,9 +486,10 @@ test('チーム戦の新規作成・相手サイド登録・双方の管理者�
   });
   await asUser(main,async()=>{
     await db.query("update events set status='closed' where id=$1",[created]);
-    assert.equal((await db.query('delete from events where id=$1 returning id',[created])).rows.length,1);
+    await zero('delete from events where id=$1 returning id',[created]);
+    await db.query('update events set is_deleted=true where id=$1',[created]);
   });
-  assert.equal((await db.query('select id from event_team_sides where event_id=$1',[created])).rows.length,0,'イベント削除の連動削除を維持');
+  assert.equal((await db.query('select id from event_team_sides where event_id=$1',[created])).rows.length,2,'論理削除で所属履歴を維持');
 }));
 
 test('変更元・変更先の両グループの管理権限があれば所属変更とグループなしへの変更を許可する',()=>scenario(async()=>{
@@ -491,7 +504,7 @@ test('変更元・変更先の両グループの管理権限があれば所属�
 }));
 
 test('旧FKのアカウント削除時の後処理と選手ID削除時の後処理を維持する',()=>scenario(async()=>{
-  await asUser(main,async()=>db.query('insert into player_stats(club_id,profile_id) values ($1,$2)',[clubA,player(linkedMember)]));
+  await db.query('insert into player_stats(club_id,profile_id) values ($1,$2)',[clubA,player(linkedMember)]);
   await db.query('delete from player_profiles where id=$1',[player(linkedMember)]);
   assert.equal((await db.query('select id from player_stats where profile_id=$1',[player(linkedMember)])).rows.length,0);
   await db.query('delete from profiles where id=$1',[member]);
@@ -499,7 +512,7 @@ test('旧FKのアカウント削除時の後処理と選手ID削除時の後処�
 }));
 
 test('新規の選手ID戦績を旧FKへ戻せない場合は、切り戻しでデータを削除しない',()=>scenario(async()=>{
-  await asUser(main,async()=>db.query('insert into player_stats(club_id,profile_id) values ($1,$2)',[clubA,player(linkedMember)]));
+  await db.query('insert into player_stats(club_id,profile_id) values ($1,$2)',[clubA,player(linkedMember)]);
   const beforeRollback=await state();
   await db.exec('savepoint unsafe_restore');
   await assert.rejects(db.exec(maintenance('04_rollback.sql')),/旧アカウント用FKへ戻せない/);
@@ -507,17 +520,350 @@ test('新規の選手ID戦績を旧FKへ戻せない場合は、切り戻しで�
   assert.deepEqual(await state(),beforeRollback);
 }));
 
-test('未連携選手の新ID戦績がある場合は0039の既存ガードが統合を中止しデータを維持する',()=>scenario(async()=>{
+test('戦績を持つ未連携選手も本人承認で統合し監査へ記録できる',()=>scenario(async()=>{
   const provisional=id(2530);
   const provisionalMember=await asUser(main,async()=>(await db.query('select add_provisional_club_member($1,$2,$3) as id',[clubA,'戦績のある仮選手',provisional])).rows[0].id);
-  const request=await asUser(main,async()=>{
-    await db.query('insert into player_stats(club_id,profile_id) values ($1,$2)',[clubA,provisional]);
-    return (await db.query('select request_player_profile_link($1,$2,$3) as id',[clubA,provisionalMember,outsider])).rows[0].id;
-  });
-  const beforeApproval=await state();
-  await asUser(outsider,async()=>{
+  await scoreParticipant(main,null,provisional);
+  const request=await asUser(main,async()=>(await db.query('select request_player_profile_link($1,$2,$3) as id',[clubA,provisionalMember,outsider])).rows[0].id);
+  const approval=await asUser(outsider,async()=>{
     const preview=(await db.query('select get_player_profile_link_request($1) as value',[request])).rows[0].value;
-    await rejected("select review_player_profile_link($1,'approved',$2)",[request,preview.review_token],/旧profile_id/);
+    return (await db.query("select review_player_profile_link($1,'approved',$2) as value",[request,preview.review_token])).rows[0].value;
   });
-  assert.deepEqual(await state(),beforeApproval);
+  assert.equal(approval.status,'approved');
+  assert.equal((await db.query('select player_profile_id from club_members where id=$1',[provisionalMember])).rows[0].player_profile_id,player(outsider));
+  const stat=(await db.query('select match_count,loss_count from player_stats where club_id=$1 and profile_id=$2',[clubA,player(outsider)])).rows[0];
+  assert.deepEqual(stat,{match_count:1,loss_count:1});
+  assert.equal((await db.query("select count(*)::int n from profile_link_private.merge_changes where merge_id=$1 and source_table='player_stats'",[approval.merge_id])).rows[0].n,1);
+}));
+
+async function createPlayable(actor=member, playerId=player(member), event=eventA) {
+  const participantIds=[];
+  for(let i=0;i<4;i++) {
+    const pid=id(generatedId++); participantIds.push(pid);
+    await db.query("insert into event_participants(id,event_id,player_profile_id,guest_name,participant_type,status) values ($1,$2,$3,$4,$5,'active')",[pid,event,i===0?playerId:null,i===0?null:`限定ゲスト${i}`,i===0?'member':'guest']);
+  }
+  const expected=(await db.query('select coalesce(max(round_number),0)::int n from rounds where event_id=$1',[event])).rows[0].n;
+  const request=id(generatedId++), cards=[{court:1,teamA:participantIds.slice(0,2),teamB:participantIds.slice(2)}];
+  const round=await asUser(actor,async()=>(await db.query('select create_friendly_round($1,$2,$3,$4) as value',[event,expected,JSON.stringify(cards),request])).rows[0].value);
+  const match=(await db.query('select id from matches where round_id=$1',[round.round_id])).rows[0].id;
+  return {event,match,round,expected,cards,request,participantIds};
+}
+async function saveResult(game,a,b,actor=member,request=id(generatedId++)) {
+  return asUser(actor,async()=>(await db.query('select save_friendly_result($1,$2,$3,$4,$5) as value',[game.event,game.match,a,b,request])).rows[0].value);
+}
+async function playerStat(who=member) { return (await db.query('select match_count,win_count,loss_count from player_stats where club_id=$1 and profile_id=$2',[clubA,who])).rows[0]; }
+const mergeRestoreSql=(mergeId,commit=false)=>readFileSync(join(__dirname,'../supabase/maintenance/profile-linking/04_restore_reviewed_merge.sql'),'utf8')
+  .replace('-- 復旧対象挿入位置',`insert into reviewed_merge_restore values ('${mergeId}');`).replace(/rollback;\s*$/,commit?'commit;':'rollback;');
+
+test('メール確認前は連携できず、確認後の初回プロフィール作成・未連携選手の本人承認で全履歴を引き継ぐ',()=>scenario(async()=>{
+  const newUser=id(6000), source=id(6001);
+  await db.query("insert into auth.users(id,email) values ($1,'new-player@example.test');",[newUser]);
+  const sourceMember=await asUser(main,async()=>(await db.query('select add_provisional_club_member($1,$2,$3) as id',[clubA,'事前登録選手',source])).rows[0].id);
+  const game=await createPlayable(main,source);
+  await saveResult(game,6,4,main);
+  await asUser(main,async()=>rejected('select request_player_profile_link($1,$2,$3)',[clubA,sourceMember,newUser]));
+  // Authサービスの署名・メール配送はステージングの試験項目。ここは確認済み状態を再現する。
+  await db.query('update auth.users set email_confirmed_at=now() where id=$1',[newUser]);
+  await asUser(newUser,async()=>{
+    await db.query("insert into profiles(id,display_name) values ($1,'新規本人')",[newUser]);
+    const own=(await db.query('select to_jsonb(ensure_my_player_profile($1,null)) value',['新規本人'])).rows[0].value;
+    assert.equal(own.id,newUser);
+    await db.query('select ensure_my_player_profile($1,$2)',['再送しても上書きしない',newUser]);
+  });
+  const oe=id(6002), opponent=id(6003);
+  await asUser(main,async()=>{
+    await db.query("insert into event_team_matches(event_id,team_a_player1_profile_id) values ($1,$2)",[teamEvent,source]);
+    await db.query("insert into official_events(id,club_id,title,created_by_auth_user_id) values ($1,$2,'公式戦',$3)",[oe,clubA,main]);
+    await db.query("insert into official_opponents(id,official_event_id,opponent_team_name) values ($1,$2,'相手')",[opponent,oe]);
+    await db.query('insert into official_matches(official_event_id,official_opponent_id,match_order,our_player1_profile_id) values ($1,$2,1,$3)',[oe,opponent,source]);
+  });
+  const participantsBefore=(await db.query('select * from match_players where match_id=$1 order by id',[game.match])).rows;
+  const resultBefore=(await db.query('select * from match_results where match_id=$1',[game.match])).rows;
+  const request=await asUser(main,async()=>(await db.query('select request_player_profile_link($1,$2,$3) id',[clubA,sourceMember,newUser])).rows[0].id);
+  await asUser(main,async()=>rejected("select review_player_profile_link($1,'approved','偽の承認')",[request]));
+  await asUser(outsider,async()=>rejected("select review_player_profile_link($1,'approved','偽の承認')",[request]));
+  await asUser(newUser,async()=>{
+    const preview=(await db.query('select get_player_profile_link_request($1) value',[request])).rows[0].value;
+    assert.equal(preview.stats_count,1);
+    assert.equal((await db.query("select review_player_profile_link($1,'approved',$2) value",[request,preview.review_token])).rows[0].value.status,'approved');
+    assert.equal((await db.query("select review_player_profile_link($1,'approved',$2) value",[request,preview.review_token])).rows[0].value.status,'approved');
+  });
+  assert.equal((await db.query('select player_profile_id from club_members where id=$1',[sourceMember])).rows[0].player_profile_id,newUser);
+  assert.equal((await db.query('select count(*)::int n from player_profiles where linked_auth_user_id=$1 and is_active',[newUser])).rows[0].n,1);
+  assert.equal((await db.query('select count(*)::int n from event_participants where event_id=$1 and player_profile_id=$2',[eventA,newUser])).rows[0].n,1);
+  assert.deepEqual((await db.query('select * from match_players where match_id=$1 order by id',[game.match])).rows,participantsBefore);
+  assert.deepEqual((await db.query('select * from match_results where match_id=$1',[game.match])).rows,resultBefore);
+  assert.equal((await db.query('select team_a_player1_profile_id p from event_team_matches where event_id=$1',[teamEvent])).rows[0].p,newUser);
+  assert.equal((await db.query('select our_player1_profile_id p from official_matches where official_event_id=$1',[oe])).rows[0].p,newUser);
+  assert.equal((await playerStat(newUser)).match_count,1);
+  await saveResult(game,4,6,main);
+  assert.deepEqual(await playerStat(newUser),{match_count:1,win_count:0,loss_count:1});
+  await asUser(main,async()=>db.query('select delete_friendly_match($1,$2,$3)',[eventA,game.match,id(generatedId++)]));
+  assert.deepEqual(await playerStat(newUser),{match_count:0,win_count:0,loss_count:0});
+}));
+
+test('結果の再送・再編集・引き分けを正本から反映し二重計上しない',()=>scenario(async()=>{
+  const game=await createPlayable(), request=id(generatedId++);
+  await saveResult(game,6,4,member,request);
+  const saved=await playerStat();
+  await saveResult(game,6,4,member,request); assert.deepEqual(await playerStat(),saved);
+  await saveResult(game,6,4); assert.deepEqual(await playerStat(),saved);
+  await saveResult(game,3,6); assert.equal((await playerStat()).match_count,saved.match_count);
+  assert.equal((await playerStat()).win_count,saved.win_count-1);
+  await saveResult(game,4,4); assert.equal((await playerStat()).match_count,saved.match_count);
+  assert.equal((await db.query('select count(*)::int n from match_results where match_id=$1',[game.match])).rows[0].n,1);
+  await asUser(member,async()=>rejected('select save_friendly_result($1,$2,1,0,$3)',[eventA,game.match,request]));
+}));
+
+test('累計更新が失敗したら試合結果・完了状態・操作監査をすべてロールバックする',()=>scenario(async()=>{
+  const game=await createPlayable(), before=await state(), request=id(generatedId++);
+  await db.exec("create function public.reject_test_stats() returns trigger language plpgsql as $$begin raise exception '試験用の累計失敗'; end$$; create trigger test_stats_failure before insert or update on player_stats for each row execute function reject_test_stats();");
+  await asUser(member,async()=>rejected('select save_friendly_result($1,$2,6,4,$3)',[eventA,game.match,request],/試験用/));
+  assert.deepEqual(await state(),before);
+  assert.equal((await db.query('select count(*)::int n from security_p0_history.operations where request_id=$1',[request])).rows[0].n,0);
+}));
+
+test('Roundの2試合目で失敗しても1試合目・Round・参加枠を残さない',()=>scenario(async()=>{
+  const game=await createPlayable(), before=await state();
+  const extra=[...game.cards,{court:2,teamA:[participantB,id(9998)],teamB:[id(9997),id(9996)]}];
+  await asUser(member,async()=>rejected('select create_friendly_round($1,$2,$3,$4)',[eventA,game.expected+1,JSON.stringify(extra),id(generatedId++)]));
+  assert.deepEqual(await state(),before);
+}));
+
+test('Round再送・競合・組合せの途中失敗を原子的に処理する',()=>scenario(async()=>{
+  const game=await createPlayable();
+  const replay=await asUser(member,async()=>(await db.query('select create_friendly_round($1,$2,$3,$4) value',[eventA,game.expected,JSON.stringify(game.cards),game.request])).rows[0].value);
+  assert.deepEqual(replay,game.round);
+  await asUser(sub,async()=>rejected('select create_friendly_round($1,$2,$3,$4)',[eventA,game.expected,JSON.stringify(game.cards),id(generatedId++)],/先にRound/));
+  const before=await state();
+  await asUser(member,async()=>rejected('select set_friendly_lineup($1,$2,$3,$4)',[eventA,game.match,JSON.stringify([game.participantIds[0],game.participantIds[1],participantB,id(9999)]),id(generatedId++)]));
+  assert.deepEqual(await state(),before);
+}));
+
+test('一般・管理者・スーパー管理者も累計の直接改ざんができない',()=>scenario(async()=>{
+  for(const actor of [member,sub,main,superUser]) await asUser(actor,async()=>{
+    await rejected('update player_stats set match_count=999999 where id=$1',[statA]);
+    await rejected('insert into player_stats(club_id,profile_id,match_count) values ($1,$2,999999)',[clubA,member]);
+    await rejected('delete from player_stats where id=$1',[statA]);
+    await rejected('select security_private.refresh_stats($1,$2)',[clubA,[player(member)]]);
+  });
+}));
+
+test('操作RPCでも未ログイン・他グループ・別試合のID差替えを拒否する',()=>scenario(async()=>{
+  const game=await createPlayable();
+  await asUser(null,async()=>rejected('select save_friendly_result($1,$2,6,4,$3)',[eventA,game.match,id(generatedId++)]),'anon');
+  await asUser(otherMain,async()=>rejected('select save_friendly_result($1,$2,6,4,$3)',[eventA,game.match,id(generatedId++)]));
+  await asUser(member,async()=>{
+    await rejected('select save_friendly_result($1,$2,6,4,$3)',[eventA,matchB,id(generatedId++)]);
+    await rejected('select security_private.restore_operation($1,$2)',[game.request,'{}']);
+    await rejected('update matches set completed=true where id=$1',[game.match]);
+  });
+}));
+
+test('承認確認後に戦績が変われば古い確認トークンで統合できない',()=>scenario(async()=>{
+  const source=id(6100);
+  const cm=await asUser(main,async()=>(await db.query('select add_provisional_club_member($1,$2,$3) id',[clubA,'戦績確認対象',source])).rows[0].id);
+  const game=await createPlayable(main,source); await saveResult(game,6,4,main);
+  const request=await asUser(main,async()=>(await db.query('select request_player_profile_link($1,$2,$3) id',[clubA,cm,outsider])).rows[0].id);
+  const preview=await asUser(outsider,async()=>(await db.query('select get_player_profile_link_request($1) value',[request])).rows[0].value);
+  await saveResult(game,4,6,main);
+  const before=await state();
+  await asUser(outsider,async()=>rejected("select review_player_profile_link($1,'approved',$2)",[request,preview.review_token],/確認後に/));
+  assert.deepEqual(await state(),before);
+}));
+
+test('累計の競合統合は変更前後を監査し、承認済み復旧SQLで削除行も戻せる',()=>scenario(async()=>{
+  const source=id(6110);
+  const cm=await asUser(main,async()=>(await db.query('select add_provisional_club_member($1,$2,$3) id',[clubA,'累計引継ぎ対象',source])).rows[0].id);
+  const game=await createPlayable(main,source); await saveResult(game,6,4,main);
+  // 旧形式の既存累計を架空データで再現する。本番への補正ではない。
+  await db.query('insert into player_stats(club_id,profile_id,match_count,win_count) values ($1,$2,2,1)',[clubA,outsider]);
+  const before=await state();
+  const request=await asUser(main,async()=>(await db.query('select request_player_profile_link($1,$2,$3) id',[clubA,cm,outsider])).rows[0].id);
+  const approval=await asUser(outsider,async()=>{
+    const preview=(await db.query('select get_player_profile_link_request($1) value',[request])).rows[0].value;
+    return (await db.query("select review_player_profile_link($1,'approved',$2) value",[request,preview.review_token])).rows[0].value;
+  });
+  assert.equal((await playerStat(outsider)).match_count,3);
+  assert.equal((await db.query("select count(*)::int n from profile_link_private.merge_changes where merge_id=$1 and source_table='player_stats'",[approval.merge_id])).rows[0].n,2);
+  await db.exec('savepoint merge_restore');
+  const restore=mergeRestoreSql(approval.merge_id).replace(/^begin;$/m,'').replace(/rollback;\s*$/,'');
+  await db.exec(restore);
+  assert.deepEqual(await state(),before);
+  await db.exec('rollback to savepoint merge_restore; release savepoint merge_restore');
+}));
+
+test('操作復旧は対象件数を確認し、変更後の記録を壊さず結果・累計を戻す',()=>scenario(async()=>{
+  const game=await createPlayable(), request=id(generatedId++), before=await state();
+  await saveResult(game,6,4,member,request);
+  const counts=(await db.query("select jsonb_object_agg(table_name,n) value from (select table_name,count(*) n from security_private.operation_changes($1) group by table_name) c",[request])).rows[0].value;
+  await db.query('select security_private.restore_operation($1,$2)',[request,counts]);
+  assert.deepEqual(await state(),before);
+  assert((await db.query('select restored_at from security_p0_history.operations where request_id=$1',[request])).rows[0].restored_at);
+}));
+
+test('復旧件数の不一致や後続の記録がある場合は復旧を中止する',()=>scenario(async()=>{
+  const game=await createPlayable(), request=id(generatedId++);
+  await saveResult(game,6,4,member,request);
+  await rejected('select security_private.restore_operation($1,$2)',[request,'{}'],/対象件数/);
+  await saveResult(game,4,6);
+  const counts=(await db.query("select jsonb_object_agg(table_name,n) value from (select table_name,count(*) n from security_private.operation_changes($1) group by table_name) c",[request])).rows[0].value;
+  const before=await state();
+  await rejected('select security_private.restore_operation($1,$2)',[request,counts],/記録が変更/);
+  assert.deepEqual(await state(),before);
+}));
+
+test('第三者グループのINSERTを拒否し、管理グループの相手登録と双方の操作を許可する',()=>scenario(async()=>{
+  const eid=id(6120);
+  await db.query("insert into events(id,club_id,name,court_count,event_mode,created_by_auth_user_id) values ($1,$2,'相手登録',1,'team',$3)",[eid,clubA,main]);
+  await asUser(main,async()=>{
+    await rejected("insert into event_team_sides(event_id,side,club_id) values ($1,'team_b',$2)",[eid,clubB]);
+    await rejected("insert into event_team_sides(event_id,side,club_id) values ($1,'team_b',$2)",[eid,publicClub]);
+    await db.query("insert into event_team_sides(event_id,side,club_id) values ($1,'team_a',$2)",[eid,clubA]);
+    await db.query("insert into event_team_sides(event_id,side,team_name) values ($1,'team_b','グループなしの対戦相手')",[eid]);
+  });
+  await asUser(otherMain,async()=>rejected('insert into event_team_matches(event_id,team_a_score,team_b_score) values ($1,6,4)',[eid]));
+}));
+
+test('グループ作成・管理者登録・未連携追加・改名・役職・退会を維持し物理削除を拒否する',()=>scenario(async()=>{
+  const club=id(6130), pp=id(6131);
+  await asUser(outsider,async()=>{
+    await db.query("insert into clubs(id,name,owner_id) values ($1,'運営確認',$2)",[club,outsider]);
+    await db.query("insert into club_members(club_id,profile_id,player_profile_id,role) values ($1,$2,$3,'main_admin')",[club,outsider,player(outsider)]);
+    await db.query('select add_provisional_club_member($1,$2,$3)',[club,'追加選手',pp]);
+    assert.equal((await db.query('update player_profiles set display_name=$1 where id=$2 returning id',['改名後',pp])).rows.length,1);
+    await db.query("update club_members set role='sub_admin' where club_id=$1 and player_profile_id=$2",[club,pp]);
+    await db.query('update club_members set is_active=false where club_id=$1 and player_profile_id=$2',[club,pp]);
+    await zero('delete from clubs where id=$1 returning id',[club]);
+    await db.query('update clubs set is_active=false where id=$1',[club]);
+  });
+  assert.equal((await db.query('select count(*)::int n from club_members where club_id=$1',[club])).rows[0].n,2);
+}));
+
+test('手動イベントの記録用・公式反映・再開・論理削除で履歴を消さず累計を同期する',()=>scenario(async()=>{
+  const eid=id(6140);
+  await db.query("insert into events(id,club_id,name,court_count,event_mode,stats_mode,created_by_auth_user_id) values ($1,$2,'手動戦',1,'manual','undecided',$3)",[eid,clubA,main]);
+  const before=await playerStat(), game=await createPlayable(member,player(member),eid);
+  await saveResult(game,6,4);
+  assert.deepEqual(await playerStat(),before);
+  await asUser(member,async()=>db.query("update events set status='closed',stats_mode='official' where id=$1",[eid]));
+  assert.equal((await playerStat()).match_count,before.match_count+1);
+  await asUser(main,async()=>db.query("update events set share_enabled=true,share_token='manual-integration-token' where id=$1",[eid]));
+  assert((await shared('manual-integration-token')).matches.length===1);
+  await asUser(member,async()=>db.query("update events set status='active',stats_mode='undecided' where id=$1",[eid]));
+  assert.deepEqual(await playerStat(),before);
+  assert.equal(await shared('manual-integration-token'),null);
+  await asUser(member,async()=>db.query("update events set status='closed',stats_mode='official' where id=$1",[eid]));
+  await asUser(main,async()=>db.query('update events set is_deleted=true,deleted_at=now() where id=$1',[eid]));
+  assert.deepEqual(await playerStat(),before);
+  assert.equal((await db.query('select count(*)::int n from matches where event_id=$1',[eid])).rows[0].n,1);
+}));
+
+test('既存累計に差分があれば勝手に再集計せず承認待ちとして保存を中止する',()=>scenario(async()=>{
+  const game=await createPlayable();
+  await db.query('update player_stats set match_count=999 where id=$1',[statA]);
+  const before=await state();
+  await asUser(member,async()=>rejected('select save_friendly_result($1,$2,6,4,$3)',[eventA,game.match,id(generatedId++)],/補正理由/));
+  assert.deepEqual(await state(),before);
+}));
+
+test('グループと管理者は同時に作成され再送でも重複せず途中失敗も残らない',()=>scenario(async()=>{
+  const request=id(6200);
+  await asUser(outsider,async()=>{
+    const first=(await db.query('select create_friendly_group($1,$2,null,$3) value',[request,'原子的な作成','private'])).rows[0].value;
+    const replay=(await db.query('select create_friendly_group($1,$2,null,$3) value',[request,'原子的な作成','private'])).rows[0].value;
+    assert.deepEqual(first,replay);
+  });
+  assert.equal((await db.query("select count(*)::int n from club_members where club_id=$1 and role='main_admin'",[request])).rows[0].n,1);
+  await db.exec("create function public.reject_test_member() returns trigger language plpgsql as $$begin raise exception '試験用の管理者登録失敗'; end$$; create trigger test_member_failure before insert on club_members for each row execute function reject_test_member();");
+  await asUser(outsider,async()=>rejected('select create_friendly_group($1,$2,null,$3)',[id(6201),'失敗する作成','private'],/試験用/));
+  assert.equal((await db.query('select count(*)::int n from clubs where id=$1',[id(6201)])).rows[0].n,0);
+}));
+
+test('チーム作成もイベント・両サイドを同時に保存し不正な相手指定や途中失敗を残さない',()=>scenario(async()=>{
+  const request=id(6210), sides=[{side:'team_a',club_id:clubA,team_name:'A'},{side:'team_b',club_id:null,team_name:'正当な自由入力の相手'}];
+  await asUser(main,async()=>{
+    const result=(await db.query('select create_friendly_team($1,$2,null,null,$3) value',[request,'チーム作成',JSON.stringify(sides)])).rows[0].value;
+    assert.equal(result.event_id,request);
+    assert.deepEqual((await db.query('select create_friendly_team($1,$2,null,null,$3) value',[request,'チーム作成',JSON.stringify(sides)])).rows[0].value,result);
+    await rejected('select create_friendly_team($1,$2,null,null,$3)',[id(6211),'不正な相手',JSON.stringify([sides[0],{...sides[1],club_id:clubB}])]);
+  });
+  assert.equal((await db.query('select count(*)::int n from event_team_sides where event_id=$1',[request])).rows[0].n,2);
+  assert.equal((await db.query('select count(*)::int n from events where id=$1',[id(6211)])).rows[0].n,0);
+  await db.exec("create function public.reject_test_side() returns trigger language plpgsql as $$begin if new.side='team_b' then raise exception '試験用の相手登録失敗'; end if; return new; end$$; create trigger test_side_failure before insert on event_team_sides for each row execute function reject_test_side();");
+  await asUser(main,async()=>rejected('select create_friendly_team($1,$2,null,null,$3)',[id(6212),'途中失敗',JSON.stringify(sides)],/試験用/));
+  assert.equal((await db.query('select count(*)::int n from events where id=$1',[id(6212)])).rows[0].n,0);
+}));
+
+test('Round作成の操作復旧は新規Round・試合・4枠だけを戻し過去の試合を残す',()=>scenario(async()=>{
+  const game=await createPlayable();
+  const counts=(await db.query("select jsonb_object_agg(table_name,n) value from (select table_name,count(*) n from security_private.operation_changes($1) group by table_name) c",[game.request])).rows[0].value;
+  await db.query('select security_private.restore_operation($1,$2)',[game.request,counts]);
+  assert.equal((await db.query('select count(*)::int n from rounds where id=$1',[game.round.round_id])).rows[0].n,0);
+  assert.equal((await db.query('select count(*)::int n from match_players where match_id=$1',[game.match])).rows[0].n,0);
+  assert.equal((await db.query('select count(*)::int n from matches where id=$1',[matchA])).rows[0].n,1);
+}));
+
+test('監査にない関連試合が増えた場合にイベント復旧の連動削除を拒否する',()=>scenario(async()=>{
+  const request=id(6220), sides=[{side:'team_a',club_id:clubA},{side:'team_b',club_id:null}];
+  await asUser(main,async()=>{
+    await db.query('select create_friendly_team($1,$2,null,null,$3)',[request,'関連履歴を保護',JSON.stringify(sides)]);
+    await db.query('insert into event_team_matches(event_id,match_order) values ($1,1)',[request]);
+  });
+  const counts=(await db.query("select jsonb_object_agg(table_name,n) value from (select table_name,count(*) n from security_private.operation_changes($1) group by table_name) c",[request])).rows[0].value;
+  await rejected('select security_private.restore_operation($1,$2)',[request,counts],/関連履歴/);
+  assert.equal((await db.query('select count(*)::int n from event_team_matches where event_id=$1',[request])).rows[0].n,1);
+}));
+
+test('イベント状態のRPCは一般メンバーの終了・再開を許可し削除を管理者に限定する',()=>scenario(async()=>{
+  await asUser(member,async()=>{
+    await db.query('select change_friendly_event($1,$2,$3,$4)',[eventA,'close','official',id(generatedId++)]);
+    await rejected('select change_friendly_event($1,$2,null,$3)',[eventA,'delete',id(generatedId++)]);
+    await db.query('select change_friendly_event($1,$2,null,$3)',[eventA,'reopen',id(generatedId++)]);
+  });
+  assert.equal((await db.query('select status from events where id=$1',[eventA])).rows[0].status,'active');
+}));
+
+test('別参加IDでも同じ選手を同じRoundへ重複登録できない',()=>scenario(async()=>{
+  const game=await createPlayable(), alias=id(6230);
+  await db.query("insert into event_participants(id,event_id,profile_id,participant_type,status) values ($1,$2,$3,'member','active')",[alias,eventA,member]);
+  const cards=[{court:1,teamA:[game.participantIds[0],alias],teamB:game.participantIds.slice(2)}], before=await state();
+  await asUser(member,async()=>rejected('select create_friendly_round($1,$2,$3,$4)',[eventA,game.expected+1,JSON.stringify(cards),id(generatedId++)],/同一選手/));
+  assert.deepEqual(await state(),before);
+}));
+
+test('戦績のない旧版の加入同意は書き換えずに管理者承認を維持できる',()=>scenario(async()=>{
+  const source=id(6240);
+  await db.query("update clubs set visibility='public' where id=$1",[clubA]);
+  const cm=await asUser(main,async()=>(await db.query('select add_provisional_club_member($1,$2,$3) id',[clubA,'加入申請の仮選手',source])).rows[0].id);
+  const request=await asUser(outsider,async()=>{
+    const preview=(await db.query('select preview_profile_join($1,$2) value',[clubA,cm])).rows[0].value;
+    return (await db.query("select submit_profile_join_request($1,$2,'本人同意',$3) id",[clubA,cm,preview.review_token])).rows[0].id;
+  });
+  await db.query("update join_requests set consent_snapshot=consent_snapshot-'player_stats' where id=$1",[request]);
+  const approval=await asUser(main,async()=>(await db.query("select review_profile_join_request($1,'approved') value",[request])).rows[0].value);
+  assert.equal(approval.status,'approved');
+  assert.equal((await db.query('select player_profile_id from club_members where id=$1',[cm])).rows[0].player_profile_id,player(outsider));
+}));
+
+test('旧同意に含まれていない新形式の累計があれば再同意まで統合を中止する',()=>scenario(async()=>{
+  const source=id(6250);
+  await db.query("update clubs set visibility='public' where id=$1",[clubA]);
+  const cm=await asUser(main,async()=>(await db.query('select add_provisional_club_member($1,$2,$3) id',[clubA,'再同意対象',source])).rows[0].id);
+  const request=await asUser(outsider,async()=>{
+    const preview=(await db.query('select preview_profile_join($1,$2) value',[clubA,cm])).rows[0].value;
+    return (await db.query("select submit_profile_join_request($1,$2,'旧同意',$3) id",[clubA,cm,preview.review_token])).rows[0].id;
+  });
+  await db.query("update join_requests set consent_snapshot=consent_snapshot-'player_stats' where id=$1",[request]);
+  await db.query('insert into player_stats(club_id,profile_id,match_count,win_count) values ($1,$2,1,1)',[clubA,source]);
+  const before=await state();
+  await asUser(main,async()=>rejected("select review_profile_join_request($1,'approved')",[request],/再確認と再申請/));
+  assert.deepEqual(await state(),before);
+}));
+
+test('結果の直接API互換経路でも勝敗をスコアから決定し累計を偽装できない',()=>scenario(async()=>{
+  const game=await createPlayable();
+  await asUser(member,async()=>db.query("insert into match_results(match_id,score_a,score_b,winner_team) values ($1,6,4,'B')",[game.match]));
+  assert.equal((await db.query('select winner_team from match_results where match_id=$1',[game.match])).rows[0].winner_team,'A');
+  assert.equal((await playerStat()).win_count,3);
 }));

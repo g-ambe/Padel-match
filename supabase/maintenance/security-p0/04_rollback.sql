@@ -26,6 +26,9 @@ do $$ declare r record; begin
       and not exists (select 1 from public.profiles p where p.id=s.profile_id)) then
     raise exception '旧アカウント用FKへ戻せない選手IDの戦績があります。データを変更せず復旧を中止します';
   end if;
+  if to_regclass('security_p0_history.operations') is not null and exists (select 1 from security_p0_history.operations where restored_at is null) then
+    raise exception '稼働後の操作履歴があります。互換DBを保持し、操作単位の復旧または前進修正を実施してください';
+  end if;
   -- 追加/削除された列へ古いACLを適用しない。
   for r in select * from security_p0_backup_20261026.columns loop
     if not exists (select 1 from pg_attribute a where a.attrelid=to_regclass(format('%I.%I',r.nspname,r.relname))
@@ -48,7 +51,7 @@ end $$;
 -- まず新policy/triggerへの依存を除く。0039参照保護triggerは維持する。
 do $$ declare r record; roles_sql text; policy_sql text; begin
   for r in select tablename,policyname from pg_policies where schemaname='public'
-    and tablename in ('clubs','events','event_participants','rounds','matches','match_players','match_results','player_stats','event_team_sides') loop
+    and tablename in ('clubs','events','event_participants','rounds','matches','match_players','match_results','player_stats','event_team_sides','event_team_matches','official_events') loop
     execute format('drop policy %I on public.%I',r.policyname,r.tablename);
   end loop;
   for r in select c.relname,t.tgname from pg_trigger t join pg_class c on c.oid=t.tgrelid
@@ -56,7 +59,7 @@ do $$ declare r record; roles_sql text; policy_sql text; begin
     execute format('drop trigger %I on public.%I',r.tgname,r.relname);
   end loop;
   for r in select * from security_p0_backup_20261026.policies
-    where tablename in ('clubs','events','event_participants','rounds','matches','match_players','match_results','player_stats','event_team_sides') loop
+    where tablename in ('clubs','events','event_participants','rounds','matches','match_players','match_results','player_stats','event_team_sides','event_team_matches','official_events') loop
     select string_agg(case when role_name='public' then 'PUBLIC' else quote_ident(role_name) end,',')
       into roles_sql from unnest(r.roles) as role_name;
     policy_sql:=format('create policy %I on %I.%I as %s for %s to %s',r.policyname,r.schemaname,r.tablename,r.permissive,r.cmd,roles_sql);
@@ -66,6 +69,24 @@ do $$ declare r record; roles_sql text; policy_sql text; begin
   end loop;
 end $$;
 
+-- 本人承認の関数を取得時へ戻す。監査行・操作履歴は削除しない。
+do $$ declare f record; begin
+  for f in select definition from security_p0_backup_20261026.functions
+    where (nspname='profile_link_private' and split_part(signature,'(',1) in
+      ('profile_link_private.merge_profiles','profile_link_private.source_snapshot','profile_link_private.preview','profile_link_private.lock_references','profile_link_private.club_role','profile_link_private.notify_admins'))
+      or (nspname='public' and regexp_replace(split_part(signature,'(',1),'^public\.','') in
+      ('add_provisional_club_member','preview_profile_join','request_player_profile_link','review_player_profile_link','submit_profile_join_request','review_profile_join_request')) loop
+    execute replace(f.definition,'CREATE FUNCTION','CREATE OR REPLACE FUNCTION');
+  end loop;
+end $$;
+drop function if exists public.save_friendly_result(uuid,uuid,int,int,uuid);
+drop function if exists public.create_friendly_round(uuid,int,jsonb,uuid);
+drop function if exists public.delete_friendly_match(uuid,uuid,uuid);
+drop function if exists public.set_friendly_lineup(uuid,uuid,jsonb,uuid);
+drop index if exists public.security_p0_one_result_per_match;
+drop function if exists public.create_friendly_group(uuid,text,text,text);
+drop function if exists public.create_friendly_team(uuid,text,text,text,jsonb);
+drop function if exists public.change_friendly_event(uuid,text,text,uuid);
 drop function if exists public.get_shared_event(text);
 -- CASCADEは禁止。想定外の依存があれば中止する。
 do $$ declare r record; begin
@@ -115,6 +136,6 @@ drop policy if exists official_opponents_access on public.official_opponents;
 
 select * from security_p0_backup_20261026.manifest;
 select tablename,policyname,cmd from pg_policies where schemaname='public'
-  and tablename in ('clubs','events','event_participants','rounds','matches','match_players','match_results','player_stats','event_team_sides')
+  and tablename in ('clubs','events','event_participants','rounds','matches','match_players','match_results','player_stats','event_team_sides','event_team_matches','official_events')
 order by tablename,policyname;
 rollback;

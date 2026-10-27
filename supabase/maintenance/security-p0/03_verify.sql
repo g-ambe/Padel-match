@@ -23,6 +23,11 @@ begin
   if to_regprocedure('public.get_shared_event(text)') is null then
     raise exception '共有RPCがありません。共有画面を公開する前にSQLを適用してください';
   end if;
+  if has_table_privilege('authenticated','public.player_stats','INSERT,UPDATE,DELETE')
+    or has_any_column_privilege('authenticated','public.player_stats','INSERT,UPDATE')
+    or has_function_privilege('authenticated','security_private.restore_operation(uuid,jsonb)','EXECUTE') then
+    raise exception '累計の直接書込または復旧機能が一般ユーザーに公開されています';
+  end if;
   if exists (select 1 from pg_constraint c join pg_attribute a on a.attrelid=c.conrelid and a.attname='profile_id'
     where c.conrelid='public.player_stats'::regclass and c.contype='f' and a.attnum=any(c.conkey))
     or (select count(*) from pg_trigger where tgname='security_p0_stats_identity_delete'

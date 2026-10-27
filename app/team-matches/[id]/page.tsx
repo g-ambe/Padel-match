@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
 import { MatchShareButtons } from "@/components/match-share-buttons";
@@ -159,21 +159,32 @@ export default function FriendlyTeamMatchDetailPage() {
     await load();
   };
   const addGuest=async(side:TeamSideKey)=>{ setError(""); setNotice(""); if(!event) return setError("イベント情報を取得できていません"); if(!canManage||event.status==="closed") return setError("この操作を行う権限がありません"); const guestName=guestNames[side].trim(); if(!guestName) return setError("ゲスト名を入力してください"); const supabase=getSupabaseClient(); if(!supabase)return; const { error:e }=await supabase.from("event_team_guests").insert({ event_id:id, side, guest_name:guestName }); if(e) return setError("ゲストの追加に失敗しました"); setGuestNames((prev)=>({...prev,[side]:""})); setNotice("ゲストを追加しました"); await load(); };
-  const closeOrReopen=async(status:"active"|"closed")=>{
-    setError(""); setNotice("");
-    if(!event) return setError("イベント情報を取得できていません");
-    const supabase=getSupabaseClient(); if(!supabase)return;
-    if(status==="closed"&&!window.confirm("フレンドリーチームマッチ終了しますか？"))return;
-    const {error:e}=await supabase.from("events").update({status,stats_mode:status==="closed"?closeMode:"undecided",closed_at:status==="closed"?new Date().toISOString():null,updated_at:new Date().toISOString()}).eq("id",id);
-    if(e){
-      console.error("フレンドリーチームマッチ終了/再開に失敗しました", { message:e.message, code:e.code, details:e.details, hint:e.hint });
-      return setError(status==="closed"?"終了に失敗しました":"再開に失敗しました");
-    }
-    setNotice(status==="closed"?"フレンドリーチームマッチを終了しました":"フレンドリーチームマッチを再開しました");
-    await load();
+  const pendingStates=useRef(new Map<string,string>());
+  const persistState=async(action:"close"|"reopen"|"delete",stats:string|null)=>{
+    const supabase=getSupabaseClient(); if(!supabase)throw new Error("保存先に接続できません");
+    const signature=JSON.stringify([id,action,stats]);
+    const request=pendingStates.current.get(signature)??crypto.randomUUID(); pendingStates.current.set(signature,request);
+    const {error:e}=await supabase.rpc("change_friendly_event",{p_event:id,p_action:action,p_stats:stats,p_request:request});
+    if(e)throw new Error(e.code==="P0001"?e.message:"イベント状態の保存に失敗しました。権限を確認してください");
+    pendingStates.current.delete(signature);
   };
-  const deleteEvent=async()=>{ if(!event)return setError("イベント情報を取得できていません"); if(!deleteOk)return setError("削除確認にチェックしてください"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({is_deleted:true,deleted_at:new Date().toISOString(),share_enabled:false,share_token:null}).eq("id",id); router.push("/team-matches/new"); };
-  const share=async()=>{ if(!event)return setError("イベント情報を取得できていません"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id); await load(); };
+  const closeOrReopen=async(status:"active"|"closed")=>{
+    setError("");setNotice("");
+    if(!event)return setError("イベント情報を取得できていません");
+    if(status==="closed"&&!window.confirm("フレンドリーチームマッチ終了しますか？"))return;
+    try {
+      await persistState(status==="closed"?"close":"reopen",status==="closed"?closeMode:null);
+      setNotice(status==="closed"?"フレンドリーチームマッチを終了しました":"フレンドリーチームマッチを再開しました");
+      await load();
+    } catch(cause){setError(cause instanceof Error?cause.message:"イベント状態の保存に失敗しました");}
+  };
+  const deleteEvent=async()=>{
+    if(!event)return setError("イベント情報を取得できていません");
+    if(!deleteOk)return setError("削除確認にチェックしてください");
+    try {await persistState("delete",null);router.push("/team-matches/new");}
+    catch(cause){setError(cause instanceof Error?cause.message:"イベントの削除に失敗しました");}
+  };
+  const share=async()=>{ if(!event)return setError("イベント情報を取得できていません"); const supabase=getSupabaseClient(); if(!supabase)return; const {error:shareError}=await supabase.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id); if(shareError)return setError("共有リンクの保存に失敗しました"); await load(); };
   const startEventNameEdit=()=>{ if(!event){ setError("イベント情報を取得できていません"); return; } setError(""); setNotice(""); setEventNameDraft(event.name ?? ""); setIsEditingEventName(true); };
   const cancelEventNameEdit=()=>{ setEventNameDraft(""); setIsEditingEventName(false); };
   const saveEventName=async()=>{ setError(""); setNotice(""); if(!event)return setError("イベント情報を取得できていません"); const nextName=eventNameDraft.trim(); if(!nextName)return setError("イベント名を入力してください"); if(nextName.length>80)return setError("イベント名は80文字以内で入力してください"); if(!canManage)return setError("この操作を行う権限がありません"); const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("events").update({name:nextName,updated_at:new Date().toISOString()}).eq("id",id); if(e){ console.error("イベント名の更新に失敗しました", { message:e.message, code:e.code, details:e.details, hint:e.hint }); return setError("更新に失敗しました"); } setEvent((prev)=>prev?{...prev,name:nextName}:prev); setIsEditingEventName(false); setNotice("更新しました"); };

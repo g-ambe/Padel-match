@@ -1,0 +1,20 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {readFileSync}=require('node:fs');
+const {join}=require('node:path');
+const {runInNewContext}=require('node:vm');
+const ts=require('typescript');
+test('DBの匿名書込を使わずゲストの参加・結果・終了・再開をsessionStorageへ保持できる',()=>{
+  const storage=new Map(), exports={};
+  const code=ts.transpileModule(readFileSync(join(__dirname,'../lib/guest-events.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
+  runInNewContext(code,{exports,window:{sessionStorage:{getItem:k=>storage.get(k)??null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)}}});
+  exports.setGuestMode(true);assert.equal(exports.isGuestModeEnabled(),true);
+  const event={id:'guest_test',name:'ゲスト試験',court_count:1,status:'active',event_mode:'auto',stats_mode:'official',created_at:'2026-10-27T00:00:00Z',participants:[1,2,3,4].map(n=>({id:`g${n}`,guest_name:`ゲスト${n}`,status:'active',participant_type:'guest'})),matches:[]};
+  exports.upsertGuestEvent(event);
+  event.matches=[{id:'gm1',court_number:1,round_number:1,completed:true,result:{score_a:6,score_b:4,winner_team:'A'},youtube_url:null,players:[]}];
+  event.status='closed';exports.upsertGuestEvent(event);
+  assert.equal(exports.getGuestEvent('guest_test').matches[0].result.score_a,6);
+  assert.equal(exports.getGuestEvent('guest_test').status,'closed');
+  event.status='active';exports.upsertGuestEvent(event);assert.equal(exports.listGuestEvents().length,1);
+  exports.removeGuestEvent('guest_test');assert.equal(exports.listGuestEvents().length,0);
+});

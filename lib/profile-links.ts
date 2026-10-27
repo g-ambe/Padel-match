@@ -13,6 +13,7 @@ export type ProfileMergePreview = {
   result_count: number;
   team_match_count: number;
   official_match_count: number;
+  stats_count?: number;
   review_token: string;
 };
 export type ProfileLinkRequest = {

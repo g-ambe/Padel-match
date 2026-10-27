@@ -57,6 +57,36 @@ select id,club_id,created_by_auth_user_id from public.events
 where club_id is null and created_by_auth_user_id is null;
 select club_id,profile_id,count(*) from public.player_stats
 group by club_id,profile_id having count(*)>1;
+-- 以下は補正候補の算出だけ。保存値を更新・統合・削除しない。
+select match_id,count(*) as result_rows from public.match_results group by match_id having count(*)>1;
+select id,match_id from public.match_results where winner_team is distinct from
+  case when score_a=score_b then 'draw' when score_a>score_b then 'A' else 'B' end;
+select r.id,r.event_id,r.round_number from public.rounds r where not exists(select 1 from public.matches m where m.round_id=r.id);
+with canonical_stats as (
+  select s.*,coalesce(p.id,a.id,s.profile_id) as player_id from public.player_stats s
+  left join public.player_profiles p on p.id=s.profile_id
+  left join public.player_profiles a on a.linked_auth_user_id=s.profile_id and a.is_active
+), actual as (
+  select e.club_id,coalesce(ep.player_profile_id,p.id,ep.profile_id) as player_id,
+    count(distinct m.id) as played,count(distinct m.id) filter(where mr.winner_team=mp.team) as wins,
+    count(distinct m.id) filter(where mr.winner_team<>'draw' and mr.winner_team<>mp.team) as losses
+  from public.matches m join public.events e on e.id=m.event_id join public.match_results mr on mr.match_id=m.id
+  join public.match_players mp on mp.match_id=m.id join public.event_participants ep on ep.id=mp.participant_id and ep.event_id=e.id
+  left join public.player_profiles p on p.linked_auth_user_id=ep.profile_id and p.is_active
+  where m.completed and not e.is_deleted and e.stats_mode='official'
+  group by e.club_id,coalesce(ep.player_profile_id,p.id,ep.profile_id)
+)
+select s.id,s.club_id,s.profile_id,s.match_count,s.win_count,s.loss_count,
+  coalesce(a.played,0) as proposed_matches,coalesce(a.wins,0) as proposed_wins,coalesce(a.losses,0) as proposed_losses
+from canonical_stats s left join actual a on a.club_id=s.club_id and a.player_id=s.player_id
+where s.club_id is not null and (s.match_count,s.win_count,s.loss_count) is distinct from
+  (coalesce(a.played,0),coalesce(a.wins,0),coalesce(a.losses,0));
+with canonical_stats as (
+  select s.club_id,coalesce(p.id,a.id,s.profile_id) as player_id from public.player_stats s
+  left join public.player_profiles p on p.id=s.profile_id
+  left join public.player_profiles a on a.linked_auth_user_id=s.profile_id and a.is_active
+)
+select club_id,player_id,count(*) as alias_rows from canonical_stats group by club_id,player_id having count(*)>1;
 select pg_get_triggerdef(t.oid) as trigger_definition
 from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace
 where n.nspname='public' and not t.tgisinternal order by c.relname,t.tgname;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -13,6 +13,8 @@ export default function NewGroupPage() {
   const [visibility, setVisibility] = useState<"private" | "public">("private");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+
+  const pendingCreate = useRef<{ signature: string; request: string } | null>(null);
 
   const createGroup = async () => {
     if (creating) return;
@@ -32,16 +34,14 @@ export default function NewGroupPage() {
       if (!profile.is_active) return setError("この選手は無効になっています。プロフィールの連携を管理者に確認してください");
       await ensureAccountProfile(supabase, userId, profile.display_name, userRes.user?.email ?? null);
 
-      const { data: club, error: clubErr } = await supabase
-        .from("clubs")
-        .insert({ name: name.trim(), description: description.trim() || null, owner_id: userId, is_active: true, visibility })
-        .select("id")
-        .single();
-      if (clubErr || !club?.id) return setError("グループ作成に失敗しました");
-
-      const { error: memberError } = await supabase.from("club_members").insert({ club_id: club.id, profile_id: userId, player_profile_id: profile.id, role: "main_admin", is_active: true });
-      if (memberError) return setError("グループは作成されましたが、管理者の登録に失敗しました。再作成せず管理者に確認してください");
-      router.push(`/groups/${club.id}`);
+      const signature = JSON.stringify([name.trim(), description.trim(), visibility]);
+      if (pendingCreate.current?.signature !== signature) pendingCreate.current = { signature, request: crypto.randomUUID() };
+      const { data: club, error: clubErr } = await supabase.rpc("create_friendly_group", {
+        p_request: pendingCreate.current.request, p_name: name.trim(), p_description: description.trim() || null, p_visibility: visibility
+      });
+      if (clubErr || !club?.club_id) return setError(clubErr?.code === "P0001" ? clubErr.message : "グループと管理者の登録に失敗しました。再試行してください");
+      pendingCreate.current = null;
+      router.push(`/groups/${club.club_id}`);
     } catch (cause) {
       console.error("グループ作成時のプロフィール確認に失敗しました", cause);
       setError(profileErrorMessage(cause));

@@ -11,7 +11,9 @@
     "cf": "npm run cf:build",
     "deploy": "opennextjs-cloudflare deploy",
     "preview": "opennextjs-cloudflare preview",
-    "cf:build": "opennextjs-cloudflare build"
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:build:staging": "node scripts/check-staging-build-env.cjs && opennextjs-cloudflare build --config wrangler.staging.jsonc",
+    "deploy:staging": "npm run cf:build:staging && opennextjs-cloudflare deploy --config wrangler.staging.jsonc"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",

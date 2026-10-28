@@ -241,7 +241,8 @@ create trigger security_minimal_event before insert or update on public.events f
 do $$ declare t text; args text; begin
   foreach t in array array['event_participants','match_results','event_team_sides'] loop
     args := case t
-      when 'event_participants' then '''id'',''event_id'',''created_at'''
+      -- 通常APIの人物付け替えを拒否する。0039の承認済み統合は既存の実行ロール判定で維持する。
+      when 'event_participants' then '''id'',''event_id'',''created_at'',''player_profile_id'',''profile_id'',''participant_type'''
       when 'match_results' then '''id'',''match_id'',''created_at'''
       when 'event_team_sides' then '''id'',''event_id'',''side'',''created_at'''
       else '''id'',''event_id'',''created_at''' end;

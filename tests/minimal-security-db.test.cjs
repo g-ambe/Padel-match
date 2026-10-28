@@ -724,11 +724,53 @@ test('認証UIDと別人の選手IDが同値でも、別グループの仮選手
 
 test('旧profile_idだけの参加者も、選手IDだけの所属に対応して保存・再参加できる',()=>scenario(async()=>{
  const game=await createPlayable(main,player(linkedMember));
- await asUser(main,async()=>db.query('update event_participants set player_profile_id=null,profile_id=$1 where id=$2',[linkedMember,game.participantIds[0]]));
+ // 適用前から存在する旧形式をDB所有者で用意する。通常APIでのID付け替えには依存しない。
+ await db.query('update event_participants set player_profile_id=null,profile_id=$1 where id=$2',[linkedMember,game.participantIds[0]]);
  await saveResult(game,6,4,main);
  assert.deepEqual(await totals(player(linkedMember)),{played:1,wins:1});
  const next=await asUser(main,async()=>(await db.query('select create_friendly_round($1,$2,$3,$4) value',[eventA,game.expected+1,JSON.stringify(game.cards),id(generatedId++)])).rows[0].value);
  const mid=(await db.query('select id from matches where round_id=$1',[next.round_id])).rows[0].id;
  await saveResult({event:eventA,match:mid},4,6,main);
  assert.deepEqual(await totals(player(linkedMember)),{played:2,wins:1});
+}));
+
+for(const [label,actor] of [['一般メンバー',member],['管理者',main]])
+test(`${label}も参加者の人物ID・種別を直接付け替えられず、過去の戦績を移せない`,()=>scenario(async()=>{
+ const game=await createPlayable();await saveResult(game,6,4);
+ const legacy=id(generatedId++),guest=game.participantIds[1];
+ await db.query("insert into event_participants(id,event_id,profile_id,participant_type,status) values($1,$2,$3,'member','active')",[legacy,eventA,member]);
+ const before=await state(),ownTotals=await totals(player(member)),otherTotals=await totals(player(main));
+ await asUser(actor,async()=>{
+  for(const [sql,args] of [
+   ['update event_participants set player_profile_id=$1 where id=$2',[player(main),game.participantIds[0]]],
+   ['update event_participants set profile_id=$1 where id=$2',[main,legacy]],
+   ['update event_participants set player_profile_id=$1,profile_id=$2 where id=$3',[player(main),main,game.participantIds[0]]],
+   ['update event_participants set player_profile_id=null where id=$1',[game.participantIds[0]]],
+   ['update event_participants set profile_id=null where id=$1',[legacy]],
+   ["update event_participants set participant_type='guest' where id=$1",[game.participantIds[0]]],
+   ["update event_participants set participant_type='guest',player_profile_id=null,profile_id=null where id=$1",[game.participantIds[0]]],
+   ["update event_participants set participant_type='member' where id=$1",[guest]],
+   ["update event_participants set participant_type='member',player_profile_id=$1,profile_id=$2 where id=$3",[player(main),main,guest]],
+   ["update event_participants set player_profile_id=$1,status='resting' where id=$2",[player(main),game.participantIds[0]]]
+  ]) await rejected(sql,args,{code:'42501'});
+ });
+ assert.deepEqual(await state(),before,'拒否した操作で人物・試合・戦績を変更しない');
+ assert.deepEqual(await totals(player(member)),ownTotals);assert.deepEqual(await totals(player(main)),otherTotals);
+}));
+
+test('人物IDを固定しても一般メンバーの状態・ゲスト名・採点前組合せ・スコア再編集を維持する',()=>scenario(async()=>{
+ const game=await createPlayable(),before=(await db.query('select id,profile_id,player_profile_id,participant_type from event_participants where id=any($1::uuid[]) order by id',[game.participantIds])).rows;
+ await asUser(member,async()=>{
+  const participant=game.participantIds[0],guest=game.participantIds[1];
+  assert.equal((await db.query("update event_participants set status='resting' where id=$1 returning status",[participant])).rows[0].status,'resting');
+  assert.equal((await db.query("update event_participants set status='active',player_profile_id=$1,profile_id=null,participant_type='member' where id=$2 returning status",[player(member),participant])).rows[0].status,'active','人物IDの同値送信は状態変更を妨げない');
+  assert.equal((await db.query("update event_participants set guest_name='変更後ゲスト' where id=$1 returning guest_name",[guest])).rows[0].guest_name,'変更後ゲスト');
+  const players=[game.participantIds[2],game.participantIds[1],game.participantIds[0],game.participantIds[3]];
+  await db.query('select set_friendly_lineup($1,$2,$3,$4)',[eventA,game.match,JSON.stringify(players),id(generatedId++)]);
+  assert.equal((await db.query("select team from match_players where match_id=$1 and participant_id=$2",[game.match,participant])).rows[0].team,'B');
+ });
+ assert.deepEqual((await db.query('select id,profile_id,player_profile_id,participant_type from event_participants where id=any($1::uuid[]) order by id',[game.participantIds])).rows,before);
+ await saveResult(game,6,4);await saveResult(game,4,6);
+ assert.equal((await db.query('select count(*)::int n from match_results where match_id=$1',[game.match])).rows[0].n,1);
+ assert.deepEqual((await db.query('select score_a,score_b,winner_team from match_results where match_id=$1',[game.match])).rows[0],{score_a:4,score_b:6,winner_team:'B'});
 }));

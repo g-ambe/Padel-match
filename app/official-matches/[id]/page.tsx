@@ -9,6 +9,7 @@ import { MatchShareButtons } from "@/components/match-share-buttons";
 import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { buildOfficialStats, createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
+import { ScoreInput } from "@/components/score-input";
 import { storedTeamShareScore } from "@/lib/match-share-text";
 
 type MemberOption = { playerProfileId: string; displayName: string | null };
@@ -409,16 +410,8 @@ function MatchFormView({ title, members, form, onChange, onSave, onCancel }: { t
 
       <section className={sectionClass}>
         <p className="text-xs font-bold text-zinc-400">スコア</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="space-y-2">
-            <label className={labelClass}>自チーム得点</label>
-            <input className={fieldClass} inputMode="numeric" placeholder="自チーム得点" value={form.ourScore} onChange={(e) => onChange({ ourScore: e.target.value }, true)} />
-          </div>
-          <div className="space-y-2">
-            <label className={labelClass}>相手チーム得点</label>
-            <input className={fieldClass} inputMode="numeric" placeholder="相手チーム得点" value={form.opponentScore} onChange={(e) => onChange({ opponentScore: e.target.value }, true)} />
-          </div>
-        </div>
+        <ScoreInput value={{ a: form.ourScore, b: form.opponentScore }} labels={["自チーム", "相手チーム"]}
+          onChange={scores => onChange({ ourScore: scores.a, opponentScore: scores.b }, true)} />
         <div className="space-y-2">
           <label className={labelClass}>結果</label>
           <select className={fieldClass} value={form.result} onChange={(e) => onChange({ result: e.target.value as ResultValue })}>

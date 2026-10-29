@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
+import { ScoreInput } from "@/components/score-input";
+import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
 import { MatchShareButtons } from "@/components/match-share-buttons";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
@@ -81,7 +83,7 @@ export default function EventDetailPage() {
   const [eventNameDraft, setEventNameDraft] = useState("");
   const [isGeneratingRound, setIsGeneratingRound] = useState(false);
   const [roundUserId, setRoundUserId] = useState<string | null>(null);
-  const [roundModeSelection, setRoundModeSelection] = useState<{ eventId: string; mode: FriendlyRoundMode }>({ eventId: "", mode: "normal" });
+  const [roundModeSelection, setRoundModeSelection] = useState<{ eventId: string; userId: string; mode: FriendlyRoundMode }>({ eventId: "", userId: "", mode: "normal" });
   const [eventMode, setEventMode] = useState<EventMode>("auto");
   const [eventClubId, setEventClubId] = useState<string | null>(null);
   const [statsMode, setStatsMode] = useState<StatsMode>("official");
@@ -183,10 +185,16 @@ export default function EventDetailPage() {
   const displayedMatches = useMemo(() => (showAllRounds ? sortedMatches : sortedMatches.slice(0, 5)), [showAllRounds, sortedMatches]);
   const scoredMatchCount = useMemo(() => scoredFriendlyMatches(eventId, matches, new Set(participants.map(p => p.id))).length, [eventId, matches, participants]);
   const specialModesUnlocked = scoredMatchCount >= FRIENDLY_MODE_UNLOCK_MATCHES;
-  const selectedRoundMode = roundModeSelection.eventId === eventId && specialModesUnlocked ? roundModeSelection.mode : "normal";
+  const selectedRoundMode = roundModeSelection.eventId === eventId && roundModeSelection.userId === roundUserId ? roundModeSelection.mode : "normal";
   useEffect(() => {
-    if (!specialModesUnlocked) setRoundModeSelection({ eventId, mode: "normal" });
-  }, [eventId, specialModesUnlocked]);
+    setRoundModeSelection({ eventId, userId: roundUserId ?? "", mode: readRoundMode(roundUserId ?? "", eventId) });
+  }, [eventId, roundUserId]);
+
+  const selectRoundMode = (mode: FriendlyRoundMode) => {
+    if (!roundUserId) return;
+    setRoundModeSelection({ eventId, userId: roundUserId, mode });
+    rememberRoundMode(roundUserId, eventId, mode);
+  };
 
   const loadAll = async () => {
     if (typeof eventId === "string" && eventId.startsWith("guest_")) {
@@ -965,9 +973,8 @@ export default function EventDetailPage() {
     const historyMatches: MatchView[] = (matchesResult.data ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url, round_number: roundMap.get(m.round_id) ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
     const knownIds = new Set((participantsResult.data ?? []).map(p => p.id as string));
     if (requestedMode !== "normal" && scoredFriendlyMatches(eventId, historyMatches, knownIds).length < FRIENDLY_MODE_UNLOCK_MATCHES) {
-      setRoundModeSelection({ eventId, mode: "normal" });
       await loadAll();
-      throw new Error("スコア登録済み試合が10試合未満になったため、通常モードに戻しました");
+      throw new Error("スコア登録済み試合が10試合未満になったため、選択中の特別モードは利用できません。通常モードを選択するかスコアを登録してください");
     }
     const members = currentEvent.club_id ? await fetchActiveClubMemberParticipants(supabase, currentEvent.club_id) : [];
     const memberIds = new Set(members.map(member => member.playerProfileId));
@@ -1003,7 +1010,6 @@ export default function EventDetailPage() {
       if (playersError) throw new Error("出場選手の保存に失敗しました。画面を更新して作成状況を確認してください");
     }
 
-    setRoundModeSelection({ eventId, mode: "normal" });
     await loadAll();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Round生成に失敗しました。再試行してください");
@@ -1332,9 +1338,9 @@ export default function EventDetailPage() {
                   <button className="mb-2 rounded border border-zinc-500 px-3 py-2 text-xs" onClick={() => startLineupEdit(m)}>組み合わせ編集</button>
                 ) : null)}
                 <div className="flex items-center gap-2">
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="A" value={scoreInputs[m.id]?.a ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: e.target.value === "" ? "" : Number(e.target.value), b: prev[m.id]?.b ?? "" } }))} />
-                  <span>-</span>
-                  <input type="number" className="w-16 rounded bg-zinc-700 p-2" placeholder="B" value={scoreInputs[m.id]?.b ?? ""} disabled={m.completed && !editingMatchIds[m.id]} onChange={(e) => setScoreInputs((prev) => ({ ...prev, [m.id]: { a: prev[m.id]?.a ?? "", b: e.target.value === "" ? "" : Number(e.target.value) } }))} />
+                  <ScoreInput value={{ a: String(scoreInputs[m.id]?.a ?? ""), b: String(scoreInputs[m.id]?.b ?? "") }} kind="number"
+                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={(m.completed && !editingMatchIds[m.id]) || eventStatus === "closed"}
+                    onChange={scores => setScoreInputs(previous => ({ ...previous, [m.id]: { a: scores.a.trim() === "" ? "" : Number(scores.a), b: scores.b.trim() === "" ? "" : Number(scores.b) } }))} />
                   <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={(m.completed && !editingMatchIds[m.id]) || eventStatus === "closed"}>{m.completed && !editingMatchIds[m.id] ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
                   {m.completed && eventStatus !== "closed" && (
                     <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
@@ -1370,7 +1376,7 @@ export default function EventDetailPage() {
             {friendlyRoundModes.map(mode => {
               const locked = mode.value !== "normal" && !specialModesUnlocked;
               return <label key={mode.value} className={`flex min-h-11 items-center gap-3 rounded-xl border border-zinc-700 px-3 py-2 text-sm ${locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}>
-                <input type="radio" name="friendly-round-mode" value={mode.value} checked={selectedRoundMode === mode.value} disabled={locked} onChange={() => setRoundModeSelection({ eventId, mode: mode.value })} />
+                <input type="radio" name="friendly-round-mode" value={mode.value} checked={selectedRoundMode === mode.value} disabled={locked} onChange={() => selectRoundMode(mode.value)} />
                 <span>{locked && <span aria-hidden="true">🔒 </span>}{mode.label}</span>
               </label>;
             })}

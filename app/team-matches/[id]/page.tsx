@@ -71,7 +71,7 @@ export default function FriendlyTeamMatchDetailPage() {
     setGroups(access.groups.filter((g)=>access.superUser||g.role!=="member"));
     const { data:e }=await supabase.from("events").select("id,name,status,club_id,description,memo,stats_mode,share_enabled,share_token,created_by_auth_user_id,is_deleted,event_mode").eq("id",id).eq("event_mode","team").maybeSingle();
     const row=e as any as EventRow|null;
-    if(!row || row.is_deleted){ setError("フレンドリーチームマッチが見つかりません"); return; }
+    if(!row || row.is_deleted){ setEvent(null); setMatches([]); setError("フレンドリーチームマッチが見つかりません"); return; }
     const { data:ss }=await supabase.from("event_team_sides").select("id,side,club_id,team_name").eq("event_id",id);
     const sideRows=(ss??[]) as Side[];
     const creator=access.uid===row.created_by_auth_user_id;
@@ -166,7 +166,7 @@ export default function FriendlyTeamMatchDetailPage() {
     setNotice(status==="closed"?"フレンドリーチームマッチを終了しました":"フレンドリーチームマッチを再開しました");
     await load();
   };
-  const deleteEvent=async()=>{ if(!event)return setError("イベント情報を取得できていません"); if(!deleteOk)return setError("削除確認にチェックしてください"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({is_deleted:true,deleted_at:new Date().toISOString(),share_enabled:false,share_token:null}).eq("id",id); router.push("/team-matches/new"); };
+  const deleteEvent=async()=>{ if(!event)return setError("イベント情報を取得できていません"); if(!canManage)return setError("この操作を行う権限がありません"); if(!deleteOk)return setError("削除確認にチェックしてください"); const supabase=getSupabaseClient(); if(!supabase)return; const {error:e,count}=await supabase.from("events").update({is_deleted:true,deleted_at:new Date().toISOString(),share_enabled:false,share_token:null},{count:"exact"}).eq("id",id).eq("is_deleted",false); if(e||count!==1)return setError("フレンドリーチームマッチの削除に失敗しました"); router.push("/team-matches/new"); };
   const share=async()=>{ if(!event)return setError("イベント情報を取得できていません"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id); await load(); };
   const startEventNameEdit=()=>{ if(!event){ setError("イベント情報を取得できていません"); return; } setError(""); setNotice(""); setEventNameDraft(event.name ?? ""); setIsEditingEventName(true); };
   const cancelEventNameEdit=()=>{ setEventNameDraft(""); setIsEditingEventName(false); };

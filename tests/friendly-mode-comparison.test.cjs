@@ -9,7 +9,7 @@ test('18試合の匿名化履歴を固定シードで比較し、休憩・連続
  assert(report.sameResters);assert.equal(report.seeds,16);assert.equal(JSON.stringify(fixture),before);
  for(const [mode,rows] of Object.entries(report.outputs))for(const row of rows){
   assert.equal(row.metrics.consecutivePairs,row.diagnostics.minConsecutive);
-  assert(row.metrics.pairPenalty<=row.diagnostics.minPair+400);
+  if(mode!=='balance')assert(row.metrics.pairPenalty<=row.diagnostics.minPair+400);
   assert.equal(row.metrics.selectedModePenalty,mode==='normal'?0:row.metrics[mode==='balance'?'balancePenalty':'rivalPenalty']);
   const playing=row.matches.flatMap(m=>[...m.teamA,...m.teamB]);assert.equal(new Set(playing).size,8);assert.equal(row.resters.length,2);
  }

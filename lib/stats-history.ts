@@ -26,12 +26,14 @@ type StatsMatch = { id: string; event_id: string; completed: boolean; match_play
 
 // 個人・グループ共通の正式戦績対象。参加者の所属判定や計算式は各画面に残す。
 // チーム戦の試合は別テーブルのため、ここで通常戦績へ読み込まない。
-export async function fetchCountedFriendlyEvents(s: SupabaseClient, scope: { clubId: string } | { eventIds: string[] }): Promise<StatsEvent[]> {
+export async function fetchCountedFriendlyEvents(s: SupabaseClient, scope: { clubId: string } | { eventIds: string[] }, limits?: { before: string; excludeId: string; ordinaryOnly: true }): Promise<StatsEvent[]> {
   const query = (start: number, end: number, ids?: string[]) => {
     let events = s.from("events").select("id,name,created_at,status")
       .eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official");
     if ("clubId" in scope) events = events.eq("club_id", scope.clubId);
     if (ids) events = events.in("id", ids);
+    // バランスペアの過去評価だけに適用。従来の戦績画面の対象条件は変えない。
+    if (limits) events = events.lt("created_at", limits.before).neq("id", limits.excludeId).in("event_mode", ["auto", "manual"]);
     return events.order("created_at", { ascending: false }).order("id").range(start, end);
   };
   return "clubId" in scope

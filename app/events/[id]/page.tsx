@@ -18,6 +18,7 @@ import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { FRIENDLY_MODE_UNLOCK_MATCHES, friendlyRoundModes, generateFriendlyRound, scoredFriendlyMatches, type FriendlyRoundMode } from "@/lib/friendly-rounds";
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { readEventCourts, saveEventCourts, validCourtCount } from "@/lib/event-courts";
+import { fetchBalancePastStats } from "@/lib/friendly-balance-history";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
 type TeamResult = "A" | "B" | "draw";
@@ -1077,7 +1078,7 @@ export default function EventDetailPage() {
     const requestedMode = selectedRoundMode;
     // 実行時の状態・参加者・スコアを確認する。履歴取得は既存の問い合わせを拡張する。
     const [eventResult, roundsResult, matchesResult, participantsResult] = await Promise.all([
-      supabase.from("events").select("status,is_deleted,event_mode,court_count,club_id").eq("id", eventId).single(),
+      supabase.from("events").select("status,is_deleted,event_mode,court_count,club_id,created_at").eq("id", eventId).single(),
       readFriendlyRoundRows((start, end) => supabase.from("rounds").select("id,round_number").eq("event_id", eventId).order("round_number", { ascending: true }).order("id").range(start, end)),
       readFriendlyRoundRows((start, end) => supabase.from("matches").select("id,event_id,round_id,court_number,created_at,completed,youtube_url,match_players(participant_id,team),match_results(id,score_a,score_b,winner_team)").eq("event_id", eventId).order("id").range(start, end)),
       readFriendlyRoundRows((start, end) => supabase.from("event_participants").select("id,status,participant_type,player_profile_id,profile_id").eq("event_id", eventId).order("created_at", { ascending: true }).order("id", { ascending: true }).range(start, end)),
@@ -1106,7 +1107,9 @@ export default function EventDetailPage() {
     const members = currentEvent.club_id ? await fetchActiveClubMemberParticipants(supabase, currentEvent.club_id) : [];
     const memberIds = new Set(members.map(member => member.playerProfileId));
     const activeIds = (participantsResult.data ?? []).filter(p => p.status === "active" && (p.participant_type === "guest" || !currentEvent.club_id || memberIds.has(p.player_profile_id ?? p.profile_id))).map(p => p.id as string);
-    const generated = generateFriendlyRound({ eventId, participantIds: activeIds, knownParticipantIds: knownIds, courtCount: currentEvent.court_count, lastRound: lastRoundNumber, history: historyMatches, mode: requestedMode });
+    const playedToday = requestedMode === "balance" ? new Set(scoredFriendlyMatches(eventId, historyMatches, knownIds).flatMap(match => match.players.map(p => p.participant_id))) : null;
+    const pastFormStats = requestedMode === "balance" ? await fetchBalancePastStats(supabase, { id: eventId, club_id: currentEvent.club_id, created_at: currentEvent.created_at }, (participantsResult.data ?? []).filter(p => activeIds.includes(p.id) && playedToday?.has(p.id))) : undefined;
+    const generated = generateFriendlyRound({ eventId, participantIds: activeIds, knownParticipantIds: knownIds, courtCount: currentEvent.court_count, lastRound: lastRoundNumber, history: historyMatches, mode: requestedMode, pastFormStats });
     const bestMatches = generated.matches;
 
     const roundNumber = lastRoundNumber + 1;

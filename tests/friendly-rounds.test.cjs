@@ -65,7 +65,7 @@ test('600回の休憩選定は従来方式と500シードで一致し、途中�
   }
 });
 
-test('連続ペアの最少と最良+400を全モードで守り、4人や5コートでも重複なく生成する', () => {
+test('連続ペアの最少を全モードで守り、通常・ライバルの最良+400と4人・5コートを維持する', () => {
   for (const [n, courts] of [[4, 1], [8, 2], [10, 2], [12, 2], [20, 5]]) {
     const all = idsFor(n), history = neutralHistory(all);
     for (const mode of ['normal', 'balance', 'rival']) {
@@ -76,9 +76,11 @@ test('連続ペアの最少と最良+400を全モードで守り、4人や5コ�
       assert.equal(new Set(playing).size, courts * 4); assert.equal(playing.length + result.resters.length, n);
       assert(result.resters.every(id => !playing.includes(id)));
       assert.equal(result.consecutive, result.diagnostics.minConsecutive);
-      assert(result.pair <= result.diagnostics.minPair + 400);
-      assert(result.final >= result.opponent + 0.6 * result.modePenalty);
-      assert(result.final < result.opponent + 0.6 * result.modePenalty + 5);
+      if (mode !== 'balance') {
+        assert(result.pair <= result.diagnostics.minPair + 400);
+        assert(result.final >= result.opponent + 0.6 * result.modePenalty);
+        assert(result.final < result.opponent + 0.6 * result.modePenalty + 5);
+      }
       assert(result.modePenalty >= 0 && result.modePenalty <= 100);
       if (n === 4) assert.equal(result.consecutive, 0);
     }

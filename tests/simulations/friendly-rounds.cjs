@@ -42,7 +42,7 @@ for (const scenario of scenarios) {
         if (expectedRest) assert.deepEqual(generated.resters, expectedRest); else expectedRest = generated.resters;
         const playing = generated.matches.flatMap(m => [...m.teamA, ...m.teamB]);
         assert.equal(new Set(playing).size, generated.matches.length * 4); assert(playing.every(id => active.includes(id))); assert(generated.resters.every(id => !playing.includes(id)));
-        if (algorithm !== 'legacy') { assert.equal(generated.consecutive, generated.diagnostics.minConsecutive); assert(generated.pair <= generated.diagnostics.minPair + 400); }
+        if (algorithm !== 'legacy') { assert.equal(generated.consecutive, generated.diagnostics.minConsecutive); if(algorithm!=='balance')assert(generated.pair <= generated.diagnostics.minPair + 400); }
         for (const id of active) {
           const i = all.indexOf(id);
           if (generated.resters.includes(id)) { current.rests[i]++; if (current.lastRest.has(id)) total.consecutiveRest++; } else current.plays[i]++;

@@ -2,11 +2,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 const { createClient } = require('@supabase/supabase-js');
-require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./friendly-round-history','./permissions'].includes(specifier) ? specifier + '.ts' : specifier, context); } });
+require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./friendly-round-history','./permissions','./stats-history','./friendly-match-results'].includes(specifier) ? specifier + '.ts' : specifier, context); } });
 const history = require('../../lib/stats-history.ts');
 const results = require('../../lib/friendly-match-results.ts');
 const { readProfileRows } = require('../../lib/player-profiles.ts');
 const eventCourts = require('../../lib/event-courts.ts');
+const { fetchBalancePastStats } = require('../../lib/friendly-balance-history.ts');
 
 // Reactを偽装せず、画面が実行する関数そのものをASTから取り出して検証する。
 function expression(source, name) {
@@ -25,7 +26,7 @@ function expression(source, name) {
 }
 function evaluate(source, name, bindings = {}) {
   const code = ts.transpileModule(`module.exports = (${expression(source, name)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const values = { ...results, ...history, ...eventCourts, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
+  const values = { ...results, ...history, ...eventCourts, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
   const module = { exports: {} };
   new Function('module', ...Object.keys(values), code)(module, ...Object.values(values));
   return module.exports;
@@ -54,6 +55,8 @@ function database(tables, options = {}) {
           const owner = value.match(/profile_id\.eq\.([^,)]+)/)?.[1];
           rows = rows.filter(row => ids.includes(row.player_profile_id) || row.profile_id === owner);
         } else if (value.startsWith('eq.')) rows = rows.filter(row => String(row[key]) === value.slice(3));
+        else if (value.startsWith('neq.')) rows = rows.filter(row => String(row[key]) !== value.slice(4));
+        else if (value.startsWith('lt.')) rows = rows.filter(row => row[key] != null && String(row[key]) < value.slice(3));
         else if (value.startsWith('in.(')) {
           const values = value.slice(4,-1).split(',');
           rows = rows.filter(row => values.includes(String(row[key])));

@@ -17,6 +17,7 @@ export type FriendlyRoundHistory = {
   result?: { score_a: unknown; score_b: unknown } | null;
 };
 export type FriendlyRoundMatch = { teamA: [string, string]; teamB: [string, string]; court: number };
+export type FriendlyFormStat = { wins: number; draws: number; played: number; diff: number };
 type Teams = { teamA: [string, string]; teamB: [string, string] };
 export const friendlyPairKey = (a: string, b: string) => JSON.stringify([a, b].sort());
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
@@ -33,6 +34,10 @@ export function scoredFriendlyMatches(eventId: string, history: readonly Friendl
   return history.filter(match => match.event_id === eventId && validFriendlyTeams(match, knownIds) && hasEnteredFriendlyMatchScore(match) && Number.isSafeInteger(match.result.score_a) && Number.isSafeInteger(match.result.score_b) && match.result.score_a >= 0 && match.result.score_b >= 0);
 }
 
+export function friendlyFormScore(row: FriendlyFormStat) {
+  return row.played ? clamp(100 * (row.wins + 0.5 * row.draws + 2) / (row.played + 4) + 2 * clamp(row.diff / row.played, -4, 4)) : 50;
+}
+
 export function friendlyFormScores(eventId: string, history: readonly FriendlyRoundHistory[], knownIds: ReadonlySet<string>) {
   const stats = new Map([...knownIds].map(id => [id, { wins: 0, draws: 0, played: 0, diff: 0 }]));
   for (const match of scoredFriendlyMatches(eventId, history, knownIds)) {
@@ -45,7 +50,16 @@ export function friendlyFormScores(eventId: string, history: readonly FriendlyRo
       if (diff === 0) row.draws++;
     }
   }
-  return new Map([...stats].map(([id, row]) => [id, row.played ? clamp(100 * (row.wins + 0.5 * row.draws + 2) / (row.played + 4) + 2 * clamp(row.diff / row.played, -4, 4)) : 50]));
+  return new Map([...stats].map(([id, row]) => [id, friendlyFormScore(row)]));
+}
+
+export function friendlyBalanceStrengths(today: ReadonlyMap<string, number>, past?: ReadonlyMap<string, FriendlyFormStat>, playedToday?: ReadonlySet<string>) {
+  return new Map([...today].map(([id, score]) => {
+    if (playedToday && !playedToday.has(id)) return [id, 50];
+    const row = past?.get(id);
+    if (row && (!Number.isSafeInteger(row.played) || row.played < 0 || !Number.isSafeInteger(row.wins) || row.wins < 0 || !Number.isSafeInteger(row.draws) || row.draws < 0 || row.wins + row.draws > row.played || !Number.isFinite(row.diff))) throw new Error("過去戦績の評価値を確認できませんでした");
+    return [id, row && row.played > 0 ? 0.8 * score + 0.2 * friendlyFormScore(row) : score];
+  }));
 }
 
 export function friendlyHistory(eventId: string, history: readonly FriendlyRoundHistory[], knownIds: ReadonlySet<string>, lastRound: number) {
@@ -120,6 +134,61 @@ export function friendlyRivalContext(playingIds: readonly string[], form: Readon
 
 type Pattern = Teams & { pair: number; consecutive: number; opponent: number; balance: number; topRival: number; rivalWeight: number };
 
+// 最大20選手（次の段階は10ペア）。最小IDを必ず組ませる部分集合DPで、全順列を列挙しない。
+// 配列の左から優先し、後順位の重みで連続ペアや強弱の条件を打ち消さない。
+function minimumMatching(costs: number[][][]) {
+  const size = costs.length, dimensions = costs[0][1].length;
+  const memo = new Map<number, { cost: number[]; partner: number }>([[0, { cost: Array(dimensions).fill(0), partner: -1 }]]);
+  let evaluated = 0;
+  const lower = (a: number[], b: number[]) => {
+    for (let i = 0; i < dimensions; i++) if (Math.abs(a[i] - b[i]) > 1e-8) return a[i] < b[i];
+    return false;
+  };
+  const solve = (mask: number): { cost: number[]; partner: number } => {
+    const cached = memo.get(mask); if (cached) return cached;
+    const first = 31 - Math.clz32(mask & -mask), remaining = mask ^ (1 << first);
+    let best: { cost: number[]; partner: number } | undefined;
+    for (let bits = remaining; bits; bits &= bits - 1) {
+      const partner = 31 - Math.clz32(bits & -bits);
+      const tail = solve(remaining ^ (1 << partner));
+      const cost = costs[first][partner].map((value, i) => value + tail.cost[i]);
+      evaluated++;
+      if (!best || lower(cost, best.cost)) best = { cost, partner };
+    }
+    memo.set(mask, best!); return best!;
+  };
+  let mask = (1 << size) - 1;
+  const cost = solve(mask).cost, pairs: [number, number][] = [];
+  while (mask) {
+    const first = 31 - Math.clz32(mask & -mask), partner = memo.get(mask)!.partner;
+    pairs.push([first, partner]); mask ^= (1 << first) | (1 << partner);
+  }
+  return { pairs, cost, states: memo.size, evaluated };
+}
+
+function generateBalancedRound(playing: readonly string[], resters: string[], form: Map<string, number>, context: ReturnType<typeof friendlyHistory>, completed: number, random: () => number) {
+  const ids = [...playing].sort(compareId), value = (id: string) => form.get(id) ?? 50;
+  const mean = ids.reduce((sum, id) => sum + value(id), 0) / ids.length;
+  const pairing = minimumMatching(ids.map(a => ids.map(b => {
+    const key = friendlyPairKey(a, b);
+    return [Number(context.lastPairs.has(key)), -Math.abs(value(a) - value(b)), (value(a) + value(b) - 2 * mean) ** 2, Math.log1p(context.pairs.get(key) ?? 0)];
+  })));
+  const teams = pairing.pairs.map(([a, b]) => [ids[a], ids[b]] as [string, string]);
+  const opponents = minimumMatching(teams.map(a => teams.map(b => {
+    const gap = Math.abs(a.reduce((sum, id) => sum + value(id), 0) - b.reduce((sum, id) => sum + value(id), 0)) / 2;
+    // 相手が1人重なるだけなら加点しない。直前の相手2人ともと再戦する人数を数える。
+    const both = [...a.map(id => b.every(other => context.lastOpponents.has(friendlyPairKey(id, other)))), ...b.map(id => a.every(other => context.lastOpponents.has(friendlyPairKey(id, other))))].filter(Boolean).length;
+    const older = a.reduce((sum, id) => sum + b.reduce((total, other) => total + (context.opponents.get(friendlyPairKey(id, other)) ?? 0), 0), 0);
+    return [gap, both, older];
+  })));
+  const courts = Array.from({ length: teams.length / 2 }, (_, i) => i + 1).sort(() => random() - 0.5);
+  const matches = opponents.pairs.map(([a, b], i) => ({ teamA: teams[a], teamB: teams[b], court: courts[i] }));
+  const modePenalty = matches.reduce((sum, match) => sum + balancePairPenalty(match, form), 0) / matches.length;
+  return { matches, resters, form, consecutive: pairing.cost[0], pair: pairing.cost[3], opponent: opponents.cost[1], modePenalty,
+    // 比較表示用の共通評価。選択自体は下記priorityを左から順に最小化する。
+    final: modePenalty, diagnostics: { minConsecutive: pairing.cost[0], completed, evaluated: pairing.evaluated + opponents.evaluated, pairingStates: pairing.states, opponentStates: opponents.states, priority: [...pairing.cost, ...opponents.cost] } };
+}
+
 export function generateFriendlyRound(params: {
   eventId: string;
   participantIds: readonly string[];
@@ -128,6 +197,7 @@ export function generateFriendlyRound(params: {
   lastRound: number;
   history: readonly FriendlyRoundHistory[];
   mode: FriendlyRoundMode;
+  pastFormStats?: ReadonlyMap<string, FriendlyFormStat>;
   random?: () => number;
 }) {
   const { eventId, participantIds: ids, knownParticipantIds: known, history, lastRound, mode } = params;
@@ -143,6 +213,10 @@ export function generateFriendlyRound(params: {
   const resters = chooseFriendlyResters(ids, courtCount * 4, context.roundPlayers, lastRound, random);
   const playing = ids.filter(id => !resters.includes(id));
   const form = friendlyFormScores(eventId, history, known);
+  if (mode === "balance") {
+    const playedToday = new Set(scoredFriendlyMatches(eventId, history, known).flatMap(match => match.players.map(p => p.participant_id)));
+    return generateBalancedRound(playing, resters, friendlyBalanceStrengths(form, params.pastFormStats, playedToday), context, completed, random);
+  }
   const rival = friendlyRivalContext(playing, form);
   const hasNew = new Map(playing.map(a => [a, playing.some(b => a !== b && !context.pairs.has(friendlyPairKey(a, b)))]));
   const pairPenalty = (a: string, b: string) => {
@@ -203,7 +277,7 @@ export function generateFriendlyRound(params: {
         return;
       }
       evaluated++;
-      const modePenalty = mode === "balance" ? balance / courtCount : mode === "rival" ? clamp(70 * (1 - topRival) + (rival.totalWeight ? 30 * (1 - rivalWeight / rival.totalWeight) : 0)) : 0;
+      const modePenalty = mode === "rival" ? clamp(70 * (1 - topRival) + (rival.totalWeight ? 30 * (1 - rivalWeight / rival.totalWeight) : 0)) : 0;
       const final = opponent + 0.6 * modePenalty + random() * 5;
       if (!winner || final < winner.final) winner = { matches: selected.map((p, i) => ({ teamA: p.teamA, teamB: p.teamB, court: i + 1 })), pair, consecutive: minConsecutive, opponent, modePenalty, final };
     };

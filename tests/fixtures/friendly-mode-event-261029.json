@@ -1,0 +1,51 @@
+{
+  "source": "テスト261029の読み取り専用スナップショット。IDを辞書順で匿名化し、氏名・認証ID・共有情報を除外。",
+  "read_at": "2026-10-29T13:57:13.189Z",
+  "eventId": "event",
+  "participantIds": [
+    "P01",
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P06",
+    "P07",
+    "P08",
+    "P09",
+    "P10"
+  ],
+  "knownParticipantIds": [
+    "P01",
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P06",
+    "P07",
+    "P08",
+    "P09",
+    "P10"
+  ],
+  "courtCount": 2,
+  "lastRound": 9,
+  "history": [
+    {"event_id":"event","round_number":1,"court_number":1,"completed":true,"players":[{"participant_id":"P01","team":"A"},{"participant_id":"P02","team":"A"},{"participant_id":"P08","team":"B"},{"participant_id":"P10","team":"B"}],"result":{"score_a":2,"score_b":3,"winner_team":"B"}},
+    {"event_id":"event","round_number":1,"court_number":2,"completed":true,"players":[{"participant_id":"P03","team":"A"},{"participant_id":"P07","team":"A"},{"participant_id":"P06","team":"B"},{"participant_id":"P09","team":"B"}],"result":{"score_a":1,"score_b":6,"winner_team":"B"}},
+    {"event_id":"event","round_number":2,"court_number":1,"completed":true,"players":[{"participant_id":"P01","team":"A"},{"participant_id":"P06","team":"A"},{"participant_id":"P02","team":"B"},{"participant_id":"P09","team":"B"}],"result":{"score_a":0,"score_b":4,"winner_team":"B"}},
+    {"event_id":"event","round_number":2,"court_number":2,"completed":true,"players":[{"participant_id":"P03","team":"A"},{"participant_id":"P04","team":"A"},{"participant_id":"P07","team":"B"},{"participant_id":"P10","team":"B"}],"result":{"score_a":1,"score_b":3,"winner_team":"B"}},
+    {"event_id":"event","round_number":3,"court_number":1,"completed":true,"players":[{"participant_id":"P01","team":"A"},{"participant_id":"P10","team":"A"},{"participant_id":"P06","team":"B"},{"participant_id":"P07","team":"B"}],"result":{"score_a":4,"score_b":0,"winner_team":"A"}},
+    {"event_id":"event","round_number":3,"court_number":2,"completed":true,"players":[{"participant_id":"P03","team":"A"},{"participant_id":"P09","team":"A"},{"participant_id":"P04","team":"B"},{"participant_id":"P08","team":"B"}],"result":{"score_a":4,"score_b":0,"winner_team":"A"}},
+    {"event_id":"event","round_number":4,"court_number":1,"completed":true,"players":[{"participant_id":"P05","team":"A"},{"participant_id":"P08","team":"A"},{"participant_id":"P06","team":"B"},{"participant_id":"P10","team":"B"}],"result":{"score_a":4,"score_b":3,"winner_team":"A"}},
+    {"event_id":"event","round_number":4,"court_number":2,"completed":true,"players":[{"participant_id":"P01","team":"A"},{"participant_id":"P07","team":"A"},{"participant_id":"P02","team":"B"},{"participant_id":"P04","team":"B"}],"result":{"score_a":4,"score_b":0,"winner_team":"A"}},
+    {"event_id":"event","round_number":5,"court_number":1,"completed":true,"players":[{"participant_id":"P03","team":"A"},{"participant_id":"P06","team":"A"},{"participant_id":"P09","team":"B"},{"participant_id":"P10","team":"B"}],"result":{"score_a":4,"score_b":1,"winner_team":"A"}},
+    {"event_id":"event","round_number":5,"court_number":2,"completed":true,"players":[{"participant_id":"P02","team":"A"},{"participant_id":"P08","team":"A"},{"participant_id":"P04","team":"B"},{"participant_id":"P05","team":"B"}],"result":{"score_a":4,"score_b":2,"winner_team":"A"}},
+    {"event_id":"event","round_number":6,"court_number":1,"completed":true,"players":[{"participant_id":"P02","team":"A"},{"participant_id":"P07","team":"A"},{"participant_id":"P08","team":"B"},{"participant_id":"P09","team":"B"}],"result":{"score_a":4,"score_b":0,"winner_team":"A"}},
+    {"event_id":"event","round_number":6,"court_number":2,"completed":true,"players":[{"participant_id":"P01","team":"A"},{"participant_id":"P04","team":"A"},{"participant_id":"P03","team":"B"},{"participant_id":"P05","team":"B"}],"result":{"score_a":4,"score_b":1,"winner_team":"A"}},
+    {"event_id":"event","round_number":7,"court_number":1,"completed":true,"players":[{"participant_id":"P04","team":"A"},{"participant_id":"P10","team":"A"},{"participant_id":"P06","team":"B"},{"participant_id":"P08","team":"B"}],"result":{"score_a":4,"score_b":1,"winner_team":"A"}},
+    {"event_id":"event","round_number":7,"court_number":2,"completed":true,"players":[{"participant_id":"P02","team":"A"},{"participant_id":"P05","team":"A"},{"participant_id":"P07","team":"B"},{"participant_id":"P09","team":"B"}],"result":{"score_a":4,"score_b":0,"winner_team":"A"}},
+    {"event_id":"event","round_number":8,"court_number":1,"completed":true,"players":[{"participant_id":"P02","team":"A"},{"participant_id":"P03","team":"A"},{"participant_id":"P05","team":"B"},{"participant_id":"P06","team":"B"}],"result":{"score_a":4,"score_b":0,"winner_team":"A"}},
+    {"event_id":"event","round_number":8,"court_number":2,"completed":true,"players":[{"participant_id":"P01","team":"A"},{"participant_id":"P09","team":"A"},{"participant_id":"P07","team":"B"},{"participant_id":"P08","team":"B"}],"result":{"score_a":3,"score_b":1,"winner_team":"A"}},
+    {"event_id":"event","round_number":9,"court_number":1,"completed":true,"players":[{"participant_id":"P04","team":"A"},{"participant_id":"P09","team":"A"},{"participant_id":"P05","team":"B"},{"participant_id":"P10","team":"B"}],"result":{"score_a":0,"score_b":4,"winner_team":"B"}},
+    {"event_id":"event","round_number":9,"court_number":2,"completed":true,"players":[{"participant_id":"P01","team":"A"},{"participant_id":"P03","team":"A"},{"participant_id":"P02","team":"B"},{"participant_id":"P06","team":"B"}],"result":{"score_a":0,"score_b":4,"winner_team":"B"}}
+  ]
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useId, useRef, type ReactNode } from "react";
 
 let locks = 0;
 let restoreScroll: (() => void) | null = null;
@@ -21,12 +21,23 @@ export function AppDialog({ open, title, onClose, busy = false, wide = false, ch
   const ref = useRef<HTMLDialogElement>(null), id = useId(), busyRef = useRef(busy);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   busyRef.current = busy;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || !ref.current) return;
-    const dialog = ref.current, previous = document.activeElement instanceof HTMLElement ? document.activeElement : null, unlock = lockScroll();
+    const dialog = ref.current, previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const positions: { element: HTMLElement; top: number; left: number }[] = [];
+    for (let element = previous?.parentElement; element; element = element.parentElement) {
+      if (element.scrollHeight > element.clientHeight || element.scrollWidth > element.clientWidth) positions.push({ element, top: element.scrollTop, left: element.scrollLeft });
+    }
+    const unlock = lockScroll();
     dialog.showModal();
     dialog.querySelector<HTMLElement>('button:not(:disabled)')?.focus({ preventScroll: true });
-    return () => { dialog.close(); unlock(); if (previous?.isConnected) previous.focus({ preventScroll: true }); else document.querySelector<HTMLElement>('dialog[open] button:not(:disabled)')?.focus({preventScroll:true}); };
+    return () => {
+      dialog.close(); unlock();
+      if (previous?.isConnected && !previous.matches(":disabled")) previous.focus({ preventScroll: true });
+      else document.querySelector<HTMLElement>('dialog[open] button:not(:disabled)')?.focus({ preventScroll: true });
+      // native dialogのフォーカス復帰で、背面の履歴がスクロールされる場合がある。
+      for (const position of positions) if (position.element.isConnected) { position.element.scrollTop = position.top; position.element.scrollLeft = position.left; }
+    };
   }, [open]);
   if (!open) return null;
   return <dialog ref={ref} aria-labelledby={id} aria-modal="true" className={`app-dialog m-auto overflow-hidden rounded-2xl border border-zinc-700 bg-card p-0 text-zinc-100 shadow-xl backdrop:bg-black/70 ${wide ? "w-[calc(100%_-_1rem)] max-w-2xl" : "w-[calc(100%_-_2rem)] max-w-sm"}`}

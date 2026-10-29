@@ -43,7 +43,7 @@ function database(tables, options = {}) {
       const table = url.pathname.split('/').at(-1);
       const call = { table, method: init.method ?? 'GET', url, body: init.body ? JSON.parse(init.body) : undefined };
       calls.push(call);
-      const failure = options.fail?.(call);
+      const failure = await options.fail?.(call);
       if (failure) return new Response(JSON.stringify({ code: '42501', message: '取得または更新を拒否' }), { status: 403 });
       let rows = [...(tables[table] ?? [])];
       for (const [key, value] of url.searchParams) {
@@ -61,6 +61,7 @@ function database(tables, options = {}) {
       const affected = rows.length;
       if (call.method === 'PATCH') for (const row of rows) Object.assign(row, call.body);
       if (call.method === 'POST') {
+        if (call.body?.id && (tables[table]??[]).some(row=>row.id===call.body.id)) return new Response(JSON.stringify({code:'23505',message:'同じIDが存在'}),{status:409});
         const items = (Array.isArray(call.body) ? call.body : [call.body]).map((row, i) => ({ id: `insert-${calls.length}-${i}`, ...row }));
         tables[table] ??= [];
         tables[table].push(...items);

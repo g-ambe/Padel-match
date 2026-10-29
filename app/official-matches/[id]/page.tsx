@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { OfficialStatsCard } from "@/components/official-stats-card";
 import { ActionButton, Card } from "@/components/ui";
@@ -9,6 +9,9 @@ import { MatchShareButtons } from "@/components/match-share-buttons";
 import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { buildOfficialStats, createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
+import { GuestName, MatchHistoryList, YoutubeDisclosure } from "@/components/match-ui";
+import type { ScorePair } from "@/lib/score-input";
+import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { ScoreInput } from "@/components/score-input";
 import { storedTeamShareScore } from "@/lib/match-share-text";
 
@@ -38,7 +41,6 @@ const emptyMatchForm = (): MatchForm => ({
   result: "undecided", scoreDetail: "", memo: "", youtubeUrl: ""
 });
 
-const resultLabel = (result: ResultValue) => ({ win: "勝ち", lose: "負け", draw: "引き分け", undecided: "未定" }[result]);
 const autoResult = (ourScore: string, opponentScore: string): ResultValue => {
   if (ourScore.trim() === "" || opponentScore.trim() === "") return "undecided";
   const our = Number(ourScore); const opponent = Number(opponentScore);
@@ -77,6 +79,8 @@ export default function OfficialMatchDetailPage() {
   const [opponentMemo, setOpponentMemo] = useState("");
   const [matchForms, setMatchForms] = useState<Record<string, MatchForm>>({});
   const [openMatchFormId, setOpenMatchFormId] = useState<string | null>(null);
+  const cardWrites = useRef({ saving: new Set<string>(), newIds: new Map<string,string>(), error: "" });
+  const [urlDrafts,setUrlDrafts] = useState<Record<string,string>>({});
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [editingMatchForm, setEditingMatchForm] = useState<MatchForm>(emptyMatchForm());
   const [showDeleteEventConfirm, setShowDeleteEventConfirm] = useState(false);
@@ -126,7 +130,8 @@ export default function OfficialMatchDetailPage() {
     setMembers(eventRow.club_id ? await fetchActiveClubMemberParticipants(supabase, eventRow.club_id) : []);
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,official_event_id,opponent_team_name,memo").eq("official_event_id", id).order("created_at");
     setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
-    const { data: matchRows } = await supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
+    const { data: matchRows, error: historyError } = await readFriendlyRoundRows((start,end)=>supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).range(start,end));
+    if(historyError){setError("試合履歴を取得できませんでした。再度読み込んでください");return;}
     const history=(matchRows ?? []) as unknown as OfficialMatch[];
     setMatches(history);
     try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,history.flatMap(match=>[match.our_player1_profile_id,match.our_player2_profile_id]))); }
@@ -185,21 +190,30 @@ export default function OfficialMatchDetailPage() {
     return "";
   };
 
-  const addMatch = async (opponentId: string) => {
-    setError(""); setNotice("");
-    if (!canEdit) return setError("この操作を行う権限がありません");
-    const form = matchForms[opponentId] ?? emptyMatchForm();
-    const validation = validateMatchForm(form);
-    if (validation) return setError(validation);
-    const nextOrder = Math.max(0, ...opponentMatches(opponentId).map((match) => match.match_order)) + 1;
-    const supabase = getSupabaseClient(); if (!supabase) return;
-    const { error: insertError } = await supabase.from("official_matches").insert({
-      official_event_id: id, official_opponent_id: opponentId, match_order: nextOrder,
-      ...matchPayload(form)
-    });
-    if (insertError) return setError("試合カードの追加に失敗しました");
-    setMatchForms((prev) => ({ ...prev, [opponentId]: emptyMatchForm() })); setOpenMatchFormId(null); setNotice("試合カードを追加しました");
-    await loadDetail();
+  const saveOfficialCard = async (form: MatchForm, matchId?: string, opponentId?: string) => {
+    const key=matchId??`new:${id}:${opponentId}`;
+    if(cardWrites.current.saving.has(key))return false;
+    const fail=(message:string)=>{cardWrites.current.error=message;setError(message);return false;};
+    if(!canEdit)return fail("この操作を行う権限がありません");
+    const validation=validateMatchForm(form);if(validation)return fail(validation);
+    const supabase=getSupabaseClient();if(!supabase)return fail("保存の準備ができませんでした");
+    cardWrites.current.saving.add(key);setError("");setNotice("");
+    try {
+      const newId=matchId??cardWrites.current.newIds.get(key)??crypto.randomUUID();
+      if(!matchId)cardWrites.current.newIds.set(key,newId);
+      const patch=matchPayload(form), matchOrder=opponentId?Math.max(0,...opponentMatches(opponentId).map(m=>m.match_order))+1:0;
+      let response=matchId?await supabase.from("official_matches").update(patch).eq("id",newId).select("id").single():await supabase.from("official_matches").insert({id:newId,official_event_id:id,official_opponent_id:opponentId,match_order:matchOrder,...patch}).select("id").single();
+      if(!matchId&&response.error?.code==="23505")response=await supabase.from("official_matches").update(patch).eq("id",newId).eq("official_event_id",id).select("id").single();
+      if(response.error||!response.data)return fail("試合カードの保存に失敗しました");
+      setMatches(previous=>matchId?previous.map(m=>m.id===newId?{...m,...patch}:m):[...previous,{id:newId,official_opponent_id:opponentId!,match_order:matchOrder,...patch}]);
+      cardWrites.current.newIds.delete(key);setNotice("試合カードを保存しました");return true;
+    }catch{return fail("試合カードの保存に失敗しました");}
+    finally{cardWrites.current.saving.delete(key);}
+  };
+  const reloadSavedCards = async () => {try{await loadDetail();}catch{setError("保存後の再読み込みに失敗しました");}};
+  const addMatch = async (opponentId: string, supplied?: MatchForm) => {
+    if(!await saveOfficialCard(supplied??matchForms[opponentId]??emptyMatchForm(),undefined,opponentId))return false;
+    setMatchForms(previous=>({...previous,[opponentId]:emptyMatchForm()}));setOpenMatchFormId(null);await reloadSavedCards();return true;
   };
 
   const matchToForm = (match: OfficialMatch): MatchForm => ({
@@ -218,16 +232,14 @@ export default function OfficialMatchDetailPage() {
     result: form.result, score_detail: form.scoreDetail.trim() || null, memo: form.memo.trim() || null, youtube_url: form.youtubeUrl.trim() || null, updated_at: new Date().toISOString()
   });
 
-  const updateMatch = async () => {
-    setError(""); setNotice("");
-    if (!canEdit || !editingMatchId) return setError("この操作を行う権限がありません");
-    const validation = validateMatchForm(editingMatchForm);
-    if (validation) return setError(validation);
-    const supabase = getSupabaseClient(); if (!supabase) return;
-    const { error: updateError } = await supabase.from("official_matches").update(matchPayload(editingMatchForm)).eq("id", editingMatchId);
-    if (updateError) return setError("試合カードの更新に失敗しました");
-    setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); setNotice("試合カードを更新しました");
-    await loadDetail();
+  const updateMatch = async (supplied?:MatchForm) => {
+    if(!editingMatchId||!await saveOfficialCard(supplied??editingMatchForm,editingMatchId))return false;
+    setEditingMatchId(null);setEditingMatchForm(emptyMatchForm());await reloadSavedCards();return true;
+  };
+  const commitCardScore=async(scores:ScorePair,match:OfficialMatch)=>{
+    const form={...matchToForm(match),ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)};
+    if(!await saveOfficialCard(form,match.id))throw new Error(cardWrites.current.error||"試合カードを保存できませんでした。再試行してください");
+    await reloadSavedCards();
   };
 
   const deleteMatch = async (matchId: string) => {
@@ -294,7 +306,7 @@ export default function OfficialMatchDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
-      <h1 className="text-xl font-bold">オフィシャルチームマッチ詳細</h1>
+      <h1 className="pr-14 text-xl font-bold sm:pr-0">オフィシャルチームマッチ詳細</h1>
       {error && <p className="rounded-xl border border-red-500/60 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
       {notice && <p className="rounded-xl border border-emerald-500/60 bg-emerald-950/40 p-3 text-sm text-emerald-200">{notice}</p>}
       <Card title={event.title}>
@@ -339,32 +351,31 @@ export default function OfficialMatchDetailPage() {
       <Card title="戦績">
         <div className="space-y-4">
           {opponents.length === 0 && <p className="text-sm text-zinc-400">戦績はまだ登録されていません</p>}
-          {opponents.map((opponent) => (
+          <MatchHistoryList>{opponents.map((opponent) => (
             <section key={opponent.id} className="space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/60 p-3">
               <div><h3 className="font-bold">{event.clubs?.name ?? "自チーム"} vs {opponent.opponent_team_name}</h3><p className="mt-1 text-2xl font-black tracking-tight text-accent">{formatOpponentScore(opponentScore(opponent.id, matches))}</p>{opponent.memo && <p className="mt-1 whitespace-pre-wrap text-xs text-zinc-400">メモ: {opponent.memo}</p>}</div>
               <div className="space-y-3">
                 {opponentMatches(opponent.id).length === 0 && <p className="text-sm text-zinc-400">試合カードはまだ登録されていません</p>}
-                {opponentMatches(opponent.id).map((match, index) => {
+                {opponentMatches(opponent.id).slice().reverse().map((match, index) => {
                   const isEditing = editingMatchId === match.id;
                   return (
                   <div key={match.id} className={isEditing ? "text-sm" : "rounded-xl bg-zinc-800 p-3 text-sm"}>
-                    {isEditing ? <MatchFormView title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
-                    <p className="font-bold">第{index + 1}試合</p>
-                    <p className="mt-1">{memberName(match.our_player1_profile_id, match.our_player1_guest_name)} / {memberName(match.our_player2_profile_id, match.our_player2_guest_name)} vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p>
-                    <p className="mt-1">スコア: {match.our_score ?? "未入力"} - {match.opponent_score ?? "未入力"}</p>
-                    <p>結果: {resultLabel(match.result)}</p>
+                    {isEditing ? <MatchFormView title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onScoreCommit={async scores=>{if(!await updateMatch({...editingMatchForm,ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
+                    <p className="font-bold">第{match.match_order}試合</p>
+                    <p className="my-2 break-words"><GuestName name={memberName(match.our_player1_profile_id,match.our_player1_guest_name)} guest={!match.our_player1_profile_id&&!!match.our_player1_guest_name} /> / <GuestName name={memberName(match.our_player2_profile_id,match.our_player2_guest_name)} guest={!match.our_player2_profile_id&&!!match.our_player2_guest_name} /> vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p>
+                    <ScoreInput value={{a:match.our_score===null?"":String(match.our_score),b:match.opponent_score===null?"":String(match.opponent_score)}} labels={["自チーム","相手チーム"]} saved={match.result!=="undecided"&&match.our_score!==null&&match.opponent_score!==null} result={match.our_score===null||match.opponent_score===null?null:match.result==="win"?"A":match.result==="lose"?"B":match.result==="draw"?"draw":null} disabled={!canEdit} onCommit={scores=>commitCardScore(scores,match)} />
                     {match.score_detail && <p className="whitespace-pre-wrap">詳細スコア: {match.score_detail}</p>}
                     {match.memo && <p className="whitespace-pre-wrap">メモ: {match.memo}</p>}
-                    {match.youtube_url && <div className="mt-1 space-y-1"><a className="inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[match.id] ?? 0}回</p>}</div>}
+                    <YoutubeDisclosure registered={!!match.youtube_url}>{match.youtube_url&&<><a className="inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[match.id] ?? 0}回</p>}</>}{canEdit&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[match.id]??match.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[match.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={async()=>{if(await saveOfficialCard({...matchToForm(match),youtubeUrl:urlDrafts[match.id]??match.youtube_url??""},match.id))await reloadSavedCards();}}>URLを保存</button>{match.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={async()=>{if(await saveOfficialCard({...matchToForm(match),youtubeUrl:""},match.id)){setUrlDrafts(previous=>({...previous,[match.id]:""}));await reloadSavedCards();}}}>URLを削除</button>}</div></>}</YoutubeDisclosure>
                     {canEdit && <div className="mt-3 grid grid-cols-2 gap-2"><button className="rounded-xl border border-zinc-500 py-2 text-xs font-bold" onClick={() => { setEditingMatchId(match.id); setEditingMatchForm(matchToForm(match)); setOpenMatchFormId(null); }}>試合カードを編集</button><button className="rounded-xl border border-red-500/70 py-2 text-xs font-bold text-red-200" onClick={() => void deleteMatch(match.id)}>試合カードを削除</button></div>}
                     </>}
                   </div>
                   );
                 })}
               </div>
-              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView title="試合カードを追加" members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
+              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView title="試合カードを追加" members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onScoreCommit={async scores=>{if(!await addMatch(opponent.id,{...(matchForms[opponent.id]??emptyMatchForm()),ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
             </section>
-          ))}
+          ))}</MatchHistoryList>
           {canEdit && (showOpponentForm ? <div className="space-y-2 rounded-2xl border border-zinc-700 p-3"><input className="w-full rounded bg-zinc-800 p-2" placeholder="相手チーム名" value={opponentName} onChange={(e) => setOpponentName(e.target.value)} /><textarea className="w-full rounded bg-zinc-800 p-2" placeholder="メモ" value={opponentMemo} onChange={(e) => setOpponentMemo(e.target.value)} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-black" onClick={() => void addOpponent()}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => setShowOpponentForm(false)}>キャンセル</button></div></div> : <ActionButton onClick={() => setShowOpponentForm(true)}>対戦相手を追加</ActionButton>)}
         </div>
       </Card>
@@ -373,7 +384,7 @@ export default function OfficialMatchDetailPage() {
   );
 }
 
-function MatchFormView({ title, members, form, onChange, onSave, onCancel }: { title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
+function MatchFormView({ title, members, form, onChange, onSave, onCancel, onScoreCommit }: { onScoreCommit:(scores:ScorePair)=>Promise<void>; title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
   const fieldClass = "w-full rounded-xl border border-zinc-700 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-accent";
   const labelClass = "text-xs font-bold text-zinc-300";
   const sectionClass = "space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-3";
@@ -411,7 +422,7 @@ function MatchFormView({ title, members, form, onChange, onSave, onCancel }: { t
       <section className={sectionClass}>
         <p className="text-xs font-bold text-zinc-400">スコア</p>
         <ScoreInput value={{ a: form.ourScore, b: form.opponentScore }} labels={["自チーム", "相手チーム"]}
-          onChange={scores => onChange({ ourScore: scores.a, opponentScore: scores.b }, true)} />
+          saved={title==="試合カードを編集"&&form.result!=="undecided"&&form.ourScore!==""&&form.opponentScore!==""} onCommit={onScoreCommit} />
         <div className="space-y-2">
           <label className={labelClass}>結果</label>
           <select className={fieldClass} value={form.result} onChange={(e) => onChange({ result: e.target.value as ResultValue })}>
@@ -424,7 +435,7 @@ function MatchFormView({ title, members, form, onChange, onSave, onCancel }: { t
         <p className="text-xs font-bold text-zinc-400">詳細</p>
         <div className="space-y-2"><label className={labelClass}>詳細スコア</label><input className={fieldClass} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e) => onChange({ scoreDetail: e.target.value })} /></div>
         <div className="space-y-2"><label className={labelClass}>メモ</label><textarea className={`${fieldClass} min-h-24`} placeholder="メモ" value={form.memo} onChange={(e) => onChange({ memo: e.target.value })} /></div>
-        <div className="space-y-2"><label className={labelClass}>YouTubeリンク</label><input className={fieldClass} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e) => onChange({ youtubeUrl: e.target.value })} /></div>
+        <YoutubeDisclosure registered={!!form.youtubeUrl}><label className={labelClass}>YouTubeリンク</label><input className={fieldClass} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e) => onChange({ youtubeUrl: e.target.value })} /><button type="button" className="text-xs text-red-300" onClick={()=>onChange({youtubeUrl:""})}>URLを削除</button></YoutubeDisclosure>
       </section>
 
       <div className="grid grid-cols-2 gap-2">

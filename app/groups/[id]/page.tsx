@@ -593,7 +593,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
         </div>
       ) : (
         <div className="space-y-1">
-          <div className="flex items-center gap-2"><p className="font-semibold">{member.display_name}</p>{isLinkedSelf && <span className="rounded-full bg-emerald-500/30 px-2 py-0.5 text-[11px] text-emerald-200">あなた</span>}{canViewRole && <span className="rounded-full bg-blue-600/30 px-2 py-0.5 text-[11px] text-blue-200">{roleLabel[member.role]}</span>}</div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2"><p className="min-w-0 break-all font-semibold">{member.display_name}</p>{isLinkedSelf && <span className="app-badge badge-self">あなた</span>}{canViewRole && <span className="app-badge badge-role">{roleLabel[member.role]}</span>}</div>
           {!cannotEdit && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!cannotEdit && <button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示／退会</button>}</div>}
         </div>
       )}

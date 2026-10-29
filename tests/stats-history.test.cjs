@@ -10,9 +10,12 @@ function eventActions(db, extra = {}) {
   const state = { loads:0, routes:[], errors:[], edits:{} };
   const viewMatches = db.tables.matches.map(m=>({ ...m, players:db.tables.match_players.filter(p=>p.match_id===m.id), result:db.tables.match_results.find(r=>r.match_id===m.id), round_number:1 }));
   const bindings = {
-    getSupabaseClient:()=>db.s, eventId:'event-a', eventMode:'auto', eventStatus:'closed', statsMode:'official', closeStatsMode:'official', guestMode:false, canDeleteEvent:true,
+    getSupabaseClient:()=>db.s, eventId:'event-a', eventMode:'auto', eventStatus:'active', statsMode:'official', closeStatsMode:'official', guestMode:false, canDeleteEvent:true,
+    scoreSaveState:{current:{saving:new Set(),resultIds:new Map()}},
+    setMatches:fn=>{bindings.matches=fn(bindings.matches);state.matches=bindings.matches},
+    setScoreInputs:fn=>{bindings.scoreInputs=fn(bindings.scoreInputs)},
     matches:viewMatches, scoreInputs:{}, getWinnerTeam:(a,b)=>a>b?'A':a<b?'B':'draw',
-    setError:v=>state.errors.push(v), setMessage:v=>state.message=v, setShowCloseModal:v=>state.closeModal=v,
+    setError:v=>{if(v)state.errors.push(v)}, setMessage:v=>state.message=v, setShowCloseModal:v=>state.closeModal=v,
     setEditingMatchIds:fn=>state.edits=fn(state.edits), loadAll:async()=>{state.loads++}, router:{push:v=>state.routes.push(v)},
     ...extra,
   };
@@ -71,7 +74,7 @@ test('70/20/10の正規化は退会者を含む元データで行い、参考記
 
 test('イベントAの論理削除はBと他グループの戦績を残し、試合・スコア・参加者・プロフィールを変更しない', async () => {
   const {tables}=fixture(), before=clone(tables), db=database(tables);
-  const action=eventActions(db);
+  const action=eventActions(db,{eventStatus:'closed'});
   await action.run('deleteEvent');
   assert.equal(tables.events[0].is_deleted,true);
   assert.deepEqual(action.state.routes,['/home']);
@@ -208,16 +211,16 @@ test('取得失敗と空履歴を区別し、グループの古い戦績は残�
 test('スコア更新拒否・確定失敗・0行更新・イベント更新拒否では成功扱いしない', async () => {
   for(const name of ['saveScore','closeEvent','reopenEvent','deleteEvent']) {
     const {tables}=fixture(), before=clone(tables), db=database(tables,{fail:c=>c.method!=='GET'});
-    const action=eventActions(db,{scoreInputs:{'match-0000':{a:4,b:2}}});
+    const action=eventActions(db,{eventStatus:name==='deleteEvent'?'closed':'active',scoreInputs:{'match-0000':{a:4,b:2}}});
     await action.run(name,'match-0000');
     assert.equal(action.state.errors.length,1);assert.equal(action.state.loads,0);assert.deepEqual(action.state.routes,[]);
     assert.deepEqual(tables,before);
   }
-  const f=fixture(), db=database(f.tables,{fail:c=>c.table==='matches'&&c.method==='PATCH'});
+  const f=fixture();f.tables.matches[0].completed=false;const db=database(f.tables,{fail:c=>c.table==='matches'&&c.method==='PATCH'});
   const action=eventActions(db,{scoreInputs:{'match-0000':{a:4,b:2}}});
   await action.run('saveScore','match-0000');
   assert.match(action.state.errors[0],/確定に失敗/);assert.equal(action.state.loads,0);
-  const zero=eventActions(db,{eventId:'not-found'});
+  const zero=eventActions(db,{eventId:'not-found',eventStatus:'closed'});
   await zero.run('deleteEvent');assert.match(zero.state.errors[0],/削除に失敗/);
 });
 

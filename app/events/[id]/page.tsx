@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
+import { GuestName, MatchHistoryList, YoutubeDisclosure } from "@/components/match-ui";
+import type { ScorePair } from "@/lib/score-input";
 import { ScoreInput } from "@/components/score-input";
 import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
 import { MatchShareButtons } from "@/components/match-share-buttons";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
-import { hasEnteredFriendlyMatchScore, isFriendlyMatchDraw } from "@/lib/friendly-match-results";
+import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { FRIENDLY_MODE_UNLOCK_MATCHES, friendlyRoundModes, generateFriendlyRound, scoredFriendlyMatches, type FriendlyRoundMode } from "@/lib/friendly-rounds";
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 
@@ -63,12 +65,10 @@ export default function EventDetailPage() {
   const [isDeletedEvent, setIsDeletedEvent] = useState(false);
   const [canDeleteEvent, setCanDeleteEvent] = useState(false);
   const [scoreInputs, setScoreInputs] = useState<Record<string, ScoreInput>>({});
-  const [showAllRounds, setShowAllRounds] = useState(false);
-  const [editingMatchIds, setEditingMatchIds] = useState<Record<string, boolean>>({});
+  const scoreSaveState = useRef({ saving: new Set<string>(), resultIds: new Map<string, string>(), error: "" });
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
   const [editingGuestName, setEditingGuestName] = useState("");
   const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
-  const [editingYoutubeIds, setEditingYoutubeIds] = useState<Record<string, boolean>>({});
   const [videoClickCounts, setVideoClickCounts] = useState<Record<string, number>>({});
   const [eventVideoClickCounts, setEventVideoClickCounts] = useState<Record<string, number>>({});
   const [canViewVideoClickCounts, setCanViewVideoClickCounts] = useState(false);
@@ -182,7 +182,6 @@ export default function EventDetailPage() {
 
   const latestRoundNumber = useMemo(() => matches.reduce((max, m) => Math.max(max, m.round_number), 0), [matches]);
   const sortedMatches = useMemo(() => [...matches].sort((a, b) => (b.round_number - a.round_number) || (a.court_number - b.court_number) || ((b.created_at ?? "").localeCompare(a.created_at ?? "")) || a.id.localeCompare(b.id)), [matches]);
-  const displayedMatches = useMemo(() => (showAllRounds ? sortedMatches : sortedMatches.slice(0, 5)), [showAllRounds, sortedMatches]);
   const scoredMatchCount = useMemo(() => scoredFriendlyMatches(eventId, matches, new Set(participants.map(p => p.id))).length, [eventId, matches, participants]);
   const specialModesUnlocked = scoredMatchCount >= FRIENDLY_MODE_UNLOCK_MATCHES;
   const selectedRoundMode = roundModeSelection.eventId === eventId && roundModeSelection.userId === roundUserId ? roundModeSelection.mode : "normal";
@@ -358,10 +357,8 @@ export default function EventDetailPage() {
       .eq("event_id", eventId)
       .order("created_at", { ascending: false });
 
-    const { data: ms, error: matchLoadError } = event?.event_mode === "auto"
-      ? await readFriendlyRoundRows((start, end) => matchQuery().order("id").range(start, end))
-      : await matchQuery();
-    if (matchLoadError && event?.event_mode === "auto") { setError("試合履歴を取得できませんでした。画面を更新してください"); return; }
+    const { data: ms, error: matchLoadError } = await readFriendlyRoundRows((start, end) => matchQuery().order("id").range(start, end));
+    if (matchLoadError) { setError("試合履歴を取得できませんでした。画面を更新してください"); return; }
 
     const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
     setMatches(normalizedMatches);
@@ -677,41 +674,51 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
-  const saveScore = async (matchId: string) => {
-    if (guestMode && eventId) {
-      const score = scoreInputs[matchId];
-      if (!score || score.a === "" || score.b === "") return;
-      const ge = getGuestEvent(eventId);
-      if (!ge) return;
-      ge.matches = ge.matches.map((m) => m.id === matchId ? { ...m, completed: true, result: { score_a: Number(score.a), score_b: Number(score.b), winner_team: getWinnerTeam(Number(score.a), Number(score.b)) } } : m);
-      upsertGuestEvent(ge);
-      setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
-      await loadAll();
-      return;
-    }
-    const supabase = getSupabaseClient();
-    const score = scoreInputs[matchId];
-    if (!supabase || !score) return;
-    if (score.a === "" || score.b === "") {
-      setError("スコアを入力してください");
-      return;
-    }
-    const winner = getWinnerTeam(Number(score.a), Number(score.b));
-
-    const targetMatch = matches.find((m) => m.id === matchId);
-    const resultWrite = targetMatch?.result?.id
-      ? supabase.from("match_results").update({ score_a: score.a, score_b: score.b, winner_team: winner }).eq("id", targetMatch.result.id)
-      : supabase.from("match_results").insert({ match_id: matchId, score_a: score.a, score_b: score.b, winner_team: winner });
-    const { error: scoreError } = await resultWrite.select("id").single();
-    if (scoreError) return setError("スコアの保存に失敗しました");
-    const { error: completeError } = await supabase.from("matches").update({ completed: true }).eq("id", matchId).select("id").single();
-    if (completeError) return setError("試合の確定に失敗しました。再度保存してください");
-    setEditingMatchIds((prev) => ({ ...prev, [matchId]: false }));
-
-    // 戦績は保存済みの試合履歴から再計算し、累計テーブルへ加算しない。
-    await loadAll();
+  const saveScore = async (matchId: string, entered?: ScorePair) => {
+    if (scoreSaveState.current.saving.has(matchId)) return false;
+    const score: ScoreInput | undefined = entered ? { a: entered.a.trim() === "" ? "" : Number(entered.a), b: entered.b.trim() === "" ? "" : Number(entered.b) } : scoreInputs[matchId];
+    if (!score || score.a === "" || score.b === "") { setError("スコアを入力してください"); return false; }
+    const targetMatch = matches.find(m => m.id === matchId);
+    if (!targetMatch || eventStatus === "closed") { setError("この試合は編集できません"); return false; }
+    scoreSaveState.current.saving.add(matchId);scoreSaveState.current.error="";setMessage("");setError("");
+    try {
+      const winner = getWinnerTeam(Number(score.a), Number(score.b));
+      let resultId = targetMatch.result?.id ?? scoreSaveState.current.resultIds.get(matchId);
+      if (guestMode && eventId) {
+        const ge = getGuestEvent(eventId);
+        if (!ge) throw new Error("イベントが見つかりません");
+        ge.matches = ge.matches.map(m => m.id === matchId ? { ...m, completed: true, result: { score_a: Number(score.a), score_b: Number(score.b), winner_team: winner } } : m);
+        upsertGuestEvent(ge);
+      } else {
+        const supabase = getSupabaseClient();
+        if (!supabase) throw new Error("保存の準備ができませんでした");
+        // 初回保存の応答が失われた場合も、保存済みの行を確認してから再試行する。
+        if (!resultId) {
+          const existing = await supabase.from("match_results").select("id").eq("match_id", matchId).maybeSingle();
+          if (existing.error) throw new Error("保存済みスコアを確認できませんでした");
+          resultId = existing.data?.id;
+        }
+        const write = resultId
+          ? supabase.from("match_results").update({ score_a: score.a, score_b: score.b, winner_team: winner }).eq("id", resultId)
+          : supabase.from("match_results").insert({ match_id: matchId, score_a: score.a, score_b: score.b, winner_team: winner });
+        const saved = await write.select("id").single();
+        if (saved.error || !saved.data) throw new Error("スコアの保存に失敗しました");
+        resultId = saved.data.id;
+        scoreSaveState.current.resultIds.set(matchId, resultId!);
+        if (!targetMatch.completed) {
+          const complete = await supabase.from("matches").update({ completed: true }).eq("id", matchId).select("id").single();
+          if (complete.error) throw new Error("試合の確定に失敗しました。再度保存してください");
+        }
+      }
+      setMatches(previous => previous.map(m => m.id === matchId ? { ...m, completed: true, result: { id: resultId, score_a: Number(score.a), score_b: Number(score.b), winner_team: winner } } : m));
+      setScoreInputs(previous => ({ ...previous, [matchId]: score }));
+      setMessage("スコアを保存しました");
+      // 保存済み履歴を正本として再取得する。取得失敗を保存の失敗と取り違えない。
+      try { await loadAll(); } catch { setError("保存は完了しましたが、再読み込みに失敗しました"); }
+      return true;
+    } catch (cause) { const message=cause instanceof Error ? cause.message : "スコアの保存に失敗しました";scoreSaveState.current.error=message;setError(message); return false; }
+    finally { scoreSaveState.current.saving.delete(matchId); }
   };
-
 
   const matchHasSavedScore = (match: MatchView) => {
     const score = scoreInputs[match.id];
@@ -850,7 +857,6 @@ export default function EventDetailPage() {
     if (!isYoutubeUrl(value)) return setError("YouTubeのURLを入力してください");
     const { error: e } = await supabase.from("matches").update({ youtube_url: value }).eq("id", matchId);
     if (e) return setError("YouTubeリンクの保存に失敗しました");
-    setEditingYoutubeIds((prev) => ({ ...prev, [matchId]: false }));
     setError("");
     await loadAll();
   };
@@ -861,7 +867,6 @@ export default function EventDetailPage() {
     const { error: e } = await supabase.from("matches").update({ youtube_url: null }).eq("id", matchId);
     if (e) return setError("YouTubeリンクの削除に失敗しました");
     setYoutubeInputs((prev) => ({ ...prev, [matchId]: "" }));
-    setEditingYoutubeIds((prev) => ({ ...prev, [matchId]: false }));
     await loadAll();
   };
 
@@ -1182,7 +1187,7 @@ export default function EventDetailPage() {
       <option value="">選手を選択</option>
       {candidateParticipants.map((p) => {
         const disabled = usedIds.includes(p.id) && p.id !== value;
-        return <option key={p.id} value={p.id} disabled={disabled}>{participantLabel(p)}{disabled ? "（選択済み）" : ""}</option>;
+        return <option key={p.id} value={p.id} disabled={disabled}>{participantLabel(p)}{p.participant_type === "guest" ? "（ゲスト）" : ""}{disabled ? "（選択済み）" : ""}</option>;
       })}
     </select>
   );
@@ -1234,6 +1239,67 @@ export default function EventDetailPage() {
       </div>
     </Card>
   ) : null;
+
+  const matchCards = sortedMatches.map((m) => {
+            const names = (team: string) => m.players.filter(p => p.team === team).map((p, index) => <span key={p.participant_id}>{index > 0 && " / "}<GuestName name={nameMap[p.participant_id] ?? "名称未設定"} guest={participants.find(row => row.id === p.participant_id)?.participant_type === "guest"} /></span>);
+            const a = names("A");
+            const b = names("B");
+            return (
+              <div key={m.id} className="relative overflow-hidden rounded-xl bg-red-950/70">
+                <div className="absolute inset-y-0 left-0 flex w-28 items-center justify-center bg-red-600 text-sm font-bold text-white">削除</div>
+                <div
+                  className="relative rounded-xl bg-zinc-800 p-3 transition-transform"
+                  style={{ transform: `translateX(${eventMode === "auto" && eventStatus !== "closed" ? (swipeOffsets[m.id] ?? 0) : 0}px)` }}
+                  onTouchStart={(e) => { if (eventMode === "auto" && eventStatus !== "closed") setSwipeStartX((prev) => ({ ...prev, [m.id]: e.touches[0]?.clientX ?? 0 })); }}
+                  onTouchMove={(e) => {
+                    if (eventMode !== "auto" || eventStatus === "closed") return;
+                    const start = swipeStartX[m.id] ?? e.touches[0]?.clientX ?? 0;
+                    const delta = Math.max(0, Math.min((e.touches[0]?.clientX ?? start) - start, 128));
+                    setSwipeOffsets((prev) => ({ ...prev, [m.id]: delta }));
+                  }}
+                  onTouchEnd={() => {
+                    if (eventMode !== "auto" || eventStatus === "closed") return;
+                    const offset = swipeOffsets[m.id] ?? 0;
+                    if (offset >= 88) requestMatchDelete(m);
+                    else setSwipeOffsets((prev) => ({ ...prev, [m.id]: 0 }));
+                  }}
+                >
+                <div className="flex items-center justify-between gap-2"><p className="text-xs">Round {m.round_number} / Court{m.court_number}</p>{eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-400" onClick={() => requestMatchDelete(m)}>削除</button>}</div>
+                <p className="mb-2 text-sm font-semibold">{a} vs {b}</p>
+                {eventMode === "manual" && (lineupDrafts[m.id] ? (
+                  <div className="mb-3 space-y-2 rounded-lg border border-zinc-700 p-2">
+                    <p className="text-xs text-zinc-300">組み合わせ編集</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {renderPlayerSelect(lineupDrafts[m.id].teamA1, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamA1: v } })), [lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB1, lineupDrafts[m.id].teamB2].filter(Boolean))}
+                      {renderPlayerSelect(lineupDrafts[m.id].teamA2, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamA2: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamB1, lineupDrafts[m.id].teamB2].filter(Boolean))}
+                      {renderPlayerSelect(lineupDrafts[m.id].teamB1, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamB1: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB2].filter(Boolean))}
+                      {renderPlayerSelect(lineupDrafts[m.id].teamB2, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamB2: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB1].filter(Boolean))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button className="rounded border border-zinc-500 py-2 text-sm" onClick={() => setLineupDrafts((prev) => { const next = { ...prev }; delete next[m.id]; return next; })}>キャンセル</button>
+                      <button className="rounded bg-accent py-2 text-sm text-black" onClick={() => void saveLineupEdit(m.id)}>保存</button>
+                    </div>
+                  </div>
+                ) : m.completed ? (
+                  <p className="mb-2 text-xs text-zinc-400">スコア入力済みのため組み合わせは編集できません</p>
+                ) : eventStatus !== "closed" ? (
+                  <button className="mb-2 rounded border border-zinc-500 px-3 py-2 text-xs" onClick={() => startLineupEdit(m)}>組み合わせ編集</button>
+                ) : null)}
+                <div className="flex items-center gap-2">
+                  <ScoreInput value={{ a: m.result ? String(m.result.score_a) : "", b: m.result ? String(m.result.score_b) : "" }} kind="number"
+                    saved={hasEnteredFriendlyMatchScore(m)} result={hasEnteredFriendlyMatchScore(m) ? m.result!.winner_team : null}
+                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={eventStatus === "closed"}
+                    onCommit={async scores => { if (!await saveScore(m.id, scores)) throw new Error(scoreSaveState.current.error || "スコアを保存できませんでした。再試行してください"); }} />
+                </div><YoutubeDisclosure registered={!!m.youtube_url}>
+                  {m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="inline-block rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a>}
+                  <input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={e => setYoutubeInputs(previous => ({ ...previous, [m.id]: e.target.value }))} />
+                  <div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={() => void saveYoutubeUrl(m.id)}>URLを保存</button>{m.youtube_url && <button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>URLを削除</button>}</div>
+                  {canViewVideoClickCounts && m.youtube_url && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}
+                </YoutubeDisclosure>
+                </div>
+              </div>
+            );
+          });
 
   const resultSummarySection = (
     <Card title="結果サマリー">
@@ -1292,72 +1358,9 @@ export default function EventDetailPage() {
         </Card>
       )}
       <Card title="試合とスコア入力">
-        <div className={showAllRounds ? "max-h-[34rem] space-y-3 overflow-y-auto pr-1" : "space-y-3"}>
-          {displayedMatches.map((m) => {
-            const a = m.players.filter((p) => p.team === "A").map((p) => nameMap[p.participant_id]).join("/");
-            const b = m.players.filter((p) => p.team === "B").map((p) => nameMap[p.participant_id]).join("/");
-            return (
-              <div key={m.id} className="relative overflow-hidden rounded-xl bg-red-950/70">
-                <div className="absolute inset-y-0 left-0 flex w-28 items-center justify-center bg-red-600 text-sm font-bold text-white">削除</div>
-                <div
-                  className="relative rounded-xl bg-zinc-800 p-3 transition-transform"
-                  style={{ transform: `translateX(${eventMode === "auto" && eventStatus !== "closed" ? (swipeOffsets[m.id] ?? 0) : 0}px)` }}
-                  onTouchStart={(e) => { if (eventMode === "auto" && eventStatus !== "closed") setSwipeStartX((prev) => ({ ...prev, [m.id]: e.touches[0]?.clientX ?? 0 })); }}
-                  onTouchMove={(e) => {
-                    if (eventMode !== "auto" || eventStatus === "closed") return;
-                    const start = swipeStartX[m.id] ?? e.touches[0]?.clientX ?? 0;
-                    const delta = Math.max(0, Math.min((e.touches[0]?.clientX ?? start) - start, 128));
-                    setSwipeOffsets((prev) => ({ ...prev, [m.id]: delta }));
-                  }}
-                  onTouchEnd={() => {
-                    if (eventMode !== "auto" || eventStatus === "closed") return;
-                    const offset = swipeOffsets[m.id] ?? 0;
-                    if (offset >= 88) requestMatchDelete(m);
-                    else setSwipeOffsets((prev) => ({ ...prev, [m.id]: 0 }));
-                  }}
-                >
-                <p className="text-sm">Round {m.round_number} / Court{m.court_number}</p>
-                <p className="mb-2 text-base font-semibold">{a} vs {b}</p>
-                {eventMode === "manual" && (lineupDrafts[m.id] ? (
-                  <div className="mb-3 space-y-2 rounded-lg border border-zinc-700 p-2">
-                    <p className="text-xs text-zinc-300">組み合わせ編集</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {renderPlayerSelect(lineupDrafts[m.id].teamA1, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamA1: v } })), [lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB1, lineupDrafts[m.id].teamB2].filter(Boolean))}
-                      {renderPlayerSelect(lineupDrafts[m.id].teamA2, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamA2: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamB1, lineupDrafts[m.id].teamB2].filter(Boolean))}
-                      {renderPlayerSelect(lineupDrafts[m.id].teamB1, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamB1: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB2].filter(Boolean))}
-                      {renderPlayerSelect(lineupDrafts[m.id].teamB2, (v) => setLineupDrafts((prev) => ({ ...prev, [m.id]: { ...prev[m.id], teamB2: v } })), [lineupDrafts[m.id].teamA1, lineupDrafts[m.id].teamA2, lineupDrafts[m.id].teamB1].filter(Boolean))}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button className="rounded border border-zinc-500 py-2 text-sm" onClick={() => setLineupDrafts((prev) => { const next = { ...prev }; delete next[m.id]; return next; })}>キャンセル</button>
-                      <button className="rounded bg-accent py-2 text-sm text-black" onClick={() => void saveLineupEdit(m.id)}>保存</button>
-                    </div>
-                  </div>
-                ) : m.completed ? (
-                  <p className="mb-2 text-xs text-zinc-400">スコア入力済みのため組み合わせは編集できません</p>
-                ) : eventStatus !== "closed" ? (
-                  <button className="mb-2 rounded border border-zinc-500 px-3 py-2 text-xs" onClick={() => startLineupEdit(m)}>組み合わせ編集</button>
-                ) : null)}
-                <div className="flex items-center gap-2">
-                  <ScoreInput value={{ a: String(scoreInputs[m.id]?.a ?? ""), b: String(scoreInputs[m.id]?.b ?? "") }} kind="number"
-                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={(m.completed && !editingMatchIds[m.id]) || eventStatus === "closed"}
-                    onChange={scores => setScoreInputs(previous => ({ ...previous, [m.id]: { a: scores.a.trim() === "" ? "" : Number(scores.a), b: scores.b.trim() === "" ? "" : Number(scores.b) } }))} />
-                  <button className="rounded bg-accent px-3 py-2 text-black disabled:bg-zinc-600 disabled:text-zinc-300" onClick={() => saveScore(m.id)} disabled={(m.completed && !editingMatchIds[m.id]) || eventStatus === "closed"}>{m.completed && !editingMatchIds[m.id] ? "完了" : eventStatus === "closed" ? "終了済み" : "保存"}</button>
-                  {m.completed && eventStatus !== "closed" && (
-                    <button className="rounded border border-zinc-500 px-2 py-2 text-xs" onClick={() => setEditingMatchIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button>
-                  )}
-                </div>{isFriendlyMatchDraw(m) && <p className="mt-2 text-sm font-semibold text-amber-300">引き分け</p>}<div className="mt-2 rounded-lg border border-zinc-700 p-2"><p className="mb-1 text-xs text-zinc-300">YouTubeリンク</p>{editingYoutubeIds[m.id] || !m.youtube_url ? <div className="space-y-2"><input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={(e) => setYoutubeInputs((prev) => ({ ...prev, [m.id]: e.target.value }))} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-sm text-black" onClick={() => void saveYoutubeUrl(m.id)}>{m.youtube_url ? "保存" : "YouTubeリンクを追加"}</button>{m.youtube_url && <button className="w-1/2 rounded border border-zinc-500 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: false }))}>キャンセル</button>}</div></div> : <div className="space-y-1"><div className="flex gap-2"><a href={m.youtube_url} target="_blank" rel="noreferrer" className="rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a><button className="rounded border border-zinc-500 px-3 py-2 text-sm" onClick={() => setEditingYoutubeIds((prev) => ({ ...prev, [m.id]: true }))}>編集</button><button className="rounded border border-red-500 px-3 py-2 text-sm text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>削除</button></div>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}</div>}</div>
-                  {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="mt-3 w-full rounded-xl border border-red-500 py-2 text-sm text-red-300" onClick={() => requestMatchDelete(m)}>削除</button>}
-                </div>
-              </div>
-            );
-          })}
+        <div>
+          <MatchHistoryList>{matchCards}</MatchHistoryList>
         </div>
-        <div className="mt-3">
-          <button className="w-full rounded-xl border border-zinc-600 py-2 text-sm" onClick={() => setShowAllRounds((v) => !v)}>
-            {showAllRounds ? "閉じる" : "すべて表示"}
-          </button>
-        </div>
-          {showAllRounds && <p className="mt-2 text-xs text-zinc-400">下にスクロールして全試合を確認できます</p>}
 
       </Card>
 
@@ -1402,13 +1405,13 @@ export default function EventDetailPage() {
           {participants.map((p) => (
             <li key={p.id} className="rounded-xl bg-zinc-800 p-3">
               <div className="mb-2 flex items-center justify-between">
-                <span>{p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定")}</span>
+                <GuestName name={participantLabel(p)} guest={p.participant_type === "guest"} />
                 <button
                   type="button"
                   aria-label="参加状態切替"
                   onClick={() => updateStatus(p.id, p.status !== "active")}
                   disabled={eventStatus === "closed"}
-                  className={`relative h-8 w-20 rounded-full px-1 transition ${p.status === "active" ? "bg-lime-500" : "bg-zinc-300"}`}
+                  className={`relative h-8 w-20 shrink-0 rounded-full px-1 transition ${p.status === "active" ? "bg-lime-500" : "bg-zinc-300"}`}
                 >
                   <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${p.status === "active" ? "right-1" : "left-1"}`} />
                   <span className={`absolute inset-0 flex items-center justify-center text-xs font-semibold ${p.status === "active" ? "text-white" : "text-zinc-700"}`}>
@@ -1525,7 +1528,7 @@ export default function EventDetailPage() {
 function EditableEventTitle({ label, name, canEdit, isEditing, draft, onDraftChange, onStartEdit, onSave, onCancel }: { label: string; name: string; canEdit: boolean; isEditing: boolean; draft: string; onDraftChange: (value: string) => void; onStartEdit: () => void; onSave: () => void; onCancel: () => void }) {
   if (isEditing) {
     return (
-      <div className="space-y-2">
+      <div className="space-y-2 pr-14 sm:pr-0">
         <label className="text-xs font-semibold text-zinc-400">{label}</label>
         <input className="w-full rounded-xl border border-zinc-600 bg-zinc-900 px-3 py-3 text-lg font-bold text-zinc-100 outline-none focus:border-accent" value={draft} onChange={(e) => onDraftChange(e.target.value)} maxLength={80} autoFocus />
         <div className="grid grid-cols-2 gap-2">
@@ -1536,7 +1539,7 @@ function EditableEventTitle({ label, name, canEdit, isEditing, draft, onDraftCha
     );
   }
   return (
-    <div className="flex items-start gap-2">
+    <div className="flex items-start gap-2 pr-14 sm:pr-0">
       <h1 className="min-w-0 flex-1 text-xl font-bold break-words">{label}：{name}</h1>
       {canEdit && <button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}
     </div>

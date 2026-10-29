@@ -248,7 +248,7 @@ export default function FriendlyTeamMatchDetailPage() {
       }))} />
     </div></Card>}
     {event.status==="closed"&&<TeamMatchStatsCard stats={teamMatchStats} openSections={openStatsSections} onToggle={toggleStatsSection} />}
-    <Card title="試合結果"><MatchHistoryList>{[...matches].reverse().map(m=><div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
+    <Card title="マッチボード"><MatchHistoryList>{[...matches].reverse().map(m=><div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
       <p className="font-bold">第{m.match_order}試合</p>
       <ScoreInput saveKey={`${scoreScope}${m.id}`} names={[[{name:memberName("team_a",m.team_a_player1_profile_id,m.team_a_player1_guest_name),guest:!m.team_a_player1_profile_id&&!!m.team_a_player1_guest_name},{name:memberName("team_a",m.team_a_player2_profile_id,m.team_a_player2_guest_name),guest:!m.team_a_player2_profile_id&&!!m.team_a_player2_guest_name}],[{name:memberName("team_b",m.team_b_player1_profile_id,m.team_b_player1_guest_name),guest:!m.team_b_player1_profile_id&&!!m.team_b_player1_guest_name},{name:memberName("team_b",m.team_b_player2_profile_id,m.team_b_player2_guest_name),guest:!m.team_b_player2_profile_id&&!!m.team_b_player2_guest_name}]]} value={{a:m.team_a_score===null?"":String(m.team_a_score),b:m.team_b_score===null?"":String(m.team_b_score)}} saved={m.result!=="undecided"&&m.team_a_score!==null&&m.team_b_score!==null} result={m.team_a_score===null||m.team_b_score===null?null:m.result==="win"?"A":m.result==="lose"?"B":m.result==="draw"?"draw":null} disabled={!canManage||event.status==="closed"||isClosingEvent} onCommit={scores=>commitCardScore(scores,m)} />
       {m.score_detail&&<p>詳細スコア: {m.score_detail}</p>}{m.memo&&<p className="whitespace-pre-wrap">メモ: {m.memo}</p>}

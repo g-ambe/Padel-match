@@ -374,7 +374,7 @@ export default function OfficialMatchDetailPage() {
           }))} />
         </div>
       </Card>}
-      <Card title="戦績">
+      <Card title="マッチボード">
         <div className="space-y-4">
           {opponents.length === 0 && <p className="text-sm text-zinc-400">戦績はまだ登録されていません</p>}
           <MatchHistoryList>{opponents.map((opponent) => (

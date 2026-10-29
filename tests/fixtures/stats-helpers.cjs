@@ -6,6 +6,7 @@ require('node:module').registerHooks({ resolve(specifier, context, next) { retur
 const history = require('../../lib/stats-history.ts');
 const results = require('../../lib/friendly-match-results.ts');
 const { readProfileRows } = require('../../lib/player-profiles.ts');
+const eventCourts = require('../../lib/event-courts.ts');
 
 // Reactを偽装せず、画面が実行する関数そのものをASTから取り出して検証する。
 function expression(source, name) {
@@ -24,7 +25,7 @@ function expression(source, name) {
 }
 function evaluate(source, name, bindings = {}) {
   const code = ts.transpileModule(`module.exports = (${expression(source, name)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const values = { ...results, ...history, readProfileRows, closingEvent:{current:false}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
+  const values = { ...results, ...history, ...eventCourts, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
   const module = { exports: {} };
   new Function('module', ...Object.keys(values), code)(module, ...Object.values(values));
   return module.exports;

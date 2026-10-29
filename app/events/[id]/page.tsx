@@ -17,6 +17,7 @@ import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from 
 import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { FRIENDLY_MODE_UNLOCK_MATCHES, friendlyRoundModes, generateFriendlyRound, scoredFriendlyMatches, type FriendlyRoundMode } from "@/lib/friendly-rounds";
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
+import { readEventCourts, saveEventCourts, validCourtCount } from "@/lib/event-courts";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
 type TeamResult = "A" | "B" | "draw";
@@ -57,6 +58,16 @@ export default function EventDetailPage() {
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [eventName, setEventName] = useState("-");
   const [courtCount, setCourtCount] = useState(1);
+  const boardOperation = useRef<"court" | "round" | "delete" | null>(null);
+  const courtDialogRequest = useRef(0);
+  const [showCourtDialog, setShowCourtDialog] = useState(false);
+  const [courtDraft, setCourtDraft] = useState(1);
+  const [courtBeforeEdit, setCourtBeforeEdit] = useState(1);
+  const [courtLoading, setCourtLoading] = useState(false);
+  const [courtReady, setCourtReady] = useState(false);
+  const [courtSaving, setCourtSaving] = useState(false);
+  const [courtError, setCourtError] = useState("");
+  const [isDeletingMatch, setIsDeletingMatch] = useState(false);
   const [guestName, setGuestName] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -417,6 +428,65 @@ export default function EventDetailPage() {
     else if (reloadAfterScores.current) { reloadAfterScores.current = false; void loadAll().catch(() => setError("保存後の再読み込みに失敗しました")); }
   }, [unsavedScoreCount]);
 
+  const refreshCourtCount = async () => {
+    if (guestMode || eventMode !== "auto" || boardOperation.current || closingEvent.current || showCourtDialog) return;
+    const supabase = getSupabaseClient(); if (!supabase) return;
+    const revision = scoreQueue.getRevision(scoreScope);
+    try {
+      const current = await readEventCourts(supabase, eventId);
+      if (revision !== scoreQueue.getRevision(scoreScope) || boardOperation.current || closingEvent.current) return;
+      setCourtCount(current.court_count);
+      if (current.is_deleted) setIsDeletedEvent(true);
+      if (current.status === "closed") setEventStatus("closed");
+    } catch { /* 生成時にも最新設定を取得する。フォーカス復帰で既存の画面を消さない。 */ }
+  };
+  useEffect(() => {
+    const refresh = () => { if (!document.hidden) void refreshCourtCount(); };
+    window.addEventListener("focus", refresh); document.addEventListener("visibilitychange", refresh);
+    return () => { window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, [eventId, eventMode, guestMode, showCourtDialog]);
+
+  const closeCourtDialog = () => {
+    if (boardOperation.current === "court") return;
+    courtDialogRequest.current++; setShowCourtDialog(false); setCourtLoading(false); setCourtReady(false);
+  };
+  const openCourtDialog = async () => {
+    if ((!guestMode && !canManageEventName) || eventStatus === "closed" || eventMode !== "auto" || boardOperation.current || closingEvent.current) return;
+    const request = ++courtDialogRequest.current;
+    setCourtDraft(courtCount); setCourtBeforeEdit(courtCount); setCourtError(""); setCourtReady(false); setShowCourtDialog(true); setCourtLoading(true);
+    try {
+      let current: { court_count: number; status: string; is_deleted?: boolean; event_mode: string | null };
+      if (guestMode) { const guest = getGuestEvent(eventId); if (!guest) throw new Error("イベントが見つかりません"); current = { ...guest, event_mode: guest.event_mode ?? "auto" }; }
+      else { const supabase = getSupabaseClient(); if (!supabase) throw new Error("設定の準備ができませんでした"); current = await readEventCourts(supabase, eventId); }
+      if (request !== courtDialogRequest.current) return;
+      if (current.status === "closed") setEventStatus("closed");
+      if (current.is_deleted || current.status !== "active" || (current.event_mode ?? "auto") !== "auto") throw new Error("開催中の自動生成イベントのみ変更できます");
+      setCourtCount(current.court_count); setCourtBeforeEdit(current.court_count); setCourtDraft(current.court_count); setCourtReady(true);
+    } catch (cause) { if (request === courtDialogRequest.current) setCourtError(cause instanceof Error ? cause.message : "利用コート数を取得できませんでした"); }
+    finally { if (request === courtDialogRequest.current) setCourtLoading(false); }
+  };
+  const saveCourtCount = async () => {
+    if (boardOperation.current || isGeneratingRound || closingEvent.current) return;
+    if (!courtReady) return setCourtError("現在の設定を確認できていません。閉じて再度お試しください");
+    if ((!guestMode && !canManageEventName) || eventStatus !== "active" || eventMode !== "auto") return setCourtError("このイベントのコート数を変更する権限がありません");
+    if (!validCourtCount(courtDraft)) return setCourtError("利用コート数は1〜5面で選択してください");
+    boardOperation.current = "court"; setCourtSaving(true); setCourtError("");
+    try {
+      let saved: number;
+      if (guestMode) {
+        const guest = getGuestEvent(eventId);
+        if (!guest || guest.status !== "active" || (guest.event_mode ?? "auto") !== "auto" || guest.court_count !== courtBeforeEdit) throw new Error("設定または開催状態が変更されています。閉じて再操作してください");
+        upsertGuestEvent({ ...guest, court_count: courtDraft }); saved = courtDraft;
+      } else {
+        const supabase = getSupabaseClient(); if (!supabase) throw new Error("設定の準備ができませんでした");
+        saved = await saveEventCourts(supabase, eventId, courtBeforeEdit, courtDraft);
+      }
+      scoreQueue.invalidateReads(scoreScope); setCourtCount(saved); courtDialogRequest.current++;
+      setShowCourtDialog(false); setMessage(`利用コート数を${saved}面に変更しました。次Roundから適用します`);
+    } catch (cause) { setCourtError(cause instanceof Error ? cause.message : "利用コート数を保存できませんでした"); }
+    finally { boardOperation.current = null; setCourtSaving(false); }
+  };
+
   const startEventNameEdit = () => {
     setError("");
     setMessage("");
@@ -659,6 +729,7 @@ export default function EventDetailPage() {
 
   const closeEvent = async () => {
     if (closingEvent.current) return;
+    if (boardOperation.current) return setError("Round生成・削除・コート数保存の完了後に終了してください");
     if (scoreQueue.hasUnsaved(scoreScope) || scoreSaveState.current.saving.size) return setError("保存中または保存失敗のスコアがあります。保存完了・再試行後に終了してください");
     closingEvent.current = true; setIsClosingEvent(true);
     try {
@@ -760,10 +831,13 @@ export default function EventDetailPage() {
   };
 
   const requestMatchDelete = (match: MatchView) => {
+    if (boardOperation.current) return setError("処理の完了後に削除を操作してください");
     if (scoreQueue.has(`${scoreScope}${match.id}`)) return setError("この試合のスコアを保存完了・再試行してから操作してください");
     if (eventMode !== "auto" || eventStatus === "closed") return;
+    setError("");
     setMatchDeleteTarget({ id: match.id, hasScore: matchHasSavedScore(match) });
-    setSwipeOffsets((prev) => ({ ...prev, [match.id]: Math.max(prev[match.id] ?? 0, 96) }));
+    // 確認を独立したdialogへ出すため、復帰先のボタンを画面外へ動かさない。
+    setSwipeOffsets((prev) => ({ ...prev, [match.id]: 0 }));
   };
 
   const cancelMatchDelete = () => {
@@ -857,8 +931,8 @@ export default function EventDetailPage() {
       }
       upsertGuestEvent(ge);
       setScoreInputs((prev) => { const next = { ...prev }; delete next[matchId]; return next; });
-      cancelMatchDelete();
       await loadAll();
+      cancelMatchDelete();
       return;
     }
     const supabase = getSupabaseClient();
@@ -873,8 +947,16 @@ export default function EventDetailPage() {
     if (!roundUpdated) return;
     setError("");
     setScoreInputs((prev) => { const next = { ...prev }; delete next[matchId]; return next; });
-    cancelMatchDelete();
     await loadAll();
+    cancelMatchDelete();
+  };
+
+  const confirmMatchDelete = async () => {
+    if (boardOperation.current || closingEvent.current) return;
+    boardOperation.current = "delete"; setIsDeletingMatch(true);
+    try { await deleteMatch(); }
+    catch { setError("削除に失敗しました。画面を更新して試合の状態を確認してください"); }
+    finally { boardOperation.current = null; setIsDeletingMatch(false); }
   };
 
 
@@ -949,7 +1031,7 @@ export default function EventDetailPage() {
   };
 
   const generateRound = async () => {
-    if (isGeneratingRound) return;
+    if (isGeneratingRound || boardOperation.current || closingEvent.current) return;
     if (eventMode !== "auto") {
       setError("手動作成イベントでは手動で試合を作成してください");
       return;
@@ -960,6 +1042,7 @@ export default function EventDetailPage() {
     }
 
     if (guestMode && eventId) {
+      boardOperation.current = "round";
       setIsGeneratingRound(true);
       try {
       const active = candidateParticipants;
@@ -979,11 +1062,13 @@ export default function EventDetailPage() {
       await loadAll();
       return;
       } finally {
+        boardOperation.current = null;
         setIsGeneratingRound(false);
       }
     }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
+    boardOperation.current = "round";
     setError("");
     setIsGeneratingRound(true);
 
@@ -1002,6 +1087,7 @@ export default function EventDetailPage() {
     if (currentEvent.is_deleted) { setIsDeletedEvent(true); throw new Error("削除済みイベントはRound生成できません"); }
     if (currentEvent.status !== "active") { setEventStatus("closed"); throw new Error("終了済みイベントはRound生成できません"); }
     if ((currentEvent.event_mode ?? "auto") !== "auto") throw new Error("自動生成イベントのみ利用できます。画面を更新してください");
+    setCourtCount(currentEvent.court_count);
     if (roundsResult.error || matchesResult.error || participantsResult.error) throw new Error("試合履歴・参加者を確認できませんでした。再試行してください");
     const rounds = roundsResult.data ?? [];
     const roundMap = new Map(rounds.map(r => [r.id, r.round_number as number]));
@@ -1055,6 +1141,7 @@ export default function EventDetailPage() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Round生成に失敗しました。再試行してください");
     } finally {
+      boardOperation.current = null;
       setIsGeneratingRound(false);
     }
   };
@@ -1391,7 +1478,7 @@ export default function EventDetailPage() {
           </div>
         </Card>
       )}
-      <Card title="試合運営">
+      <Card title="マッチボード">
         <div className="space-y-3" data-event-operations>
           <MatchHistoryList heading={latestRoundNumber > 0 ? `現在 Round ${latestRoundNumber}` : "試合はまだありません"}>{matchCards}</MatchHistoryList>
       {!guestMode && !eventId.startsWith("guest_") && !!roundUserId && eventMode === "auto" && eventStatus !== "closed" && (
@@ -1417,11 +1504,14 @@ export default function EventDetailPage() {
         </fieldset>
         </details>
       )}
-      {eventMode === "manual" ? manualRoundSection : (eventStatus === "closed" ? (
-        <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
-      ) : (
-        <ActionButton onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void generateRound(); }} disabled={isGeneratingRound || isClosingEvent || unsavedScoreCount > 0}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>
-      ))}
+      {eventMode === "manual" ? manualRoundSection : (
+        <div className="flex items-stretch gap-2" data-court-generation>
+          {(guestMode || canManageEventName) && eventStatus === "active" ? <button type="button" aria-label="利用コート数を変更" className="min-h-12 min-w-24 shrink-0 rounded-xl border border-zinc-500 px-2 py-1 disabled:opacity-40" onClick={() => void openCourtDialog()} disabled={isGeneratingRound || courtSaving || isDeletingMatch || courtLoading || isClosingEvent}>
+            <span className="block text-xs text-zinc-300">利用コート数</span><span className="text-sm font-bold">{courtCount}面 <span aria-hidden="true">⌄</span></span>
+          </button> : <p className="flex min-h-12 shrink-0 flex-col justify-center rounded-xl border border-zinc-700 px-2 text-center"><span className="text-xs text-zinc-400">利用コート数</span><span className="text-sm font-bold">{courtCount}面</span></p>}
+          <div className="min-w-0 flex-1">{eventStatus === "closed" ? <button className="min-h-12 w-full rounded-xl bg-zinc-700 px-2 py-3 text-sm font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button> : <ActionButton onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void generateRound(); }} disabled={isGeneratingRound || courtSaving || courtLoading || isDeletingMatch || isClosingEvent || unsavedScoreCount > 0}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>}</div>
+        </div>
+      )}
           {showCourtWarning && <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>}
           {eventStatus !== "closed" && <div className="space-y-2 border-t border-zinc-700 pt-3">
             <button className="min-h-11 w-full rounded-xl border border-zinc-500 px-3 py-2 text-sm font-semibold disabled:opacity-50" onClick={() => setShowCloseModal(true)} disabled={isClosingEvent}>イベント終了</button>
@@ -1520,7 +1610,23 @@ export default function EventDetailPage() {
       {guestMode && <p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>}
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
-      {matchDeleteTarget && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">この試合を削除しますか？</p>{matchDeleteTarget.hasScore && <div className="mt-2 space-y-1 text-sm text-red-300"><p>この試合にはスコアが入力されています。</p><p>削除すると戦績からも除外されます。</p><p>本当に削除しますか？</p></div>}<div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={cancelMatchDelete}>キャンセル</button><button className="w-1/2 rounded-xl bg-red-500 py-2 font-semibold text-white" onClick={() => void deleteMatch()}>削除</button></div></div></div>}
+      <AppDialog open={!!matchDeleteTarget} title="この試合を削除しますか？" busy={isDeletingMatch} onClose={cancelMatchDelete}>
+        <div className="space-y-3 overflow-y-auto p-4">
+          {matchDeleteTarget?.hasScore && <div className="space-y-1 text-sm text-red-300"><p>この試合にはスコアが入力されています。</p><p>削除すると戦績からも除外されます。</p><p>本当に削除しますか？</p></div>}
+          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+          <div className="flex gap-2"><button type="button" disabled={isDeletingMatch} className="min-h-11 w-1/2 rounded-xl border border-zinc-600 py-2" onClick={cancelMatchDelete}>キャンセル</button><button type="button" disabled={isDeletingMatch} className="min-h-11 w-1/2 rounded-xl bg-red-500 py-2 font-semibold text-white disabled:opacity-40" onClick={() => void confirmMatchDelete()}>{isDeletingMatch ? "削除中…" : "削除"}</button></div>
+        </div>
+      </AppDialog>
+
+      <AppDialog open={showCourtDialog} title="利用コート数を変更" busy={courtSaving} onClose={closeCourtDialog}>
+        <div className="space-y-4 overflow-y-auto p-4">
+          <p className="text-sm text-zinc-300">現在：{courtCount}面。変更は次Roundから適用し、過去の試合は変更しません。</p>
+          {courtLoading ? <p role="status" className="text-sm">現在の設定を確認中…</p> : <div className="grid grid-cols-5 gap-2" role="group" aria-label="利用コート数を選択">{[1,2,3,4,5].map(count => <button type="button" key={count} disabled={courtSaving || !courtReady} aria-pressed={courtDraft === count} className={`min-h-12 rounded-xl border px-1 font-bold disabled:opacity-40 ${courtDraft === count ? "border-accent text-accent" : "border-zinc-600"}`} onClick={() => setCourtDraft(count)}>{count}面</button>)}</div>}
+          {courtError && <p role="alert" className="text-sm text-red-400">{courtError}</p>}
+          {courtSaving && <p role="status" className="text-sm">保存中…</p>}
+          <div className="grid grid-cols-2 gap-2"><button type="button" disabled={courtSaving} className="min-h-12 rounded-xl border border-zinc-600" onClick={closeCourtDialog}>キャンセル</button><button type="button" disabled={courtSaving || courtLoading || !courtReady || eventStatus !== "active"} className="min-h-12 rounded-xl bg-accent font-bold text-black disabled:opacity-40" onClick={() => void saveCourtCount()}>保存</button></div>
+        </div>
+      </AppDialog>
 
       {deleteEventVideoId && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">動画を削除しますか？</p><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setDeleteEventVideoId(null)}>キャンセル</button><button className="w-1/2 rounded-xl bg-red-500 py-2 font-semibold text-white" onClick={() => void deleteEventVideoLink()}>動画を削除</button></div></div></div>}
 
@@ -1531,6 +1637,7 @@ export default function EventDetailPage() {
             <p className="text-sm text-zinc-300">終了するとランキング・MVPを確認し、共有リンクから結果を共有できます。</p>
             <p className="text-sm text-zinc-300">未確定の試合：{matches.filter(match => !hasEnteredFriendlyMatchScore(match)).length}件。未確定試合は正式な結果集計に含まれません。</p>
             {unsavedScoreCount > 0 && <p role="alert" className="text-sm text-amber-300">保存中・保存失敗のスコアがあります。保存完了・再試行後に終了してください。</p>}
+            {(isGeneratingRound || courtSaving || isDeletingMatch) && <p role="alert" className="text-sm text-amber-300">Round生成・削除・コート数保存の完了後に終了してください。</p>}
             {eventMode === "manual" && (
               <div className="mb-4 space-y-2 rounded-xl bg-zinc-800 p-3 text-sm">
                 <p className="font-semibold">このイベントの結果をグループ戦績に反映しますか？</p>
@@ -1540,7 +1647,7 @@ export default function EventDetailPage() {
             )}
             <div className="flex gap-2">
               <button className="w-1/2 rounded-xl border border-zinc-600 py-3" disabled={isClosingEvent} onClick={() => setShowCloseModal(false)}>キャンセル</button>
-              <button className="w-1/2 rounded-xl bg-accent py-3 font-semibold text-black disabled:opacity-40" disabled={isClosingEvent || unsavedScoreCount > 0} onClick={() => void closeEvent()}>{isClosingEvent ? "終了中…" : "終了する"}</button>
+              <button className="w-1/2 rounded-xl bg-accent py-3 font-semibold text-black disabled:opacity-40" disabled={isClosingEvent || isGeneratingRound || courtSaving || isDeletingMatch || unsavedScoreCount > 0} onClick={() => void closeEvent()}>{isClosingEvent ? "終了中…" : "終了する"}</button>
             </div>
           </div>
       </AppDialog>

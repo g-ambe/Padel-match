@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
+import { fetchGroupStatsHistory } from "@/lib/stats-history";
 import { canDeleteGroup, canEditGroupProfile, canManageMembers, canManageTargetMember, toAppRole } from "@/lib/permissions";
 import { profileErrorMessage, PlayerProfileError, saveClubMemberRole, saveUnlinkedClubMemberName, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
 import { effectiveJoinStatus, linkStatusLabel, profileLinkRpc, requestPlayerProfileLink, reviewPlayerProfileLink, type AccountCandidate, type LinkStatus, type ProfileLinkRequest, type ProfileMergePreview } from "@/lib/profile-links";
@@ -110,28 +111,22 @@ export default function GroupDetailPage() {
   const loadStats = async () => {
     const s = getSupabaseClient();
     if (!s || !id) return;
-    const { data: events, error: eventsError } = await s.from("events").select("id,name,created_at,status").eq("club_id", id).eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official").order("created_at", { ascending: false });
-    if (eventsError) { setError("過去のイベントを取得できませんでした"); return; }
-    const closedEventIds = (events ?? []).map((e: any) => e.id);
-    if (!closedEventIds.length) {
-      setIndividualRows([]); setPairRows([]); setEventHistoryRows([]); return;
+    let history: Awaited<ReturnType<typeof fetchGroupStatsHistory>>;
+    try {
+      history = await fetchGroupStatsHistory(s, id);
+    } catch (cause) {
+      console.error("戦績の試合履歴取得に失敗しました", cause);
+      setIndividualRows([]); setPairRows([]); setEventHistoryRows([]);
+      setError("戦績の試合履歴を取得できませんでした。再度読み込んでください");
+      return;
     }
-
-    const { data: membersRaw, error: membersError } = await s.from("club_members").select("player_profile_id,is_active").eq("club_id", id);
+    const { events, membersRaw, participants, pps, matches } = history;
     const memberProfileSet = new Set((membersRaw ?? []).map((m: any) => m.player_profile_id).filter(Boolean));
     const currentProfileSet = new Set((membersRaw ?? []).filter((m: any) => m.is_active).map((m: any) => m.player_profile_id).filter(Boolean));
-    const { data: participants, error: participantsError } = await s.from("event_participants").select("id,event_id,player_profile_id,participant_type").in("event_id", closedEventIds);
-    if (membersError || participantsError) { setError("戦績の所属・参加履歴を取得できませんでした"); return; }
     const memberParticipantIds = new Set((participants ?? []).filter((p: any) => p.participant_type !== "guest" && p.player_profile_id && memberProfileSet.has(p.player_profile_id)).map((p: any) => p.id));
     const participantMap = new Map((participants ?? []).map((p: any) => [p.id, p]));
-    const profileIds = [...new Set((participants ?? []).map((p: any) => p.player_profile_id).filter(Boolean))];
-    const { data: pps, error: namesError } = profileIds.length ? await s.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[], error: null };
-    if (namesError) { setError("戦績の選手名を取得できませんでした"); return; }
     const profileName = new Map((pps ?? []).map((p: any) => [p.id, p.display_name]));
 
-    const { data: matches, error: matchesError } = await s.from("matches").select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)").in("event_id", closedEventIds);
-
-    if (matchesError) { setError("過去の試合結果を取得できませんでした"); return; }
     const pStats: Record<string, any> = {};
     const pairStats: Record<string, any> = {};
 

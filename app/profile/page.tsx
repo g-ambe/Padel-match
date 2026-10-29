@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import { ProfileLinkRequests } from "@/components/profile-link-requests";
 import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
+import { fetchCountedFriendlyEvents, readStatsRows } from "@/lib/stats-history";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { choosePlayerProfile, ensureLinkedPlayerProfile, fetchLinkedPlayerProfiles, fetchProfileUsage, preferredPlayerProfileId, profileDetailCount, profileErrorMessage, readProfileRows, rememberPlayerProfile, saveLinkedPlayerProfile, type PlayerProfile, type ProfileUsage } from "@/lib/player-profiles";
+import { choosePlayerProfile, ensureLinkedPlayerProfile, fetchLinkedPlayerProfiles, fetchProfileUsage, preferredPlayerProfileId, profileDetailCount, profileErrorMessage, rememberPlayerProfile, saveLinkedPlayerProfile, type PlayerProfile, type ProfileUsage } from "@/lib/player-profiles";
 
 const PLAY_LEVEL_OPTIONS = ["初級", "初中級", "中級", "中上級", "上級"] as const;
 const DOMINANT_HAND_OPTIONS = ["右", "左"] as const;
@@ -272,21 +273,17 @@ type ProfileMatchRow = { team: string; matches: { id: string; event_id: string; 
 
 async function loadProfileStats(s: SupabaseClient, profiles: PlayerProfile[], userId: string): Promise<ProfileStats> {
   const profileIds = profiles.map((profile) => profile.id);
-  const participants = await readProfileRows<{ id: string; event_id: string }>((start, end) => s.from("event_participants").select("id,event_id")
+  const participants = await readStatsRows<{ id: string; event_id: string }>((start, end) => s.from("event_participants").select("id,event_id")
     .or(`player_profile_id.in.(${profileIds.join(",")}),profile_id.eq.${userId}`).eq("participant_type", "member").order("id").range(start, end));
   const eventIds = [...new Set(participants.map((participant) => participant.event_id))];
-  const closedIds = new Set<string>();
-  for (let index = 0; index < eventIds.length; index += 100) {
-    const events = await readProfileRows<{ id: string }>((start, end) => s.from("events").select("id").in("id", eventIds.slice(index, index + 100))
-      .eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official").order("id").range(start, end));
-    events.forEach((event) => closedIds.add(event.id));
-  }
+  const events = await fetchCountedFriendlyEvents(s, { eventIds });
+  const closedIds = new Set(events.map(event => event.id));
   const seenMatches = new Set<string>();
   let wins = 0, scored = 0, conceded = 0;
   for (let index = 0; index < participants.length; index += 100) {
-    const rows = await readProfileRows<ProfileMatchRow>((start, end) => s.from("match_players")
+    const rows = await readStatsRows<ProfileMatchRow>((start, end) => s.from("match_players")
       .select("id,team,matches!inner(id,event_id,completed,match_results(score_a,score_b,winner_team))")
-      .in("participant_id", participants.slice(index, index + 100).map((participant) => participant.id)).order("id").range(start, end));
+      .in("participant_id", participants.slice(index, index + 100).map((participant) => participant.id)).order("id").range(start, end).returns<ProfileMatchRow[]>());
     for (const row of rows) {
       const match = row.matches;
       if (!match || !closedIds.has(match.event_id) || seenMatches.has(match.id)) continue;

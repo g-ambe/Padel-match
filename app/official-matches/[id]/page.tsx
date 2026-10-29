@@ -113,6 +113,7 @@ export default function OfficialMatchDetailPage() {
     const eventRow = data as unknown as OfficialEventRow | null;
     const creator = !!access.uid && eventRow?.created_by_auth_user_id === access.uid;
     if (!eventRow || (!access.superUser && !creator && !access.groups.some((group) => group.id === eventRow.club_id))) {
+      setEvent(null); setMatches([]);
       setError("この操作を行う権限がありません");
       return;
     }
@@ -255,8 +256,8 @@ export default function OfficialMatchDetailPage() {
     if (!canManageShare) return setError("この操作を行う権限がありません");
     if (!deleteEventChecked) return setError("削除確認にチェックしてください");
     const supabase = getSupabaseClient(); if (!supabase) return;
-    const { error: updateError } = await supabase.from("official_events").update({ is_deleted: true, deleted_at: new Date().toISOString(), share_enabled: false, share_token: null, updated_at: new Date().toISOString() }).eq("id", id);
-    if (updateError) return setError("オフィシャルチームマッチの削除に失敗しました");
+    const { error: updateError, count } = await supabase.from("official_events").update({ is_deleted: true, deleted_at: new Date().toISOString(), share_enabled: false, share_token: null, updated_at: new Date().toISOString() }, { count: "exact" }).eq("id", id).eq("is_deleted", false);
+    if (updateError || count !== 1) return setError("オフィシャルチームマッチの削除に失敗しました");
     router.push("/official-matches");
   };
 

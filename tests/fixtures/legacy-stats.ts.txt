@@ -1,0 +1,161 @@
+// 8f4e1bf（改修前 main）の計算コードを固定。期待値を新実装から作らない。
+const loadStats = async () => {
+    const s = getSupabaseClient();
+    if (!s || !id) return;
+    const { data: events, error: eventsError } = await s.from("events").select("id,name,created_at,status").eq("club_id", id).eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official").order("created_at", { ascending: false });
+    if (eventsError) { setError("過去のイベントを取得できませんでした"); return; }
+    const closedEventIds = (events ?? []).map((e: any) => e.id);
+    if (!closedEventIds.length) {
+      setIndividualRows([]); setPairRows([]); setEventHistoryRows([]); return;
+    }
+
+    const { data: membersRaw, error: membersError } = await s.from("club_members").select("player_profile_id,is_active").eq("club_id", id);
+    const memberProfileSet = new Set((membersRaw ?? []).map((m: any) => m.player_profile_id).filter(Boolean));
+    const currentProfileSet = new Set((membersRaw ?? []).filter((m: any) => m.is_active).map((m: any) => m.player_profile_id).filter(Boolean));
+    const { data: participants, error: participantsError } = await s.from("event_participants").select("id,event_id,player_profile_id,participant_type").in("event_id", closedEventIds);
+    if (membersError || participantsError) { setError("戦績の所属・参加履歴を取得できませんでした"); return; }
+    const memberParticipantIds = new Set((participants ?? []).filter((p: any) => p.participant_type !== "guest" && p.player_profile_id && memberProfileSet.has(p.player_profile_id)).map((p: any) => p.id));
+    const participantMap = new Map((participants ?? []).map((p: any) => [p.id, p]));
+    const profileIds = [...new Set((participants ?? []).map((p: any) => p.player_profile_id).filter(Boolean))];
+    const { data: pps, error: namesError } = profileIds.length ? await s.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[], error: null };
+    if (namesError) { setError("戦績の選手名を取得できませんでした"); return; }
+    const profileName = new Map((pps ?? []).map((p: any) => [p.id, p.display_name]));
+
+    const { data: matches, error: matchesError } = await s.from("matches").select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)").in("event_id", closedEventIds);
+
+    if (matchesError) { setError("過去の試合結果を取得できませんでした"); return; }
+    const pStats: Record<string, any> = {};
+    const pairStats: Record<string, any> = {};
+
+    for (const m of matches ?? []) {
+      const res = m.match_results?.[0];
+      if (!hasEnteredFriendlyMatchScore({ completed: m.completed, result: res })) continue;
+      const historicalTeams = getHistoricalGroupMatchTeams(m.match_players ?? [], memberParticipantIds);
+      if (!historicalTeams) continue;
+      const { teamA, teamB } = historicalTeams;
+
+      const updPlayer = (pid: string, sA: number, sB: number) => {
+        const prof = participantMap.get(pid)?.player_profile_id;
+        if (!prof) return;
+        if (!pStats[prof]) pStats[prof] = { playerId: prof, name: profileName.get(prof) ?? "名称未設定", matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
+        pStats[prof].matches += 1;
+        if (sA > sB) pStats[prof].wins += 1;
+        else if (sA < sB) pStats[prof].losses += 1;
+        else pStats[prof].draws += 1;
+        pStats[prof].scored += sA;
+        pStats[prof].conceded += sB;
+      };
+
+      for (const pid of teamA) updPlayer(pid, res.score_a, res.score_b);
+      for (const pid of teamB) updPlayer(pid, res.score_b, res.score_a);
+
+      const updPair = (team: string[], sA: number, sB: number) => {
+        if (team.length !== 2) return;
+        const p1 = participantMap.get(team[0])?.player_profile_id;
+        const p2 = participantMap.get(team[1])?.player_profile_id;
+        if (!p1 || !p2) return;
+        const [a, b] = [p1, p2].sort();
+        const key = `${a}|${b}`;
+        if (!pairStats[key]) pairStats[key] = { playerIds: [a, b], pairName: `${profileName.get(a) ?? "名称未設定"} / ${profileName.get(b) ?? "名称未設定"}`, matches: 0, wins: 0, losses: 0, draws: 0, scored: 0, conceded: 0 };
+        pairStats[key].matches += 1;
+        if (sA > sB) pairStats[key].wins += 1;
+        else if (sA < sB) pairStats[key].losses += 1;
+        else pairStats[key].draws += 1;
+        pairStats[key].scored += sA;
+        pairStats[key].conceded += sB;
+      };
+
+      updPair(teamA, res.score_a, res.score_b);
+      updPair(teamB, res.score_b, res.score_a);
+    }
+
+    const indivBase = Object.values(pStats).map((x: any) => ({ ...x, rate: x.matches ? (x.wins / x.matches) * 100 : 0, diff: x.scored - x.conceded, matchPoints: x.wins * 3 + x.draws, avgScored: x.matches ? x.scored / x.matches : 0, avgConceded: x.matches ? x.conceded / x.matches : 0 }));
+    const maxMatches = Math.max(1, ...indivBase.map((x: any) => x.matches));
+    const maxDiff = Math.max(1, ...indivBase.map((x: any) => Math.max(0, x.diff)));
+    const indiv = indivBase.map((x: any) => {
+      const matchScore = (x.matches / maxMatches) * 100;
+      const diffScore = (Math.max(0, x.diff) / maxDiff) * 100;
+      const totalPoint = x.rate * 0.7 + matchScore * 0.2 + diffScore * 0.1;
+      return { ...x, totalPoint, isReference: x.matches < 3 };
+    });
+    setIndividualRows(indiv.filter(row => currentProfileSet.has(row.playerId)));
+    setPairRows(
+      Object.values(pairStats)
+        .filter(row => row.playerIds.every((playerId: string) => currentProfileSet.has(playerId)))
+        .map((x: any) => ({ ...x, rate: x.matches ? (x.wins / x.matches) * 100 : 0, diff: x.scored - x.conceded, matchPoints: x.wins * 3 + x.draws, avgDiff: x.matches ? (x.scored - x.conceded) / x.matches : 0 }))
+        .sort((a: any, b: any) => b.matchPoints - a.matchPoints || b.wins - a.wins || b.rate - a.rate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.matches - b.matches || a.pairName.localeCompare(b.pairName, "ja"))
+    );
+    setEventHistoryRows((events ?? []).map((e: any) => ({ id: e.id, name: e.name, date: e.created_at, matchCount: (matches ?? []).filter((m: any) => m.event_id === e.id).length, participantCount: new Set((participants ?? []).filter((p: any) => p.event_id === e.id).map((p: any) => p.id)).size })));
+  };
+
+const rankedIndividuals = () => {
+    const base = [...individualRows];
+    if (individualMode === "総合ランキング") {
+      return base.sort((a: any, b: any) => b.totalPoint - a.totalPoint || b.matchPoints - a.matchPoints || b.rate - a.rate || b.wins - a.wins || b.draws - a.draws || b.diff - a.diff || a.matches - b.matches);
+    }
+    return base.sort((a: any, b: any) => b.rate - a.rate || b.wins - a.wins || b.draws - a.draws || b.diff - a.diff || b.scored - a.scored || b.matches - a.matches);
+  };
+
+async function loadProfileStats(s: SupabaseClient, profiles: PlayerProfile[], userId: string): Promise<ProfileStats> {
+  const profileIds = profiles.map((profile) => profile.id);
+  const participants = await readProfileRows<{ id: string; event_id: string }>((start, end) => s.from("event_participants").select("id,event_id")
+    .or(`player_profile_id.in.(${profileIds.join(",")}),profile_id.eq.${userId}`).eq("participant_type", "member").order("id").range(start, end));
+  const eventIds = [...new Set(participants.map((participant) => participant.event_id))];
+  const closedIds = new Set<string>();
+  for (let index = 0; index < eventIds.length; index += 100) {
+    const events = await readProfileRows<{ id: string }>((start, end) => s.from("events").select("id").in("id", eventIds.slice(index, index + 100))
+      .eq("status", "closed").eq("is_deleted", false).eq("stats_mode", "official").order("id").range(start, end));
+    events.forEach((event) => closedIds.add(event.id));
+  }
+  const seenMatches = new Set<string>();
+  let wins = 0, scored = 0, conceded = 0;
+  for (let index = 0; index < participants.length; index += 100) {
+    const rows = await readProfileRows<ProfileMatchRow>((start, end) => s.from("match_players")
+      .select("id,team,matches!inner(id,event_id,completed,match_results(score_a,score_b,winner_team))")
+      .in("participant_id", participants.slice(index, index + 100).map((participant) => participant.id)).order("id").range(start, end));
+    for (const row of rows) {
+      const match = row.matches;
+      if (!match || !closedIds.has(match.event_id) || seenMatches.has(match.id)) continue;
+      const result = match.match_results?.[0];
+      if (!hasEnteredFriendlyMatchScore({ completed: match.completed, result })) continue;
+      seenMatches.add(match.id);
+      scored += row.team === "A" ? result.score_a : result.score_b;
+      conceded += row.team === "A" ? result.score_b : result.score_a;
+      if (result.winner_team === row.team) wins += 1;
+    }
+  }
+  const matches = seenMatches.size;
+  return { matches, wins, winRate: matches ? wins / matches * 100 : 0, avgScored: matches ? scored / matches : 0, avgConceded: matches ? conceded / matches : 0 };
+}
+
+const teamMatchStats = () => {
+    const teamRows = { team_a: emptyStatsRow(teamAName), team_b: emptyStatsRow(teamBName) };
+    const playerRows = new Map<string, StatsRow>();
+    const pairRows = new Map<string, StatsRow>();
+    const playerInfo = (side: TeamSideKey, profileId: string | null, guestName: string | null) => ({ key: profileId ? `profile:${profileId}` : guestName ? `guest:${side}:${guestName}` : "", name: memberName(side, profileId, guestName) });
+    const ensureRow = (map: Map<string, StatsRow>, key: string, name: string) => { if (!map.has(key)) map.set(key, emptyStatsRow(name)); return map.get(key)!; };
+    const applyPlayers = (players: { key: string; name: string }[], scored: number, conceded: number) => { for (const player of players.filter((p) => p.key)) applyStatsResult(ensureRow(playerRows, player.key, player.name), scored, conceded); };
+    const applyPair = (players: { key: string; name: string }[], scored: number, conceded: number) => { const valid = players.filter((p) => p.key); if (valid.length !== 2) return; const sorted = [...valid].sort((a, b) => a.key.localeCompare(b.key)); const key = sorted.map((p) => p.key).join("|"); const name = sorted.map((p) => p.name).join(" / "); applyStatsResult(ensureRow(pairRows, key, name), scored, conceded); };
+    for (const match of matches) {
+      if (!hasCountableTeamScore(match)) continue;
+      const aScore = match.team_a_score!;
+      const bScore = match.team_b_score!;
+      applyStatsResult(teamRows.team_a, aScore, bScore);
+      applyStatsResult(teamRows.team_b, bScore, aScore);
+      const teamAPlayers = [playerInfo("team_a", match.team_a_player1_profile_id, match.team_a_player1_guest_name), playerInfo("team_a", match.team_a_player2_profile_id, match.team_a_player2_guest_name)];
+      const teamBPlayers = [playerInfo("team_b", match.team_b_player1_profile_id, match.team_b_player1_guest_name), playerInfo("team_b", match.team_b_player2_profile_id, match.team_b_player2_guest_name)];
+      applyPlayers(teamAPlayers, aScore, bScore);
+      applyPlayers(teamBPlayers, bScore, aScore);
+      applyPair(teamAPlayers, aScore, bScore);
+      applyPair(teamBPlayers, bScore, aScore);
+    }
+    return { countedMatches: teamRows.team_a.matches, teams: [teamRows.team_a, teamRows.team_b], players: sortStatsRows([...playerRows.values()]), pairs: sortStatsRows([...pairRows.values()]) };
+  };
+
+const emptyStatsRow = (name: string): StatsRow => ({ name, matches: 0, wins: 0, losses: 0, draws: 0, points: 0, scored: 0, conceded: 0, diff: 0, winRate: 0 });
+
+const applyStatsResult = (row: StatsRow, scored: number, conceded: number) => { row.matches += 1; row.scored += scored; row.conceded += conceded; if (scored > conceded) { row.wins += 1; row.points += 3; } else if (scored < conceded) { row.losses += 1; } else { row.draws += 1; row.points += 1; } row.diff = row.scored - row.conceded; row.winRate = row.matches ? Math.round((row.wins / row.matches) * 1000) / 10 : 0; };
+
+const sortStatsRows = (rows: StatsRow[]) => [...rows].sort((a, b) => b.points - a.points || b.wins - a.wins || b.winRate - a.winRate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.matches - b.matches || a.name.localeCompare(b.name, "ja"));
+
+const hasCountableTeamScore = (match: Match) => typeof match.team_a_score === "number" && typeof match.team_b_score === "number" && !(match.team_a_score === 0 && match.team_b_score === 0);

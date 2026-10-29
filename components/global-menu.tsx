@@ -127,7 +127,7 @@ export function GlobalMenu() {
         aria-label="メニュー"
         aria-expanded={open}
         aria-controls="global-menu-panel"
-        className="fixed right-3 top-3 z-50 rounded-lg bg-zinc-900/90 p-2 text-zinc-100 shadow-lg"
+        className="fixed right-3 top-3 z-50 min-h-11 min-w-11 rounded-lg sm:min-h-0 sm:min-w-0 bg-zinc-900/90 p-2 text-zinc-100 shadow-lg"
         onClick={() => setOpen((v) => !v)}
       >
         ☰

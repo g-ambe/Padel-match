@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
+import { GuestName, MatchHistoryList, YoutubeDisclosure } from "@/components/match-ui";
+import { canAutoCreateCard, type ScorePair } from "@/lib/score-input";
+import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { ScoreInput } from "@/components/score-input";
 import { MatchShareButtons } from "@/components/match-share-buttons";
 import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
@@ -24,7 +27,6 @@ type StatsSectionKey = "teams" | "players" | "pairs";
 type StatsRow = { name: string; matches: number; wins: number; losses: number; draws: number; points: number; scored: number; conceded: number; diff: number; winRate: number };
 
 const emptyForm = (): Form => ({ a1ProfileId:"",a1GuestName:"",a2ProfileId:"",a2GuestName:"",b1ProfileId:"",b1GuestName:"",b2ProfileId:"",b2GuestName:"",aScore:"",bScore:"",result:"undecided",scoreDetail:"",memo:"",youtubeUrl:"" });
-const resultLabel = (r: ResultValue) => ({ win:"チームA勝ち", lose:"チームB勝ち", draw:"引き分け", undecided:"未定" }[r]);
 const autoResult = (a: string, b: string): ResultValue => { if (a.trim()==="" || b.trim()==="") return "undecided"; const x=Number(a), y=Number(b); if (!Number.isInteger(x)||!Number.isInteger(y)) return "undecided"; if (x>y) return "win"; if (x<y) return "lose"; return "draw"; };
 const isYoutubeUrl = (v: string) => /^https:\/\/(www\.)?youtube\.com\/watch\?v=/.test(v) || /^https:\/\/youtu\.be\//.test(v) || /^https:\/\/(www\.)?youtube\.com\/shorts\//.test(v);
 const guestChoiceValue = (name: string) => `guest:${name}`;
@@ -45,6 +47,8 @@ export default function FriendlyTeamMatchDetailPage() {
   const [matches,setMatches]=useState<Match[]>([]);
   const [historicalNames,setHistoricalNames]=useState<Map<string,string>>(new Map());
   const [form,setForm]=useState<Form>(emptyForm());
+  const cardWrites = useRef({ saving: new Set<string>(), newIds: new Map<string,string>(), error: "" });
+  const [urlDrafts,setUrlDrafts] = useState<Record<string,string>>({});
   const [editingId,setEditingId]=useState<string|null>(null);
   const [editingForm,setEditingForm]=useState<Form>(emptyForm());
   const [guestNames,setGuestNames]=useState<Record<TeamSideKey, string>>({ team_a: "", team_b: "" });
@@ -90,7 +94,8 @@ export default function FriendlyTeamMatchDetailPage() {
     const nextGuests: Record<TeamSideKey, GuestOption[]> = { team_a: [], team_b: [] };
     for (const guest of ((guestRows ?? []) as GuestOption[])) nextGuests[guest.side].push(guest);
     setGuests(nextGuests);
-    const { data:ms }=await supabase.from("event_team_matches").select("*").eq("event_id",id).order("match_order").order("created_at").order("id");
+    const { data:ms,error:historyError }=await readFriendlyRoundRows((start,end)=>supabase.from("event_team_matches").select("*").eq("event_id",id).order("match_order").order("created_at").order("id").range(start,end));
+    if(historyError){setError("試合履歴を取得できませんでした。再度読み込んでください");return;}
     const matchRows=(ms??[]) as Match[];
     setMatches(matchRows);
     try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,matchRows.flatMap(match=>[match.team_a_player1_profile_id,match.team_a_player2_profile_id,match.team_b_player1_profile_id,match.team_b_player2_profile_id]))); }
@@ -139,17 +144,39 @@ export default function FriendlyTeamMatchDetailPage() {
   const payload=(f:Form)=>({ team_a_player1_profile_id:f.a1ProfileId||null, team_a_player1_guest_name:f.a1GuestName.trim()||null, team_a_player2_profile_id:f.a2ProfileId||null, team_a_player2_guest_name:f.a2GuestName.trim()||null, team_b_player1_profile_id:f.b1ProfileId||null, team_b_player1_guest_name:f.b1GuestName.trim()||null, team_b_player2_profile_id:f.b2ProfileId||null, team_b_player2_guest_name:f.b2GuestName.trim()||null, team_a_score:f.aScore.trim()===""?null:Number(f.aScore), team_b_score:f.bScore.trim()===""?null:Number(f.bScore), result:f.result, score_detail:f.scoreDetail.trim()||null, memo:f.memo.trim()||null, youtube_url:f.youtubeUrl.trim()||null, updated_at:new Date().toISOString() });
   const toForm=(m:Match):Form=>({ a1ProfileId:m.team_a_player1_profile_id??"",a1GuestName:m.team_a_player1_guest_name??"",a2ProfileId:m.team_a_player2_profile_id??"",a2GuestName:m.team_a_player2_guest_name??"",b1ProfileId:m.team_b_player1_profile_id??"",b1GuestName:m.team_b_player1_guest_name??"",b2ProfileId:m.team_b_player2_profile_id??"",b2GuestName:m.team_b_player2_guest_name??"",aScore:m.team_a_score===null?"":String(m.team_a_score),bScore:m.team_b_score===null?"":String(m.team_b_score),result:m.result,scoreDetail:m.score_detail??"",memo:m.memo??"",youtubeUrl:m.youtube_url??""});
 
-  const saveMatch=async(edit=false)=>{
+  const saveMatch=async(edit=false, supplied?:Form, suppliedId?:string)=>{
+    const targetId=suppliedId??editingId;
+    const key=edit?targetId??"":`new:${id}`;
+    if(cardWrites.current.saving.has(key))return false;
     setError(""); setNotice("");
-    if(!event) return setError("イベント情報を取得できていません");
-    if(!canManage||event.status==="closed") return setError("この操作を行う権限がありません");
-    const f=edit?editingForm:form;
-    const v=validate(f); if(v)return setError(v);
-    const supabase=getSupabaseClient(); if(!supabase)return;
-    const err= edit&&editingId ? (await supabase.from("event_team_matches").update(payload(f)).eq("id",editingId)).error : (await supabase.from("event_team_matches").insert({event_id:id,match_order:Math.max(0,...matches.map((m)=>m.match_order))+1,...payload(f)})).error;
-    if(err)return setError(edit?"試合カードの更新に失敗しました":"試合カードの追加に失敗しました");
-    setForm(emptyForm()); setEditingId(null); setEditingForm(emptyForm()); setShowForm(false); setNotice(edit?"試合カードを更新しました":"試合カードを追加しました");
-    await load();
+    const fail=(message:string)=>{cardWrites.current.error=message;setError(message);return false;};
+    if(!event)return fail("イベント情報を取得できていません");
+    if(!canManage||event.status==="closed")return fail("この操作を行う権限がありません");
+    const f=supplied??(edit?editingForm:form), v=validate(f); if(v)return fail(v);
+    const supabase=getSupabaseClient(); if(!supabase)return fail("保存の準備ができませんでした");
+    cardWrites.current.saving.add(key);
+    try {
+      const newId=edit?targetId:cardWrites.current.newIds.get(key)??crypto.randomUUID();
+      if(!newId)return fail("試合カードを確認できません");
+      if(!edit)cardWrites.current.newIds.set(key,newId);
+      const patch=payload(f);
+      let response=edit?await supabase.from("event_team_matches").update(patch).eq("id",newId).select("id").single():await supabase.from("event_team_matches").insert({id:newId,event_id:id,match_order:Math.max(0,...matches.map(m=>m.match_order))+1,...patch}).select("id").single();
+      // 通信結果を受け取れなかった新規登録の再試行でも同じIDを利用する。
+      if(!edit&&response.error?.code==="23505")response=await supabase.from("event_team_matches").update(patch).eq("id",newId).eq("event_id",id).select("id").single();
+      if(response.error||!response.data)return fail("試合カードの保存に失敗しました");
+      setMatches(previous=>edit?previous.map(m=>m.id===newId?{...m,...patch}:m):[...previous,{id:newId,match_order:Math.max(0,...previous.map(m=>m.match_order))+1,...patch}]);
+      cardWrites.current.newIds.delete(key);
+      if(!edit){setForm(emptyForm());setShowForm(false);}
+      if(edit&&!suppliedId&&targetId===editingId){setEditingId(null);setEditingForm(emptyForm());}
+      setNotice("試合カードを保存しました");
+      try{await load();}catch{setError("保存後の再読み込みに失敗しました");}
+      return true;
+    }catch{return fail("試合カードの保存に失敗しました");}
+    finally{cardWrites.current.saving.delete(key);}
+  };
+  const commitCardScore=async(scores:ScorePair,m?:Match)=>{
+    const f=m?toForm(m):form;
+    if(!await saveMatch(!!m,{...f,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)},m?.id))throw new Error(cardWrites.current.error||"試合カードを保存できませんでした。再試行してください");
   };
   const deleteMatch=async(mid:string)=>{ if(!window.confirm("試合カードを削除しますか？"))return; const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("event_team_matches").delete().eq("id",mid); if(e)return setError("試合カードの削除に失敗しました"); setNotice("試合カードを削除しました"); await load(); };
   const updateSide=async(side:Side, clubId:string, name:string)=>{ const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("event_team_sides").update({club_id:clubId||null,team_name:name.trim()||null,updated_at:new Date().toISOString()}).eq("id",side.id); await load(); };
@@ -197,7 +224,16 @@ export default function FriendlyTeamMatchDetailPage() {
       }))} />
     </div></Card>}
     {event.status==="closed"&&<TeamMatchStatsCard stats={teamMatchStats} openSections={openStatsSections} onToggle={toggleStatsSection} />}
-    <Card title="試合結果"><div className="space-y-3">{matches.map((m,i)=><div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">第{i+1}試合</p><p>{memberName("team_a",m.team_a_player1_profile_id,m.team_a_player1_guest_name)} / {memberName("team_a",m.team_a_player2_profile_id,m.team_a_player2_guest_name)} vs {memberName("team_b",m.team_b_player1_profile_id,m.team_b_player1_guest_name)} / {memberName("team_b",m.team_b_player2_profile_id,m.team_b_player2_guest_name)}</p><p>スコア: {m.team_a_score??"未入力"} - {m.team_b_score??"未入力"}</p><p>結果: {resultLabel(m.result)}</p>{m.score_detail&&<p>詳細スコア: {m.score_detail}</p>}{m.memo&&<p className="whitespace-pre-wrap">メモ: {m.memo}</p>}{m.youtube_url&&<a className="underline" href={m.youtube_url} target="_blank" rel="noreferrer">動画視聴</a>}{canManage&&event.status!=="closed"&&<div className="mt-2 grid grid-cols-2 gap-2"><button className="rounded border border-zinc-500 py-2" onClick={()=>{setEditingId(m.id);setEditingForm(toForm(m));}}>編集</button><button className="rounded border border-red-500/70 py-2 text-red-200" onClick={()=>void deleteMatch(m.id)}>削除</button></div>}{editingId===m.id&&<MatchFormView title="試合カードを編集" form={editingForm} setForm={(p,s)=>setEditingForm((prev)=>{const n={...prev,...p}; if(s)n.result=autoResult(n.aScore,n.bScore); return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onSave={()=>void saveMatch(true)} onCancel={()=>setEditingId(null)}/>}</div>)}{canManage&&event.status!=="closed"&&(showForm?<MatchFormView title="試合カードを追加" form={form} setForm={(p,s)=>setForm((prev)=>{const n={...prev,...p}; if(s)n.result=autoResult(n.aScore,n.bScore); return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onSave={()=>void saveMatch(false)} onCancel={()=>setShowForm(false)}/>:<ActionButton onClick={()=>setShowForm(true)}>試合カードを追加</ActionButton>)}</div></Card>
+    <Card title="試合結果"><MatchHistoryList>{[...matches].reverse().map(m=><div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
+      <p className="font-bold">第{m.match_order}試合</p>
+      <p className="my-2 break-words">{([1,2] as const).map((n,i)=><span key={n}>{i>0&&" / "}<GuestName name={memberName("team_a",m[`team_a_player${n}_profile_id`],m[`team_a_player${n}_guest_name`])} guest={!m[`team_a_player${n}_profile_id`]&&!!m[`team_a_player${n}_guest_name`]} /></span>)} vs {([1,2] as const).map((n,i)=><span key={n}>{i>0&&" / "}<GuestName name={memberName("team_b",m[`team_b_player${n}_profile_id`],m[`team_b_player${n}_guest_name`])} guest={!m[`team_b_player${n}_profile_id`]&&!!m[`team_b_player${n}_guest_name`]} /></span>)}</p>
+      <ScoreInput value={{a:m.team_a_score===null?"":String(m.team_a_score),b:m.team_b_score===null?"":String(m.team_b_score)}} saved={m.result!=="undecided"&&m.team_a_score!==null&&m.team_b_score!==null} result={m.team_a_score===null||m.team_b_score===null?null:m.result==="win"?"A":m.result==="lose"?"B":m.result==="draw"?"draw":null} disabled={!canManage||event.status==="closed"} onCommit={scores=>commitCardScore(scores,m)} />
+      {m.score_detail&&<p>詳細スコア: {m.score_detail}</p>}{m.memo&&<p className="whitespace-pre-wrap">メモ: {m.memo}</p>}
+      <YoutubeDisclosure registered={!!m.youtube_url}>{m.youtube_url&&<a href={m.youtube_url} target="_blank" rel="noreferrer" className="underline">動画視聴</a>}{canManage&&event.status!=="closed"&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[m.id]??m.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[m.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={()=>void saveMatch(true,{...toForm(m),youtubeUrl:urlDrafts[m.id]??m.youtube_url??""},m.id)}>URLを保存</button>{m.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={async()=>{if(await saveMatch(true,{...toForm(m),youtubeUrl:""},m.id))setUrlDrafts(previous=>({...previous,[m.id]:""}));}}>URLを削除</button>}</div></>}</YoutubeDisclosure>
+      {canManage&&event.status!=="closed"&&<div className="mt-2 flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={()=>{setEditingId(m.id);setEditingForm(toForm(m));}}>カード編集</button><button className="rounded border border-red-500/70 px-3 py-2 text-xs text-red-200" onClick={()=>void deleteMatch(m.id)}>削除</button></div>}
+      {editingId===m.id&&<MatchFormView title="試合カードを編集" form={editingForm} setForm={(p,s)=>setEditingForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={async scores=>{if(!await saveMatch(true,{...editingForm,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={()=>void saveMatch(true)} onCancel={()=>setEditingId(null)} />}
+    </div>)}</MatchHistoryList>
+    {canManage&&event.status!=="closed"&&(showForm?<MatchFormView title="試合カードを追加" newCard form={form} setForm={(p,s)=>setForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={scores=>commitCardScore(scores)} onSave={()=>void saveMatch(false)} onCancel={()=>setShowForm(false)}/>:<ActionButton onClick={()=>setShowForm(true)}>試合カードを追加</ActionButton>)}</Card>
     <Link href="/team-matches/new" className="text-center text-sm underline">フレンドリーチームマッチへ戻る</Link>
   </main>;
 }
@@ -206,13 +242,14 @@ function SideEditor({side,title,groups,guests,guestName,setGuestName,canManage,o
   const[mode,setMode]=useState<"group"|"free">(side.club_id?"group":"free");
   const[clubId,setClubId]=useState(side.club_id??"");
   const[name,setName]=useState(side.team_name??title);
-  return <section className="space-y-3 rounded-xl bg-zinc-800 p-3"><p className="font-bold">{title}</p><select disabled={!canManage} className="w-full rounded-xl bg-zinc-900 p-3" value={mode} onChange={(e)=>{const next=e.target.value as "group"|"free"; setMode(next); if(next==="free") setClubId("");}}><option value="group">グループを選択する</option><option value="free">グループなしで入力する</option></select>{mode==="group"&&<select disabled={!canManage} className="w-full rounded-xl bg-zinc-900 p-3" value={clubId} onChange={(e)=>setClubId(e.target.value)}><option value="">グループを選択する</option>{groups.map((g)=><option key={g.id} value={g.id}>{g.name}</option>)}</select>}<input disabled={!canManage} className="w-full rounded-xl bg-zinc-900 p-3" placeholder="チーム名" value={name} onChange={(e)=>setName(e.target.value)}/>{canManage&&<button className="w-full rounded-xl border border-zinc-500 py-2" onClick={()=>onSave(side,mode==="group"?clubId:"",name)}>保存</button>}<div className="space-y-2 rounded-xl border border-zinc-700 p-3"><p className="text-xs font-bold text-zinc-300">追加済みゲスト</p>{guests.length===0?<p className="text-xs text-zinc-400">ゲストはまだありません</p>:<ul className="space-y-1 text-sm">{guests.map((guest)=><li key={guest.id}>{guest.guest_name}</li>)}</ul>}{canManage&&<div className="flex gap-2"><input className="min-w-0 flex-1 rounded-xl bg-zinc-900 p-2" placeholder="ゲスト名" value={guestName} onChange={(e)=>setGuestName(e.target.value)}/><button className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-black" onClick={onAddGuest}>ゲストを追加</button></div>}</div></section>;
+  return <section className="space-y-3 rounded-xl bg-zinc-800 p-3"><p className="font-bold">{title}</p><select disabled={!canManage} className="w-full rounded-xl bg-zinc-900 p-3" value={mode} onChange={(e)=>{const next=e.target.value as "group"|"free"; setMode(next); if(next==="free") setClubId("");}}><option value="group">グループを選択する</option><option value="free">グループなしで入力する</option></select>{mode==="group"&&<select disabled={!canManage} className="w-full rounded-xl bg-zinc-900 p-3" value={clubId} onChange={(e)=>setClubId(e.target.value)}><option value="">グループを選択する</option>{groups.map((g)=><option key={g.id} value={g.id}>{g.name}</option>)}</select>}<input disabled={!canManage} className="w-full rounded-xl bg-zinc-900 p-3" placeholder="チーム名" value={name} onChange={(e)=>setName(e.target.value)}/>{canManage&&<button className="w-full rounded-xl border border-zinc-500 py-2" onClick={()=>onSave(side,mode==="group"?clubId:"",name)}>保存</button>}<div className="space-y-2 rounded-xl border border-zinc-700 p-3"><p className="text-xs font-bold text-zinc-300">追加済みゲスト</p>{guests.length===0?<p className="text-xs text-zinc-400">ゲストはまだありません</p>:<ul className="space-y-1 text-sm">{guests.map((guest)=><li key={guest.id}><GuestName name={guest.guest_name} guest /></li>)}</ul>}{canManage&&<div className="flex gap-2"><input className="min-w-0 flex-1 rounded-xl bg-zinc-900 p-2" placeholder="ゲスト名" value={guestName} onChange={(e)=>setGuestName(e.target.value)}/><button className="rounded-xl bg-accent px-3 py-2 text-sm font-bold text-black" onClick={onAddGuest}>ゲストを追加</button></div>}</div></section>;
 }
 
-function MatchFormView({title,form,setForm,applyChoice,teamAChoices,teamBChoices,onSave,onCancel}:{title:string;form:Form;setForm:(p:Partial<Form>,sync?:boolean)=>void;applyChoice:(choice:string,profileKey:keyof Form,guestKey:keyof Form)=>Partial<Form>;teamAChoices:PlayerChoice[];teamBChoices:PlayerChoice[];onSave:()=>void;onCancel:()=>void}){
+function MatchFormView({title,form,setForm,applyChoice,teamAChoices,teamBChoices,onSave,onCancel,onScoreCommit,newCard=false}:{newCard?:boolean;onScoreCommit:(scores:ScorePair)=>Promise<void>;title:string;form:Form;setForm:(p:Partial<Form>,sync?:boolean)=>void;applyChoice:(choice:string,profileKey:keyof Form,guestKey:keyof Form)=>Partial<Form>;teamAChoices:PlayerChoice[];teamBChoices:PlayerChoice[];onSave:()=>void;onCancel:()=>void}){
+  const autoSaveReady=!newCard||canAutoCreateCard([form.a1ProfileId||form.a1GuestName,form.a2ProfileId||form.a2GuestName,form.b1ProfileId||form.b1GuestName,form.b2ProfileId||form.b2GuestName]);
   const cls="w-full rounded-xl border border-zinc-700 bg-zinc-950/70 px-3 py-2 text-sm";
   const player=(label:string,pid:keyof Form,guest:keyof Form,choices:PlayerChoice[])=><div className="space-y-1"><label className="text-xs text-zinc-300">{label}</label><select className={cls} value={selectedChoiceValue(form[pid] as string, form[guest] as string)} onChange={(e)=>setForm(applyChoice(e.target.value,pid,guest))}><option value="">選手を選択</option>{choices.map((choice)=><option key={`${choice.kind}-${choice.value}`} value={choice.value}>{choice.kind==="guest"?`ゲスト: ${choice.label}`:choice.label}</option>)}</select><input className={cls} placeholder="自由入力" value={(form[guest] as string).startsWith("guest:") ? "" : form[guest] as string} onChange={(e)=>setForm({[pid]:"",[guest]:e.target.value} as any)}/></div>;
-  return <div className="space-y-3 rounded-2xl border border-zinc-700 p-3"><h4 className="font-bold">{title}</h4><section className="space-y-2"><p className="text-xs font-bold text-zinc-400">チームA</p>{player("チームA 選手1","a1ProfileId","a1GuestName",teamAChoices)}{player("チームA 選手2","a2ProfileId","a2GuestName",teamAChoices)}</section><section className="space-y-2"><p className="text-xs font-bold text-zinc-400">チームB</p>{player("チームB 選手1","b1ProfileId","b1GuestName",teamBChoices)}{player("チームB 選手2","b2ProfileId","b2GuestName",teamBChoices)}</section><ScoreInput value={{a:form.aScore,b:form.bScore}} onChange={scores=>setForm({aScore:scores.a,bScore:scores.b},true)} /><select className={cls} value={form.result} onChange={(e)=>setForm({result:e.target.value as ResultValue})}><option value="win">チームA勝ち</option><option value="lose">チームB勝ち</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><input className={cls} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e)=>setForm({scoreDetail:e.target.value})}/><textarea className={cls} placeholder="メモ" value={form.memo} onChange={(e)=>setForm({memo:e.target.value})}/><input className={cls} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e)=>setForm({youtubeUrl:e.target.value})}/><div className="grid grid-cols-2 gap-2"><button className="rounded-xl bg-accent py-2 font-bold text-black" onClick={onSave}>保存</button><button className="rounded-xl border border-zinc-500 py-2" onClick={onCancel}>キャンセル</button></div></div>;
+  return <div className="space-y-3 rounded-2xl border border-zinc-700 p-3"><h4 className="font-bold">{title}</h4><section className="space-y-2"><p className="text-xs font-bold text-zinc-400">チームA</p>{player("チームA 選手1","a1ProfileId","a1GuestName",teamAChoices)}{player("チームA 選手2","a2ProfileId","a2GuestName",teamAChoices)}</section><section className="space-y-2"><p className="text-xs font-bold text-zinc-400">チームB</p>{player("チームB 選手1","b1ProfileId","b1GuestName",teamBChoices)}{player("チームB 選手2","b2ProfileId","b2GuestName",teamBChoices)}</section><ScoreInput value={{a:form.aScore,b:form.bScore}} saved={title==="試合カードを編集"&&form.result!=="undecided"&&form.aScore!==""&&form.bScore!==""} onCommit={autoSaveReady?onScoreCommit:undefined} onChange={scores=>setForm({aScore:scores.a,bScore:scores.b},true)} />{!autoSaveReady&&<p role="status" className="text-xs text-amber-300">選手情報が未設定のため自動登録しません。得点を決定した後、カードの「保存」で登録してください。</p>}<select className={cls} value={form.result} onChange={(e)=>setForm({result:e.target.value as ResultValue})}><option value="win">チームA勝ち</option><option value="lose">チームB勝ち</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><input className={cls} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e)=>setForm({scoreDetail:e.target.value})}/><textarea className={cls} placeholder="メモ" value={form.memo} onChange={(e)=>setForm({memo:e.target.value})}/><YoutubeDisclosure registered={!!form.youtubeUrl}><input className={cls} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e)=>setForm({youtubeUrl:e.target.value})}/><button type="button" className="text-xs text-red-300" onClick={()=>setForm({youtubeUrl:""})}>URLを削除</button></YoutubeDisclosure><div className="grid grid-cols-2 gap-2"><button className="rounded-xl bg-accent py-2 font-bold text-black" onClick={onSave}>保存</button><button className="rounded-xl border border-zinc-500 py-2" onClick={onCancel}>キャンセル</button></div></div>;
 }
 
 
@@ -234,6 +271,6 @@ function TeamMatchStatsCard({ stats, openSections, onToggle }: { stats: { counte
 
 
 function EditableEventTitle({ label, name, canEdit, isEditing, draft, onDraftChange, onStartEdit, onSave, onCancel }: { label: string; name: string; canEdit: boolean; isEditing: boolean; draft: string; onDraftChange: (value: string) => void; onStartEdit: () => void; onSave: () => void; onCancel: () => void }) {
-  if (isEditing) return <div className="space-y-2"><label className="text-xs font-semibold text-zinc-400">{label}</label><input className="w-full rounded-xl border border-zinc-600 bg-zinc-900 px-3 py-3 text-lg font-bold text-zinc-100 outline-none focus:border-accent" value={draft} onChange={(e)=>onDraftChange(e.target.value)} maxLength={80} autoFocus/><div className="grid grid-cols-2 gap-2"><button type="button" className="rounded-xl bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button><button type="button" className="rounded-xl border border-zinc-500 py-2 text-sm text-zinc-100" onClick={onCancel}>キャンセル</button></div></div>;
-  return <div className="flex items-start gap-2"><h1 className="min-w-0 flex-1 break-words text-xl font-bold">{label}：{name}</h1>{canEdit&&<button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}</div>;
+  if (isEditing) return <div className="space-y-2 pr-14 sm:pr-0"><label className="text-xs font-semibold text-zinc-400">{label}</label><input className="w-full rounded-xl border border-zinc-600 bg-zinc-900 px-3 py-3 text-lg font-bold text-zinc-100 outline-none focus:border-accent" value={draft} onChange={(e)=>onDraftChange(e.target.value)} maxLength={80} autoFocus/><div className="grid grid-cols-2 gap-2"><button type="button" className="rounded-xl bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button><button type="button" className="rounded-xl border border-zinc-500 py-2 text-sm text-zinc-100" onClick={onCancel}>キャンセル</button></div></div>;
+  return <div className="flex items-start gap-2 pr-14 sm:pr-0"><h1 className="min-w-0 flex-1 break-words text-xl font-bold">{label}：{name}</h1>{canEdit&&<button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}</div>;
 }

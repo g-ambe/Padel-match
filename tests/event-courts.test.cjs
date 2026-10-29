@@ -41,3 +41,31 @@ test('コート保存中は生成・終了・削除を送信せず、同じ削�
  let release,calls=0;const gate=new Promise(resolve=>release=resolve),binding={boardOperation:{current:null},closingEvent:{current:false},setIsDeletingMatch:()=>{},setError:()=>{},deleteMatch:async()=>{calls++;await gate;}};
  const first=handler('app/events/[id]/page.tsx','confirmMatchDelete',binding)();await handler('app/events/[id]/page.tsx','confirmMatchDelete',binding)();assert.equal(calls,1);release();await first;assert.equal(binding.boardOperation.current,null);
 });
+
+test('コート変更に使う既存の画面権限は作成者・有効な主副管理者・super_userに限定される',async()=>{
+ const uid='auth-user',profile='canonical-player';
+ const cases=[
+  {name:'未ログイン',user:null,club:null,creator:null,allowed:false},
+  {name:'グループなしの作成者',club:null,creator:uid,allowed:true},
+  {name:'グループなしの他人',club:null,creator:'other',allowed:false},
+  ...['main_admin','sub_admin','member'].map(role=>({name:`選手IDが認証IDと異なる${role}`,role,allowed:role!=='member'})),
+  {name:'グループの作成者だが一般メンバー',role:'member',creator:uid,allowed:false},
+  {name:'退会済み管理者',role:'main_admin',active:false,allowed:false},
+  {name:'他グループの管理者',role:'main_admin',memberClub:'other-club',allowed:false},
+  ...['main_admin','sub_admin'].map(role=>({name:`旧profile_idの${role}`,role,legacy:true,allowed:true})),
+  {name:'有効なsuper_user',admin:true,allowed:true},
+  {name:'無効なsuper_user',admin:false,allowed:false},
+  {name:'所属の取得エラー',role:'main_admin',failMembership:true,allowed:false}
+ ];
+ for(const item of cases){
+  const event={id:'event',name:'権限検証',court_count:2,event_mode:'auto',status:'active',is_deleted:false,club_id:item.club===null?null:'club',created_by_auth_user_id:item.creator??'other'};
+  const db=database({events:[event],player_profiles:[{id:profile,linked_auth_user_id:uid}],club_members:item.role?[{club_id:item.memberClub??'club',role:item.role,is_active:item.active!==false,...(item.legacy?{profile_id:uid}:{player_profile_id:profile})}]:[],app_admins:typeof item.admin==='boolean'?[{id:'admin',profile_id:uid,is_active:item.admin}]:[]},{fail:c=>item.failMembership&&c.table==='club_members'});
+  db.s.auth.getUser=async()=>({data:{user:item.user===null?null:{id:uid}},error:null});
+  const stop=new Error('権限判定まで検証し、参加者の自動反映は実行しない');let allowed;
+  const setters=Object.fromEntries(['setGuestMode','setIsDeletedEvent','setEventName','setCourtCount','setEventStatus','setShareEnabled','setShareToken','setEventClubId','setEventMode','setStatsMode','setRoundUserId','setCanDeleteEvent','setCanViewVideoClickCounts','setCanManageShare','setCanManageEventVideos'].map(name=>[name,()=>{}]));
+  const load=handler('app/events/[id]/page.tsx','loadAll',{...setters,eventId:'event',getSupabaseClient:()=>db.s,scoreQueue:{getRevision:()=>0},setCanManageEventName:value=>allowed=value,setCanCopyShare:()=>{throw stop;}});
+  await assert.rejects(load(),error=>error===stop,item.name);
+  assert.equal(allowed,item.allowed,item.name);
+  assert(db.calls.every(c=>c.method==='GET'),item.name);
+ }
+});

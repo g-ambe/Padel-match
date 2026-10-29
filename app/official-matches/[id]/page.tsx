@@ -13,6 +13,7 @@ import { GuestName, MatchHistoryList, YoutubeDisclosure } from "@/components/mat
 import { canAutoCreateCard, type ScorePair } from "@/lib/score-input";
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { ScoreInput } from "@/components/score-input";
+import { useScoreSaves } from "@/components/score-save-provider";
 import { storedTeamShareScore } from "@/lib/match-share-text";
 
 type MemberOption = { playerProfileId: string; displayName: string | null };
@@ -79,7 +80,12 @@ export default function OfficialMatchDetailPage() {
   const [opponentMemo, setOpponentMemo] = useState("");
   const [matchForms, setMatchForms] = useState<Record<string, MatchForm>>({});
   const [openMatchFormId, setOpenMatchFormId] = useState<string | null>(null);
-  const cardWrites = useRef({ saving: new Set<string>(), newIds: new Map<string,string>(), error: "" });
+  const { queue: scoreQueue, snapshot: scoreJobs } = useScoreSaves();
+  const scoreScope = `/official-matches/${id}#`;
+  const cardWrites = useMemo(() => ({current:scoreQueue.writeState(scoreScope)}), [scoreQueue,scoreScope]);
+  const unsavedScoreCount = Object.keys(scoreJobs).filter(key => key.startsWith(scoreScope)).length;
+  const closingEvent = useRef(false), reloadAfterScores = useRef(false);
+  const [isClosingEvent,setIsClosingEvent] = useState(false);
   const [urlDrafts,setUrlDrafts] = useState<Record<string,string>>({});
   const [editingMatchId, setEditingMatchId] = useState<string | null>(null);
   const [editingMatchForm, setEditingMatchForm] = useState<MatchForm>(emptyMatchForm());
@@ -110,11 +116,13 @@ export default function OfficialMatchDetailPage() {
   }, [event, opponents, matches, members, historicalNames]);
 
   const loadDetail = async () => {
+    const scoreRevision = scoreQueue.getRevision(scoreScope);
     const supabase = getSupabaseClient();
     if (!supabase) return;
     const access = await getOfficialAccess(supabase);
     setIsSuperUser(access.superUser);
     const { data } = await supabase.from("official_events").select("*,clubs(name)").eq("id", id).eq("is_deleted", false).maybeSingle();
+    if(scoreRevision!==scoreQueue.getRevision(scoreScope)){await loadDetail();return;}
     const eventRow = data as unknown as OfficialEventRow | null;
     const creator = !!access.uid && eventRow?.created_by_auth_user_id === access.uid;
     if (!eventRow || (!access.superUser && !creator && !access.groups.some((group) => group.id === eventRow.club_id))) {
@@ -133,7 +141,12 @@ export default function OfficialMatchDetailPage() {
     const { data: matchRows, error: historyError } = await readFriendlyRoundRows((start,end)=>supabase.from("official_matches").select("*").eq("official_event_id", id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true }).range(start,end));
     if(historyError){setError("試合履歴を取得できませんでした。再度読み込んでください");return;}
     const history=(matchRows ?? []) as unknown as OfficialMatch[];
-    setMatches(history);
+    if(scoreRevision!==scoreQueue.getRevision(scoreScope)){await loadDetail();return;}
+    setMatches(previous => history.filter(row => ![...cardWrites.current.newIds.values()].includes(row.id)).map(row => {
+      if (!scoreQueue.has(`${scoreScope}${row.id}`)) return row;
+      const confirmed = previous.find(match => match.id === row.id);
+      return { ...row, our_score: confirmed?.our_score ?? null, opponent_score: confirmed?.opponent_score ?? null, result: confirmed?.result ?? "undecided" };
+    }));
     try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,history.flatMap(match=>[match.our_player1_profile_id,match.our_player2_profile_id]))); }
     catch { setError("過去の試合の選手名を取得できませんでした"); }
     if (access.superUser || nextAccessRole === "main_admin") {
@@ -150,6 +163,10 @@ export default function OfficialMatchDetailPage() {
   };
 
   useEffect(() => { void loadDetail(); }, [id]);
+  useEffect(() => {
+    if (unsavedScoreCount) reloadAfterScores.current = true;
+    else if (reloadAfterScores.current) { reloadAfterScores.current = false; void loadDetail().catch(() => setError("保存後の再読み込みに失敗しました")); }
+  }, [unsavedScoreCount]);
 
   const addOpponent = async () => {
     setError(""); setNotice("");
@@ -194,6 +211,7 @@ export default function OfficialMatchDetailPage() {
     const key=matchId??`new:${id}:${opponentId}`;
     if(cardWrites.current.saving.has(key))return false;
     const fail=(message:string)=>{cardWrites.current.error=message;setError(message);return false;};
+    if(closingEvent.current)return fail("イベントの終了処理中です");
     if(!canEdit)return fail("この操作を行う権限がありません");
     const validation=validateMatchForm(form);if(validation)return fail(validation);
     const supabase=getSupabaseClient();if(!supabase)return fail("保存の準備ができませんでした");
@@ -243,6 +261,7 @@ export default function OfficialMatchDetailPage() {
   };
 
   const deleteMatch = async (matchId: string) => {
+    if(scoreQueue.has(`${scoreScope}${matchId}`)||closingEvent.current)return setError("スコアの保存完了・再試行後に削除してください");
     setError(""); setNotice("");
     if (!canEdit) return setError("この操作を行う権限がありません");
     if (!window.confirm("試合カードを削除しますか？")) return;
@@ -254,14 +273,20 @@ export default function OfficialMatchDetailPage() {
   };
 
   const updateEventStatus = async (status: "active" | "closed") => {
+    if(closingEvent.current)return;
+    if(status==="closed"&&(scoreQueue.hasUnsaved(scoreScope)||cardWrites.current.saving.size))return setError("保存中・保存失敗のスコアがあります。保存完了・再試行後に終了してください");
+    closingEvent.current=true;setIsClosingEvent(true);
+    try {
     setError(""); setNotice("");
     if (!canManageShare) return setError("この操作を行う権限がありません");
     if (!window.confirm(status === "closed" ? "オフィシャルチームマッチを終了しますか？" : "オフィシャルチームマッチを再開しますか？")) return;
     const supabase = getSupabaseClient(); if (!supabase) return;
     const { error: updateError } = await supabase.from("official_events").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
     if (updateError) return setError(status === "closed" ? "オフィシャルチームマッチの終了に失敗しました" : "オフィシャルチームマッチの再開に失敗しました");
+    scoreQueue.invalidateReads(scoreScope);setEvent(previous=>previous?{...previous,status}:previous);
     setNotice(status === "closed" ? "オフィシャルチームマッチを終了しました" : "オフィシャルチームマッチを再開しました");
     setOpenMatchFormId(null); setEditingMatchId(null); await loadDetail();
+    }finally{closingEvent.current=false;setIsClosingEvent(false);}
   };
 
   const deleteEvent = async () => {
@@ -322,7 +347,8 @@ export default function OfficialMatchDetailPage() {
       <OfficialStatsCard stats={officialStats} />
       <Card title="開催操作">
         <div className="space-y-3 text-sm">
-          {event.status === "active" && canManageShare && <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => void updateEventStatus("closed")}>オフィシャルチームマッチ終了</button>}
+          {unsavedScoreCount>0&&<p role="status" className="text-xs text-amber-300">保存中・保存失敗のスコアが{unsavedScoreCount}件あります。保存完了・再試行後に終了できます。</p>}
+          {event.status === "active" && canManageShare && <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" disabled={isClosingEvent||unsavedScoreCount>0} onClick={() => void updateEventStatus("closed")}>オフィシャルチームマッチ終了</button>}
           {event.status === "closed" && <><p className="font-bold">オフィシャルチームマッチ終了済み</p><p className="text-zinc-400">このオフィシャルチームマッチは終了しました</p>{canManageShare && <button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={() => void updateEventStatus("active")}>オフィシャルチームマッチ再開</button>}{canManageShare && (showDeleteEventConfirm ? <div className="space-y-2 rounded-xl border border-red-500/60 p-3"><p>オフィシャルチームマッチを削除しますか？</p><label className="flex gap-2 text-xs text-zinc-300"><input type="checkbox" checked={deleteEventChecked} onChange={(e) => setDeleteEventChecked(e.target.checked)} />削除すると元に戻せません。問題ない場合はチェックしてください</label><div className="flex gap-2"><button className="w-1/2 rounded bg-red-600 py-2 font-bold" onClick={() => void deleteEvent()}>オフィシャルチームマッチ削除</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => { setShowDeleteEventConfirm(false); setDeleteEventChecked(false); }}>キャンセル</button></div></div> : <button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={() => setShowDeleteEventConfirm(true)}>オフィシャルチームマッチ削除</button>)}</>}
           {!canManageShare && <p className="text-zinc-400">閲覧のみです</p>}
         </div>
@@ -360,20 +386,19 @@ export default function OfficialMatchDetailPage() {
                   const isEditing = editingMatchId === match.id;
                   return (
                   <div key={match.id} className={isEditing ? "text-sm" : "rounded-xl bg-zinc-800 p-3 text-sm"}>
-                    {isEditing ? <MatchFormView title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onScoreCommit={async scores=>{if(!await updateMatch({...editingMatchForm,ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
+                    {isEditing ? <MatchFormView saveKey={`${scoreScope}${match.id}`} disabled={isClosingEvent} title="試合カードを編集" members={members} form={editingMatchForm} onChange={updateEditingMatchForm} onScoreCommit={async scores=>{if(!await updateMatch({...editingMatchForm,ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void updateMatch()} onCancel={() => { setEditingMatchId(null); setEditingMatchForm(emptyMatchForm()); }} /> : <>
                     <p className="font-bold">第{match.match_order}試合</p>
-                    <p className="my-2 break-words"><GuestName name={memberName(match.our_player1_profile_id,match.our_player1_guest_name)} guest={!match.our_player1_profile_id&&!!match.our_player1_guest_name} /> / <GuestName name={memberName(match.our_player2_profile_id,match.our_player2_guest_name)} guest={!match.our_player2_profile_id&&!!match.our_player2_guest_name} /> vs {match.opponent_player1_name || "未入力"} / {match.opponent_player2_name || "未入力"}</p>
-                    <ScoreInput value={{a:match.our_score===null?"":String(match.our_score),b:match.opponent_score===null?"":String(match.opponent_score)}} labels={["自チーム","相手チーム"]} saved={match.result!=="undecided"&&match.our_score!==null&&match.opponent_score!==null} result={match.our_score===null||match.opponent_score===null?null:match.result==="win"?"A":match.result==="lose"?"B":match.result==="draw"?"draw":null} disabled={!canEdit} onCommit={scores=>commitCardScore(scores,match)} />
+                    <ScoreInput saveKey={`${scoreScope}${match.id}`} names={[[{name:memberName(match.our_player1_profile_id,match.our_player1_guest_name),guest:!match.our_player1_profile_id&&!!match.our_player1_guest_name},{name:memberName(match.our_player2_profile_id,match.our_player2_guest_name),guest:!match.our_player2_profile_id&&!!match.our_player2_guest_name}],[{name:match.opponent_player1_name||"相手選手名未設定"},{name:match.opponent_player2_name||"相手選手名未設定"}]]} value={{a:match.our_score===null?"":String(match.our_score),b:match.opponent_score===null?"":String(match.opponent_score)}} labels={["自チーム","相手チーム"]} saved={match.result!=="undecided"&&match.our_score!==null&&match.opponent_score!==null} result={match.our_score===null||match.opponent_score===null?null:match.result==="win"?"A":match.result==="lose"?"B":match.result==="draw"?"draw":null} disabled={!canEdit||isClosingEvent} onCommit={scores=>commitCardScore(scores,match)} />
                     {match.score_detail && <p className="whitespace-pre-wrap">詳細スコア: {match.score_detail}</p>}
                     {match.memo && <p className="whitespace-pre-wrap">メモ: {match.memo}</p>}
-                    <YoutubeDisclosure registered={!!match.youtube_url}>{match.youtube_url&&<><a className="inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[match.id] ?? 0}回</p>}</>}{canEdit&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[match.id]??match.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[match.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={async()=>{if(await saveOfficialCard({...matchToForm(match),youtubeUrl:urlDrafts[match.id]??match.youtube_url??""},match.id))await reloadSavedCards();}}>URLを保存</button>{match.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={async()=>{if(await saveOfficialCard({...matchToForm(match),youtubeUrl:""},match.id)){setUrlDrafts(previous=>({...previous,[match.id]:""}));await reloadSavedCards();}}}>URLを削除</button>}</div></>}</YoutubeDisclosure>
-                    {canEdit && <div className="mt-3 grid grid-cols-2 gap-2"><button className="rounded-xl border border-zinc-500 py-2 text-xs font-bold" onClick={() => { setEditingMatchId(match.id); setEditingMatchForm(matchToForm(match)); setOpenMatchFormId(null); }}>試合カードを編集</button><button className="rounded-xl border border-red-500/70 py-2 text-xs font-bold text-red-200" onClick={() => void deleteMatch(match.id)}>試合カードを削除</button></div>}
+                    <YoutubeDisclosure registered={!!match.youtube_url}>{match.youtube_url&&<><a className="inline-block underline" href={match.youtube_url} target="_blank" rel="noreferrer">動画を見る</a>{canViewVideoClickCounts && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[match.id] ?? 0}回</p>}</>}{canEdit&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[match.id]??match.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[match.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" disabled={scoreQueue.has(`${scoreScope}${match.id}`)||isClosingEvent} onClick={async()=>{if(await saveOfficialCard({...matchToForm(match),youtubeUrl:urlDrafts[match.id]??match.youtube_url??""},match.id))await reloadSavedCards();}}>URLを保存</button>{match.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" disabled={scoreQueue.has(`${scoreScope}${match.id}`)||isClosingEvent} onClick={async()=>{if(await saveOfficialCard({...matchToForm(match),youtubeUrl:""},match.id)){setUrlDrafts(previous=>({...previous,[match.id]:""}));await reloadSavedCards();}}}>URLを削除</button>}</div></>}</YoutubeDisclosure>
+                    {canEdit && <div className="mt-3 grid grid-cols-2 gap-2"><button className="rounded-xl border border-zinc-500 py-2 text-xs font-bold" disabled={scoreJobs[`${scoreScope}${match.id}`]?.status==="saving"||isClosingEvent} onClick={() => { setEditingMatchId(match.id); setEditingMatchForm(matchToForm(match)); setOpenMatchFormId(null); }}>試合カードを編集</button><button className="rounded-xl border border-red-500/70 py-2 text-xs font-bold text-red-200" disabled={scoreQueue.has(`${scoreScope}${match.id}`)||isClosingEvent} onClick={() => void deleteMatch(match.id)}>試合カードを削除</button></div>}
                     </>}
                   </div>
                   );
                 })}
               </div>
-              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView title="試合カードを追加" newCard members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onScoreCommit={async scores=>{if(!await addMatch(opponent.id,{...(matchForms[opponent.id]??emptyMatchForm()),ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
+              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView saveKey={`${scoreScope}new:${id}:${opponent.id}`} disabled={isClosingEvent} title="試合カードを追加" newCard members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onScoreCommit={async scores=>{if(!await addMatch(opponent.id,{...(matchForms[opponent.id]??emptyMatchForm()),ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
             </section>
           ))}</MatchHistoryList>
           {canEdit && (showOpponentForm ? <div className="space-y-2 rounded-2xl border border-zinc-700 p-3"><input className="w-full rounded bg-zinc-800 p-2" placeholder="相手チーム名" value={opponentName} onChange={(e) => setOpponentName(e.target.value)} /><textarea className="w-full rounded bg-zinc-800 p-2" placeholder="メモ" value={opponentMemo} onChange={(e) => setOpponentMemo(e.target.value)} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-black" onClick={() => void addOpponent()}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => setShowOpponentForm(false)}>キャンセル</button></div></div> : <ActionButton onClick={() => setShowOpponentForm(true)}>対戦相手を追加</ActionButton>)}
@@ -384,14 +409,16 @@ export default function OfficialMatchDetailPage() {
   );
 }
 
-function MatchFormView({ title, members, form, onChange, onSave, onCancel, onScoreCommit, newCard=false }: { newCard?:boolean; onScoreCommit:(scores:ScorePair)=>Promise<void>; title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
+function MatchFormView({ saveKey, disabled=false, title, members, form, onChange, onSave, onCancel, onScoreCommit, newCard=false }: { saveKey:string; disabled?:boolean; newCard?:boolean; onScoreCommit:(scores:ScorePair)=>Promise<void>; title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
   const autoSaveReady=!newCard||canAutoCreateCard([form.our1ProfileId||form.our1GuestName,form.our2ProfileId||form.our2GuestName,form.opponent1Name,form.opponent2Name]);
+  const {queue,snapshot}=useScoreSaves(), job=snapshot[saveKey];
+  const ourNames=[1,2].map(index=>{const pid=index===1?form.our1ProfileId:form.our2ProfileId,guest=index===1?form.our1GuestName:form.our2GuestName;return {name:members.find(member=>member.playerProfileId===pid)?.displayName||guest||"選手名未設定",guest:!pid&&!!guest};});
   const fieldClass = "w-full rounded-xl border border-zinc-700 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-accent";
   const labelClass = "text-xs font-bold text-zinc-300";
   const sectionClass = "space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-3";
 
   return (
-    <div className="space-y-4 rounded-2xl border border-zinc-700 bg-zinc-900/80 p-4 shadow-lg shadow-black/20">
+    <fieldset disabled={disabled||job?.status==="saving"} className="min-w-0 space-y-4 rounded-2xl border border-zinc-700 bg-zinc-900/80 p-4 shadow-lg shadow-black/20">
       <h4 className="text-base font-bold">{title}</h4>
 
       <section className={sectionClass}>
@@ -422,7 +449,7 @@ function MatchFormView({ title, members, form, onChange, onSave, onCancel, onSco
 
       <section className={sectionClass}>
         <p className="text-xs font-bold text-zinc-400">スコア</p>
-        <ScoreInput value={{ a: form.ourScore, b: form.opponentScore }} labels={["自チーム", "相手チーム"]}
+        <ScoreInput saveKey={saveKey} names={[ourNames,[{name:form.opponent1Name||"相手選手名未設定"},{name:form.opponent2Name||"相手選手名未設定"}]]} value={{ a: form.ourScore, b: form.opponentScore }} labels={["自チーム", "相手チーム"]}
           saved={title==="試合カードを編集"&&form.result!=="undecided"&&form.ourScore!==""&&form.opponentScore!==""} onCommit={autoSaveReady?onScoreCommit:undefined} onChange={scores=>onChange({ourScore:scores.a,opponentScore:scores.b},true)} />
         {!autoSaveReady&&<p role="status" className="text-xs text-amber-300">選手・対戦相手が未設定のため自動登録しません。得点を決定した後、カードの「保存」で登録してください。</p>}
         <div className="space-y-2">
@@ -441,9 +468,9 @@ function MatchFormView({ title, members, form, onChange, onSave, onCancel, onSco
       </section>
 
       <div className="grid grid-cols-2 gap-2">
-        <button className="rounded-xl bg-accent py-2.5 text-sm font-bold text-black" onClick={onSave}>保存</button>
+        <button className="rounded-xl bg-accent py-2.5 text-sm font-bold text-black" disabled={queue.has(saveKey)} onClick={onSave}>保存</button>
         <button className="rounded-xl border border-zinc-500 bg-zinc-900 py-2.5 text-sm font-bold text-zinc-100" onClick={onCancel}>キャンセル</button>
       </div>
-    </div>
+    </fieldset>
   );
 }

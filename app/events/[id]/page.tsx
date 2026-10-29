@@ -7,6 +7,8 @@ import { Card, ActionButton } from "@/components/ui";
 import { GuestName, MatchHistoryList, YoutubeDisclosure } from "@/components/match-ui";
 import type { ScorePair } from "@/lib/score-input";
 import { ScoreInput } from "@/components/score-input";
+import { useScoreSaves } from "@/components/score-save-provider";
+import { AppDialog } from "@/components/app-dialog";
 import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
 import { MatchShareButtons } from "@/components/match-share-buttons";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -65,7 +67,12 @@ export default function EventDetailPage() {
   const [isDeletedEvent, setIsDeletedEvent] = useState(false);
   const [canDeleteEvent, setCanDeleteEvent] = useState(false);
   const [scoreInputs, setScoreInputs] = useState<Record<string, ScoreInput>>({});
-  const scoreSaveState = useRef({ saving: new Set<string>(), resultIds: new Map<string, string>(), error: "" });
+  const { queue: scoreQueue, snapshot: scoreJobs } = useScoreSaves();
+  const scoreScope = `/events/${eventId}#`;
+  const scoreSaveState = useMemo(() => ({current:scoreQueue.writeState(scoreScope)}), [scoreQueue,scoreScope]);
+  const unsavedScoreCount = Object.keys(scoreJobs).filter(key => key.startsWith(scoreScope)).length;
+  const closingEvent = useRef(false), reloadAfterScores = useRef(false);
+  const [isClosingEvent, setIsClosingEvent] = useState(false);
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
   const [editingGuestName, setEditingGuestName] = useState("");
   const [youtubeInputs, setYoutubeInputs] = useState<Record<string, string>>({});
@@ -196,6 +203,7 @@ export default function EventDetailPage() {
   };
 
   const loadAll = async () => {
+    const scoreRevision = scoreQueue.getRevision(scoreScope);
     if (typeof eventId === "string" && eventId.startsWith("guest_")) {
       setGuestMode(true);
       const ge = getGuestEvent(eventId);
@@ -222,6 +230,7 @@ export default function EventDetailPage() {
     if (!supabase || !eventId) return;
 
     const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token,event_mode,stats_mode,created_by_auth_user_id").eq("id", eventId).single();
+    if (scoreRevision !== scoreQueue.getRevision(scoreScope)) { await loadAll(); return; }
     if (!event) { setError("イベントが見つかりません"); return; }
     if (event.is_deleted) { setIsDeletedEvent(true); setEventName(event.name ?? "-"); return; }
     setIsDeletedEvent(false);
@@ -361,7 +370,13 @@ export default function EventDetailPage() {
     if (matchLoadError) { setError("試合履歴を取得できませんでした。画面を更新してください"); return; }
 
     const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
-    setMatches(normalizedMatches);
+    // 遅れて届いた取得結果で、保存中・失敗中のスコアや新しい確定値を上書きしない。
+    if (scoreRevision !== scoreQueue.getRevision(scoreScope)) { await loadAll(); return; }
+    setMatches(previous => normalizedMatches.map(row => {
+      if (!scoreQueue.has(`${scoreScope}${row.id}`)) return row;
+      const confirmed = previous.find(match => match.id === row.id);
+      return { ...row, completed: confirmed?.completed ?? false, result: confirmed?.result ?? null };
+    }));
     const savedScores = Object.fromEntries(normalizedMatches.filter((m: any) => hasEnteredFriendlyMatchScore(m)).map((m: any) => [m.id, { a: m.result.score_a, b: m.result.score_b }]));
     setScoreInputs((prev) => ({ ...savedScores, ...prev }));
     const savedYoutube = Object.fromEntries(normalizedMatches.map((m: any) => [m.id, m.youtube_url ?? ""]));
@@ -396,6 +411,11 @@ export default function EventDetailPage() {
       setEventVideoClickCounts({});
     }
   };
+
+  useEffect(() => {
+    if (unsavedScoreCount) reloadAfterScores.current = true;
+    else if (reloadAfterScores.current) { reloadAfterScores.current = false; void loadAll().catch(() => setError("保存後の再読み込みに失敗しました")); }
+  }, [unsavedScoreCount]);
 
   const startEventNameEdit = () => {
     setError("");
@@ -605,6 +625,7 @@ export default function EventDetailPage() {
   };
 
   const goTop = async () => {
+    if (scoreQueue.hasUnsaved(scoreScope) || closingEvent.current) return setError("未保存のスコアがあります。保存完了または再試行後に移動してください");
     if (guestMode && eventId) {
       removeGuestEvent(eventId);
       router.push("/");
@@ -634,7 +655,13 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
+  const scrollToResults = () => requestAnimationFrame(() => document.getElementById("event-results")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+
   const closeEvent = async () => {
+    if (closingEvent.current) return;
+    if (scoreQueue.hasUnsaved(scoreScope) || scoreSaveState.current.saving.size) return setError("保存中または保存失敗のスコアがあります。保存完了・再試行後に終了してください");
+    closingEvent.current = true; setIsClosingEvent(true);
+    try {
     if (guestMode && eventId) {
       const ge = getGuestEvent(eventId);
       if (!ge) return;
@@ -642,8 +669,10 @@ export default function EventDetailPage() {
       if ((ge.event_mode ?? "auto") === "manual") ge.stats_mode = closeStatsMode === "record_only" ? "record_only" : "official";
       else ge.stats_mode = "official";
       upsertGuestEvent(ge);
+      scoreQueue.invalidateReads(scoreScope);setEventStatus("closed");
       setShowCloseModal(false);
       await loadAll();
+      scrollToResults();
       return;
     }
     const supabase = getSupabaseClient();
@@ -653,8 +682,11 @@ export default function EventDetailPage() {
       .update({ status: "closed", closed_at: new Date().toISOString(), stats_mode: eventMode === "manual" ? closeStatsMode : "official" })
       .eq("id", eventId).eq("is_deleted", false).select("id").single();
     if (closeError) return setError("イベントの終了に失敗しました");
+    scoreQueue.invalidateReads(scoreScope);setEventStatus("closed");
     setShowCloseModal(false);
     await loadAll();
+    scrollToResults();
+    } finally { closingEvent.current = false; setIsClosingEvent(false); }
   };
   const reopenEvent = async () => {
     if (guestMode && eventId) {
@@ -662,7 +694,7 @@ export default function EventDetailPage() {
       if (!ge) return;
       ge.status = "active";
       if ((ge.event_mode ?? "auto") === "manual") ge.stats_mode = "undecided";
-      upsertGuestEvent(ge);
+      upsertGuestEvent(ge);scoreQueue.invalidateReads(scoreScope);setEventStatus("active");
       await loadAll();
       return;
     }
@@ -671,10 +703,12 @@ export default function EventDetailPage() {
     const { error: reopenError } = await supabase.from("events").update({ status: "active", stats_mode: eventMode === "manual" ? "undecided" : "official" })
       .eq("id", eventId).eq("is_deleted", false).select("id").single();
     if (reopenError) return setError("イベントの再開に失敗しました");
+    scoreQueue.invalidateReads(scoreScope);setEventStatus("active");
     await loadAll();
   };
 
   const saveScore = async (matchId: string, entered?: ScorePair) => {
+    if (closingEvent.current) { setError("イベントの終了処理中です"); return false; }
     if (scoreSaveState.current.saving.has(matchId)) return false;
     const score: ScoreInput | undefined = entered ? { a: entered.a.trim() === "" ? "" : Number(entered.a), b: entered.b.trim() === "" ? "" : Number(entered.b) } : scoreInputs[matchId];
     if (!score || score.a === "" || score.b === "") { setError("スコアを入力してください"); return false; }
@@ -726,6 +760,7 @@ export default function EventDetailPage() {
   };
 
   const requestMatchDelete = (match: MatchView) => {
+    if (scoreQueue.has(`${scoreScope}${match.id}`)) return setError("この試合のスコアを保存完了・再試行してから操作してください");
     if (eventMode !== "auto" || eventStatus === "closed") return;
     setMatchDeleteTarget({ id: match.id, hasScore: matchHasSavedScore(match) });
     setSwipeOffsets((prev) => ({ ...prev, [match.id]: Math.max(prev[match.id] ?? 0, 96) }));
@@ -809,6 +844,7 @@ export default function EventDetailPage() {
   const deleteMatch = async () => {
     if (!matchDeleteTarget) return;
     const matchId = matchDeleteTarget.id;
+    if (scoreQueue.has(`${scoreScope}${matchId}`) || closingEvent.current) return setError("この試合の保存・終了処理が完了してから削除してください");
     const match = matches.find((m) => m.id === matchId);
     if (!match) return cancelMatchDelete();
     if (guestMode && eventId) {
@@ -1116,6 +1152,7 @@ export default function EventDetailPage() {
   };
 
   const startLineupEdit = (match: MatchView) => {
+    if (scoreQueue.has(`${scoreScope}${match.id}`) || closingEvent.current) return;
     if (match.completed) return;
     const a = match.players.filter((p) => p.team === "A");
     const b = match.players.filter((p) => p.team === "B");
@@ -1123,6 +1160,7 @@ export default function EventDetailPage() {
   };
 
   const saveLineupEdit = async (matchId: string) => {
+    if (scoreQueue.has(`${scoreScope}${matchId}`) || closingEvent.current) return setError("スコアの保存完了・再試行後に組み合わせを編集してください");
     const draft = lineupDrafts[matchId];
     if (!draft) return;
     const validationError = validateManualDrafts([{ id: matchId, court_number: 1, ...draft }]);
@@ -1234,16 +1272,13 @@ export default function EventDetailPage() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" className="rounded-xl border border-zinc-600 py-3 text-sm" onClick={addManualDraft}>試合を追加</button>
-          <button type="button" className="rounded-xl bg-accent py-3 font-semibold text-black" onClick={() => void createManualRound()}>Roundを作成</button>
+          <button type="button" className="rounded-xl bg-accent py-3 font-semibold text-black" disabled={isClosingEvent || unsavedScoreCount > 0} onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void createManualRound(); }}>Roundを作成</button>
         </div>
       </div>
     </Card>
   ) : null;
 
   const matchCards = sortedMatches.map((m) => {
-            const names = (team: string) => m.players.filter(p => p.team === team).map((p, index) => <span key={p.participant_id}>{index > 0 && " / "}<GuestName name={nameMap[p.participant_id] ?? "名称未設定"} guest={participants.find(row => row.id === p.participant_id)?.participant_type === "guest"} /></span>);
-            const a = names("A");
-            const b = names("B");
             return (
               <div key={m.id} className="relative overflow-hidden rounded-xl bg-red-950/70">
                 <div className="absolute inset-y-0 left-0 flex w-28 items-center justify-center bg-red-600 text-sm font-bold text-white">削除</div>
@@ -1264,8 +1299,7 @@ export default function EventDetailPage() {
                     else setSwipeOffsets((prev) => ({ ...prev, [m.id]: 0 }));
                   }}
                 >
-                <div className="flex items-center justify-between gap-2"><p className="text-xs">Round {m.round_number} / Court{m.court_number}</p>{eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-400" onClick={() => requestMatchDelete(m)}>削除</button>}</div>
-                <p className="mb-2 text-sm font-semibold">{a} vs {b}</p>
+                <div className="flex items-center justify-between gap-2"><p className="text-xs">Round {m.round_number} / Court{m.court_number}</p>{eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-400" disabled={scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={() => requestMatchDelete(m)}>削除</button>}</div>
                 {eventMode === "manual" && (lineupDrafts[m.id] ? (
                   <div className="mb-3 space-y-2 rounded-lg border border-zinc-700 p-2">
                     <p className="text-xs text-zinc-300">組み合わせ編集</p>
@@ -1283,12 +1317,12 @@ export default function EventDetailPage() {
                 ) : m.completed ? (
                   <p className="mb-2 text-xs text-zinc-400">スコア入力済みのため組み合わせは編集できません</p>
                 ) : eventStatus !== "closed" ? (
-                  <button className="mb-2 rounded border border-zinc-500 px-3 py-2 text-xs" onClick={() => startLineupEdit(m)}>組み合わせ編集</button>
+                  <button className="mb-2 rounded border border-zinc-500 px-3 py-2 text-xs" disabled={scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={() => startLineupEdit(m)}>組み合わせ編集</button>
                 ) : null)}
                 <div className="flex items-center gap-2">
-                  <ScoreInput value={{ a: m.result ? String(m.result.score_a) : "", b: m.result ? String(m.result.score_b) : "" }} kind="number"
+                  <ScoreInput saveKey={`${scoreScope}${m.id}`} names={(["A", "B"] as const).map(team => m.players.filter(player => player.team === team).map(player => ({ name: nameMap[player.participant_id] || "選手名未設定", guest: participants.find(p => p.id === player.participant_id)?.participant_type === "guest" }))) as [{ name: string; guest: boolean }[], { name: string; guest: boolean }[]]} value={{ a: m.result ? String(m.result.score_a) : "", b: m.result ? String(m.result.score_b) : "" }} kind="number"
                     saved={hasEnteredFriendlyMatchScore(m)} result={hasEnteredFriendlyMatchScore(m) ? m.result!.winner_team : null}
-                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={eventStatus === "closed"}
+                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={eventStatus === "closed" || isClosingEvent || isGeneratingRound || !!lineupDrafts[m.id]}
                     onCommit={async scores => { if (!await saveScore(m.id, scores)) throw new Error(scoreSaveState.current.error || "スコアを保存できませんでした。再試行してください"); }} />
                 </div><YoutubeDisclosure registered={!!m.youtube_url}>
                   {m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="inline-block rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a>}
@@ -1331,7 +1365,7 @@ export default function EventDetailPage() {
       {guestMode && <p className="text-xs text-amber-300">ゲストモードではデータは一時保存です。ログインするとイベントや戦績を保存できます。</p>}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {message && <p className="text-sm text-emerald-400">{message}</p>}
-      {eventStatus === "closed" && resultSummarySection}
+      {eventStatus === "closed" && <section id="event-results">{resultSummarySection}</section>}
       {eventStatus === "closed" && (
         <Card title="結果共有">
           <div className="space-y-2 text-sm">
@@ -1357,25 +1391,15 @@ export default function EventDetailPage() {
           </div>
         </Card>
       )}
-      <Card title="試合とスコア入力">
-        <div>
-          <MatchHistoryList>{matchCards}</MatchHistoryList>
-        </div>
-
-      </Card>
-
-
-      
-
-      {eventMode === "manual" ? manualRoundSection : (eventStatus === "closed" ? (
-        <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
-      ) : (
-        <ActionButton onClick={generateRound} disabled={isGeneratingRound}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>
-      ))}
+      <Card title="試合運営">
+        <div className="space-y-3" data-event-operations>
+          <MatchHistoryList heading={latestRoundNumber > 0 ? `現在 Round ${latestRoundNumber}` : "試合はまだありません"}>{matchCards}</MatchHistoryList>
       {!guestMode && !eventId.startsWith("guest_") && !!roundUserId && eventMode === "auto" && eventStatus !== "closed" && (
-        <fieldset className="space-y-3 rounded-2xl border border-zinc-700 bg-card p-4" disabled={isGeneratingRound}>
-          <legend className="px-1 text-sm font-bold">組み合わせモード {specialModesUnlocked && <span className="ml-2 text-xs text-accent">解放済み</span>}</legend>
-          <div className="space-y-2">
+        <details className="rounded-xl border border-zinc-700" data-round-mode>
+          <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-bold">組み合わせ：{friendlyRoundModes.find(mode => mode.value === selectedRoundMode)!.label}{specialModesUnlocked && <span className="ml-2 text-xs text-accent">解放済み</span>}</summary>
+        <fieldset className="space-y-2 p-3 pt-0" disabled={isGeneratingRound || isClosingEvent}>
+          <legend className="sr-only">組み合わせモード</legend>
+          <div className="grid grid-cols-2 gap-2">
             {friendlyRoundModes.map(mode => {
               const locked = mode.value !== "normal" && !specialModesUnlocked;
               return <label key={mode.value} className={`flex min-h-11 items-center gap-3 rounded-xl border border-zinc-700 px-3 py-2 text-sm ${locked ? "cursor-not-allowed opacity-40" : "cursor-pointer"}`}>
@@ -1391,13 +1415,21 @@ export default function EventDetailPage() {
             <p>あと{FRIENDLY_MODE_UNLOCK_MATCHES - scoredMatchCount}試合で解放！</p>
           </div>}
         </fieldset>
+        </details>
       )}
-      {error && <p className="text-sm text-red-400">{error}</p>}
-      {showCourtWarning && (
-        <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>
-      )}
-
-      
+      {eventMode === "manual" ? manualRoundSection : (eventStatus === "closed" ? (
+        <button className="w-full rounded-2xl bg-zinc-700 py-3 font-semibold text-zinc-300" disabled>次Round生成（終了済み）</button>
+      ) : (
+        <ActionButton onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void generateRound(); }} disabled={isGeneratingRound || isClosingEvent || unsavedScoreCount > 0}>{isGeneratingRound ? "生成中..." : "次Round生成"}</ActionButton>
+      ))}
+          {showCourtWarning && <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>}
+          {eventStatus !== "closed" && <div className="space-y-2 border-t border-zinc-700 pt-3">
+            <button className="min-h-11 w-full rounded-xl border border-zinc-500 px-3 py-2 text-sm font-semibold disabled:opacity-50" onClick={() => setShowCloseModal(true)} disabled={isClosingEvent}>イベント終了</button>
+            <p className="text-xs text-zinc-400">終了後、ランキング・MVP・結果共有を確認できます</p>
+            {unsavedScoreCount > 0 && <p role="status" className="text-xs text-amber-300">保存中・保存失敗のスコアが{unsavedScoreCount}件あります。保存完了・再試行後に次Round生成・終了できます。</p>}
+          </div>}
+        </div>
+      </Card>
 
       <Card title="参加者">
         {eventStatus === "closed" && <p className="mb-2 text-sm text-zinc-300">この開催は終了済みです</p>}
@@ -1479,18 +1511,11 @@ export default function EventDetailPage() {
         </div>
       </Card>
 
-<Card title="開催操作">
-        <button className="w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowCloseModal(true)} disabled={eventStatus === "closed"}>
-          {eventStatus === "closed" ? "イベント終了済み" : "イベント終了"}
-        </button>
-        {eventStatus === "closed" && <p className="mt-2 text-sm text-zinc-300">この開催は終了しました</p>}
-        {eventStatus === "closed" && <button className="mt-2 w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={reopenEvent}>イベント再開</button>}
-        {eventStatus === "closed" && canDeleteEvent && <button className="mt-2 w-full rounded-2xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
-      </Card>
-
-
-
-      
+      {eventStatus === "closed" && <Card title="開催操作">
+        <p className="text-sm text-zinc-300">この開催は終了しました</p>
+        <button className="mt-2 min-h-11 w-full rounded-xl border border-zinc-500 py-3" onClick={reopenEvent}>イベント再開</button>
+        {canDeleteEvent && <button className="mt-2 min-h-11 w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
+      </Card>}
 
       {guestMode && <p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>}
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
@@ -1501,25 +1526,24 @@ export default function EventDetailPage() {
 
       {showDeleteModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"><div className="w-full max-w-sm rounded-2xl bg-card p-4"><p className="font-semibold">本当にこのイベントを削除しますか？</p><p className="mt-2 text-sm text-zinc-300">このイベントの試合結果・戦績はランキングに反映されなくなります。</p><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={deleteChecked} onChange={(e) => setDeleteChecked(e.target.checked)} /><span>この操作を実行して問題ないことを確認しました</span></label><div className="mt-4 flex gap-2"><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setShowDeleteModal(false)}>キャンセル</button><button disabled={!deleteChecked} className="w-1/2 rounded-xl bg-red-500 py-2 disabled:bg-zinc-600" onClick={deleteEvent}>イベントを削除する</button></div></div></div>}
 
-      {showCloseModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-sm rounded-2xl bg-card p-4">
-            <h3 className="mb-2 text-lg font-bold">この開催を終了しますか？</h3>
-            <p className="mb-4 text-sm text-zinc-300">終了後も開催履歴から確認できます。</p>
+      <AppDialog open={showCloseModal} title="この開催を終了しますか？" busy={isClosingEvent} onClose={() => setShowCloseModal(false)}>
+          <div className="space-y-3 overflow-y-auto p-4">
+            <p className="text-sm text-zinc-300">終了するとランキング・MVPを確認し、共有リンクから結果を共有できます。</p>
+            <p className="text-sm text-zinc-300">未確定の試合：{matches.filter(match => !hasEnteredFriendlyMatchScore(match)).length}件。未確定試合は正式な結果集計に含まれません。</p>
+            {unsavedScoreCount > 0 && <p role="alert" className="text-sm text-amber-300">保存中・保存失敗のスコアがあります。保存完了・再試行後に終了してください。</p>}
             {eventMode === "manual" && (
               <div className="mb-4 space-y-2 rounded-xl bg-zinc-800 p-3 text-sm">
                 <p className="font-semibold">このイベントの結果をグループ戦績に反映しますか？</p>
-                <label className="flex items-center gap-2"><input type="radio" name="stats_mode" checked={closeStatsMode === "official"} onChange={() => setCloseStatsMode("official")} /><span>グループ戦績に反映する</span></label>
-                <label className="flex items-center gap-2"><input type="radio" name="stats_mode" checked={closeStatsMode === "record_only"} onChange={() => setCloseStatsMode("record_only")} /><span>記録用として保存する</span></label>
+                <label className="flex items-center gap-2"><input type="radio" disabled={isClosingEvent} name="stats_mode" checked={closeStatsMode === "official"} onChange={() => setCloseStatsMode("official")} /><span>グループ戦績に反映する</span></label>
+                <label className="flex items-center gap-2"><input type="radio" disabled={isClosingEvent} name="stats_mode" checked={closeStatsMode === "record_only"} onChange={() => setCloseStatsMode("record_only")} /><span>記録用として保存する</span></label>
               </div>
             )}
             <div className="flex gap-2">
-              <button className="w-1/2 rounded-xl border border-zinc-600 py-3" onClick={() => setShowCloseModal(false)}>キャンセル</button>
-              <button className="w-1/2 rounded-xl bg-red-500 py-3 font-semibold text-white" onClick={closeEvent}>終了する</button>
+              <button className="w-1/2 rounded-xl border border-zinc-600 py-3" disabled={isClosingEvent} onClick={() => setShowCloseModal(false)}>キャンセル</button>
+              <button className="w-1/2 rounded-xl bg-accent py-3 font-semibold text-black disabled:opacity-40" disabled={isClosingEvent || unsavedScoreCount > 0} onClick={() => void closeEvent()}>{isClosingEvent ? "終了中…" : "終了する"}</button>
             </div>
           </div>
-        </div>
-      )}
+      </AppDialog>
     </main>
   );
 }

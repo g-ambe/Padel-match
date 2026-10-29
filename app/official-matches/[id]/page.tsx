@@ -10,7 +10,7 @@ import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historic
 import { buildOfficialStats, createShareToken, getOfficialAccess, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
 import { GuestName, MatchHistoryList, YoutubeDisclosure } from "@/components/match-ui";
-import type { ScorePair } from "@/lib/score-input";
+import { canAutoCreateCard, type ScorePair } from "@/lib/score-input";
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { ScoreInput } from "@/components/score-input";
 import { storedTeamShareScore } from "@/lib/match-share-text";
@@ -373,7 +373,7 @@ export default function OfficialMatchDetailPage() {
                   );
                 })}
               </div>
-              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView title="試合カードを追加" members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onScoreCommit={async scores=>{if(!await addMatch(opponent.id,{...(matchForms[opponent.id]??emptyMatchForm()),ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
+              {canEdit && (openMatchFormId === opponent.id ? <MatchFormView title="試合カードを追加" newCard members={members} form={matchForms[opponent.id] ?? emptyMatchForm()} onChange={(patch, sync) => updateMatchForm(opponent.id, patch, sync)} onScoreCommit={async scores=>{if(!await addMatch(opponent.id,{...(matchForms[opponent.id]??emptyMatchForm()),ourScore:scores.a,opponentScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={() => void addMatch(opponent.id)} onCancel={() => setOpenMatchFormId(null)} /> : <button className="w-full rounded-xl border border-zinc-500 py-2 text-sm font-bold" onClick={() => { setOpenMatchFormId(opponent.id); updateMatchForm(opponent.id, {}); }}>試合カードを追加</button>)}
             </section>
           ))}</MatchHistoryList>
           {canEdit && (showOpponentForm ? <div className="space-y-2 rounded-2xl border border-zinc-700 p-3"><input className="w-full rounded bg-zinc-800 p-2" placeholder="相手チーム名" value={opponentName} onChange={(e) => setOpponentName(e.target.value)} /><textarea className="w-full rounded bg-zinc-800 p-2" placeholder="メモ" value={opponentMemo} onChange={(e) => setOpponentMemo(e.target.value)} /><div className="flex gap-2"><button className="w-1/2 rounded bg-accent py-2 text-black" onClick={() => void addOpponent()}>保存</button><button className="w-1/2 rounded border border-zinc-500 py-2" onClick={() => setShowOpponentForm(false)}>キャンセル</button></div></div> : <ActionButton onClick={() => setShowOpponentForm(true)}>対戦相手を追加</ActionButton>)}
@@ -384,7 +384,8 @@ export default function OfficialMatchDetailPage() {
   );
 }
 
-function MatchFormView({ title, members, form, onChange, onSave, onCancel, onScoreCommit }: { onScoreCommit:(scores:ScorePair)=>Promise<void>; title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
+function MatchFormView({ title, members, form, onChange, onSave, onCancel, onScoreCommit, newCard=false }: { newCard?:boolean; onScoreCommit:(scores:ScorePair)=>Promise<void>; title: string; members: MemberOption[]; form: MatchForm; onChange: (patch: Partial<MatchForm>, syncResult?: boolean) => void; onSave: () => void; onCancel: () => void }) {
+  const autoSaveReady=!newCard||canAutoCreateCard([form.our1ProfileId||form.our1GuestName,form.our2ProfileId||form.our2GuestName,form.opponent1Name,form.opponent2Name]);
   const fieldClass = "w-full rounded-xl border border-zinc-700 bg-zinc-950/70 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-accent";
   const labelClass = "text-xs font-bold text-zinc-300";
   const sectionClass = "space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-3";
@@ -422,7 +423,8 @@ function MatchFormView({ title, members, form, onChange, onSave, onCancel, onSco
       <section className={sectionClass}>
         <p className="text-xs font-bold text-zinc-400">スコア</p>
         <ScoreInput value={{ a: form.ourScore, b: form.opponentScore }} labels={["自チーム", "相手チーム"]}
-          saved={title==="試合カードを編集"&&form.result!=="undecided"&&form.ourScore!==""&&form.opponentScore!==""} onCommit={onScoreCommit} />
+          saved={title==="試合カードを編集"&&form.result!=="undecided"&&form.ourScore!==""&&form.opponentScore!==""} onCommit={autoSaveReady?onScoreCommit:undefined} onChange={scores=>onChange({ourScore:scores.a,opponentScore:scores.b},true)} />
+        {!autoSaveReady&&<p role="status" className="text-xs text-amber-300">選手・対戦相手が未設定のため自動登録しません。得点を決定した後、カードの「保存」で登録してください。</p>}
         <div className="space-y-2">
           <label className={labelClass}>結果</label>
           <select className={fieldClass} value={form.result} onChange={(e) => onChange({ result: e.target.value as ResultValue })}>

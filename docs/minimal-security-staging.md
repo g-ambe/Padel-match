@@ -2,7 +2,9 @@
 
 ## 実施状況
 
-ローカルの実DDL・RLS・架空Auth状態・本人承認・復旧の結果と最終件数はPR本文に記載します。専用Supabase `padel-hub-staging`（`zzjwpresqkefnyjyisgd`）は作成・SQL適用済みで、実DBの定義・権限・Security Advisorを読み取り確認しました。既存SQLは再適用しません。検証専用Workerのデプロイ・接続先確認が完了するまで、Authユーザー作成・実メール認証・実JWT・PostgREST・ブラウザ・並行操作の書き込み試験は**未実施**です。PITR復元も未実施です。
+ローカルの実DDL・RLS・架空Auth状態・本人承認・復旧の結果と最終件数はPR本文に記載します。専用Supabase `padel-hub-staging`（`zzjwpresqkefnyjyisgd`）は作成・SQL適用済みで、実DBの定義・権限・Security Advisorを読み取り確認しました。既存SQLは再適用しません。ユーザーが作成した既存Worker `padel-match-staging`（https://padel-match-staging.ranbo-ga.workers.dev）はHello Worldを配信中との報告です。GitHub自動ビルドは停止中で、今後は既存WorkerへのWrangler CLIデプロイを優先します。アプリのデプロイ・接続先確認が完了するまで、Authユーザー作成・実メール認証・実JWT・PostgREST・ブラウザ・並行操作の書き込み試験は**未実施**です。PITR復元も未実施です。
+
+CodexからCloudflare APIへの通信は環境側のプロキシが拒否し、認証情報もありません。[Windows PCでの既存WorkerへのCLIデプロイ手順](staging-windows-cli.md)にOAuthログイン、ビルド、既存Workerの確認、dry-run、変数を保持したアップロード、GET検証、Workへの引継ぎをまとめました。新しいWorker・プロジェクト・APIトークンは作成しません。
 
 ## 検証専用Workerの準備
 
@@ -12,21 +14,18 @@
 
 本番Workerの非本番ブランチ自動プレビュー生成を停止する変更だけが例外として承認され、ユーザーがブラウザで変更しました。共有された設定画面で「Builds for Preview branches」がOFFであることを確認し、構成変更のpush保留を解除しました。mainの自動デプロイ・本番環境変数・本番Supabaseは変更しません。Workers Buildsでの効果を確認できないコミットメッセージのスキップ指定には依存しません。
 
-Cloudflareへの認証がこの作業環境にないため、以下はユーザーがブラウザで行う手順です。プラン変更や無料枠を超える操作が必要なら停止してください。
-
-1. Cloudflareへログインし、Workers & Pagesで無料枠内の別Worker `padel-match-staging` を作成します。既存の `padel-match` を選んで編集しません。
-2. 検証WorkerのGit連携先を `g-ambe/Padel-match`、デプロイ対象を `codex/minimal-security-replacement` だけにします。mainや他ブランチのビルド、非本番ブランチのVersion URL自動アップロードは対象外にします。設定前に自動ビルドが始まる場合は停止し、設定後に再実行します。
-3. 検証Workerの**ビルド用変数**と**実行時変数**の両方に、下表の同じ値を設定します。キーは検証用SupabaseのProject Settings → API Keysで取得します。secret／service_roleは使いません。チャット・ログ・リポジトリへ貼りません。
+既存の検証Workerを使います。新規作成・GitHub自動ビルドの有効化は行いません。CLIを実行するプロセスの**ビルド用変数**と、設定済みの**実行時変数**を下表の検証用の値に揃えます。キーは検証用SupabaseのProject Settings → API Keysから非表示入力へコピーします。secret／service_roleは使いません。チャット・ログ・リポジトリへ貼りません。
 
 | 変数 | 設定先・値 |
 | --- | --- |
 | NEXT_PUBLIC_SUPABASE_URL | ビルド時／実行時とも `https://zzjwpresqkefnyjyisgd.supabase.co` |
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | ビルド時／実行時とも検証用Supabaseのanon key（公開用publishable keyも可） |
 
-4. ビルドコマンドを `npm run cf:build:staging`、デプロイコマンドを `npx opennextjs-cloudflare deploy --config wrangler.staging.jsonc` にします。設定ファイル欄がある場合も `wrangler.staging.jsonc` を指定します。検証Worker名と設定ファイル内の名前が一致することを確認します。標準の `npm run deploy` や `wrangler versions upload` は使いません。
-5. 設定後、対象コミットをビルド・デプロイします。`NEXT_PUBLIC_*` はブラウザ向け成果物に埋め込まれるため、実行時変数だけを変えたり、以前の `.open-next` 成果物を流用したりしません。ビルド前チェックはURL・Worker名・公開キーの形式を確認し、値を出力せずに本番URL／別refのanon JWT／service_roleを拒否します。publishable keyの所属はダッシュボードで確認します。
-6. 実際に発行された **`padel-match-staging` のworkers.dev URL** を控えます。検証Workerの実行時変数と公開JSの接続先を確認し、本番Supabase refが含まれないこと、認証前の匿名GETの送信先が検証用Supabaseだけであることを確認します。キーは画面収録・HAR等へ残しません。この確認が完了するまでは登録・ログイン・保存・本人統合を試しません。
-7. 検証用SupabaseだけでAuthentication → URL Configurationを開き、Site URLを上記URL、Redirect URLsを `上記URL/login?confirmed=true` に設定します。既存SQLの再適用・メール確認の無効化・本番Auth設定の変更はしません。
+1. 検証Workerが存在するアカウントで公式Wrangler OAuthにログインし、既存Workerのデプロイ一覧を取得できることを確認します。失敗したら新規作成へ進まず停止します。
+2. `npm run cf:build:staging` でビルドします。`NEXT_PUBLIC_*` はブラウザ向け成果物に埋め込まれるため、実行時変数だけを変えたり、以前の `.open-next` 成果物を流用したりしません。ビルド前チェックはURL・Worker名・公開キーの形式を確認し、値を出力せずに本番URL／別refのanon JWT／service_roleを拒否します。publishable keyの所属はダッシュボードで確認します。
+3. `wrangler.staging.jsonc`、`--name padel-match-staging`、`--keep-vars` を明示したWranglerの `--dry-run` を行います。成功後、同じ指定で既存Workerだけへアップロードします。標準の `npm run deploy` や `wrangler versions upload` は使いません。
+4. `node scripts/verify-staging-deployment.cjs` でアプリHTML・配信JSと手元の検証ビルドの一致・検証用Supabase公開Auth設定のGETを確認します。Workではさらに実ブラウザ通信先を確認します。キーは画面収録・HAR等へ残しません。この確認が完了するまでは登録・ログイン・保存・本人統合を試しません。
+5. 検証用SupabaseだけでAuthentication → URL Configurationを開き、Site URLを上記URL、Redirect URLsを `上記URL/login?confirmed=true` に設定します。既存SQLの再適用・メール確認の無効化・本番Auth設定の変更はしません。
 
 安全な環境変数とCloudflare認証が用意された作業環境から実行する場合は `npm run deploy:staging` が同じ設定で再ビルドしてから検証Workerだけへデプロイします。この操作も無料枠と接続先を確認後に限ります。ブラウザ操作の接続が利用でき、上記の完了が確認できてから、下記の架空ユーザー・試合の試験に進みます。
 

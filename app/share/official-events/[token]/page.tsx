@@ -7,6 +7,7 @@ import { Card } from "@/components/ui";
 import { SharedPageHeader } from "@/components/shared-page-header";
 import { buildOfficialStats, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
+import { readSharedOfficialClubName } from "@/lib/shared-club-name";
 
 type OfficialEvent = { id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; is_deleted?: boolean | null; share_enabled: boolean | null; club_id: string; clubs?: { name: string } | null };
 type OfficialOpponent = { id: string; opponent_team_name: string; memo: string | null };
@@ -40,7 +41,12 @@ export default function SharedOfficialEventPage() {
     const { data: eventRow } = await supabase.from("official_events").select("id,title,event_date,description,memo,status,is_deleted,share_enabled,club_id,clubs(name)").eq("share_token", token).eq("is_deleted", false).maybeSingle();
     const officialEvent = eventRow as unknown as OfficialEvent | null;
     if (!officialEvent || !officialEvent.share_enabled || officialEvent.status !== "closed") return setError("この共有リンクは無効です");
-    setEvent(officialEvent);
+    try {
+      const clubName = await readSharedOfficialClubName(supabase, token, officialEvent.clubs?.name ?? null);
+      setEvent({ ...officialEvent, clubs: clubName === null ? null : { name: clubName } });
+    } catch {
+      return setError("グループ名を取得できませんでした。再読み込みしてください");
+    }
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,opponent_team_name,memo").eq("official_event_id", officialEvent.id).order("created_at");
     const { data: matchRows } = await supabase.from("official_matches").select("id,official_opponent_id,match_order,created_at,our_player1_profile_id,our_player2_profile_id,our_player1_guest_name,our_player2_guest_name,opponent_player1_name,opponent_player2_name,our_score,opponent_score,result,score_detail,memo,youtube_url").eq("official_event_id", officialEvent.id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
     const rows = (matchRows ?? []) as unknown as OfficialMatch[];

@@ -92,6 +92,16 @@ async function fixture(run, extra = '', apply = true) {
       for (const grant of deleteEvidence.acl) await db.exec('grant '+grant.privilege+' on '+grant.table+' to '+grant.grantee);
       await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-delete-batch/apply.sql'),'utf8'));
     }
+    if (process.env.PADEL_MATCH_WRITE_TEST === '1') {
+      assert.equal(process.env.PADEL_MATCH_DELETE_TEST,'1','Match-delete prerequisite must be enabled');
+      // This older linking fixture omits Round references; align it with the current production shape.
+      // Only synthetic rows are affected, before any linking-test baseline is captured.
+      for (const match of (await db.query('select id,event_id from matches where round_id is null')).rows) {
+        const round=(await db.query('insert into rounds(event_id,round_number) select $1,coalesce(max(round_number),0)+1 from rounds where event_id=$1 returning id',[match.event_id])).rows[0];
+        await db.query('update matches set round_id=$1 where id=$2',[round.id,match.id]);
+      }
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-match-write/apply.sql'),'utf8'));
+    }
     await run(db);
   }
   finally { await db.close(); }

@@ -1,0 +1,1791 @@
+{
+  "acl": [
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "event_participants",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_players",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_players",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_players",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_players",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "match_players",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_players",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_players",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_players",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_players",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "match_players",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_results",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_results",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_results",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_results",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "match_results",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_results",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_results",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_results",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_results",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "match_results",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "matches",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "matches",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "matches",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "matches",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "matches",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "matches",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "matches",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "matches",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "matches",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "matches",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "matches",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "matches",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "matches",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "postgres",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "rounds",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "rounds",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "rounds",
+      "grantee": "anon",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "rounds",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "rounds",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "rounds",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "rounds",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "rounds",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "rounds",
+      "grantee": "authenticated",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "table": "rounds",
+      "grantee": "service_role",
+      "grantor": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    }
+  ],
+  "rls": [
+    {
+      "table": "event_participants",
+      "enabled": true
+    },
+    {
+      "table": "match_players",
+      "enabled": true
+    },
+    {
+      "table": "match_results",
+      "enabled": true
+    },
+    {
+      "table": "matches",
+      "enabled": true
+    },
+    {
+      "table": "rounds",
+      "enabled": true
+    }
+  ],
+  "counts": {
+    "rounds": 253,
+    "matches": 402,
+    "match_players": 1608,
+    "match_results": 364,
+    "event_participants": 530
+  },
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "event_participants",
+      "permissive": "PERMISSIVE",
+      "policyname": "event_participants_super_user_select",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "event_participants",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls07_participants_insert",
+      "schemaname": "public",
+      "with_check": "((auth.uid() IS NOT NULL) AND (EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_participants.event_id) AND (NOT COALESCE(e.is_deleted, false)) AND (is_super_user() OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             LEFT JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND cm.is_active AND ((cm.profile_id = auth.uid()) OR (pp.linked_auth_user_id = auth.uid()))))) OR ((e.event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(e.id, e.created_by_auth_user_id)))))) AND (((participant_type = 'guest'::text) AND (profile_id IS NULL) AND (player_profile_id IS NULL)) OR ((participant_type = 'member'::text) AND (is_super_user() OR (EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_participants.event_id) AND (((e.club_id IS NULL) AND (((event_participants.player_profile_id IS NULL) AND (event_participants.profile_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM player_profiles self\n          WHERE ((self.id = event_participants.player_profile_id) AND self.is_active AND (self.linked_auth_user_id = auth.uid())))))) OR (EXISTS ( SELECT 1\n           FROM club_members target\n          WHERE ((target.club_id = e.club_id) AND target.is_active AND (((event_participants.player_profile_id IS NOT NULL) AND (target.player_profile_id = event_participants.player_profile_id)) OR ((target.player_profile_id IS NULL) AND (target.profile_id = event_participants.player_profile_id)) OR ((event_participants.player_profile_id IS NULL) AND (target.profile_id = event_participants.profile_id))))))))))))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "event_participants",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls07_participants_select_compat",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((auth.uid() IS NOT NULL) AND (EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_participants.event_id) AND (NOT COALESCE(e.is_deleted, false)) AND (is_super_user() OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             LEFT JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND cm.is_active AND ((cm.profile_id = auth.uid()) OR (pp.linked_auth_user_id = auth.uid()))))) OR ((e.event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(e.id, e.created_by_auth_user_id)))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "event_participants",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls07_participants_update",
+      "schemaname": "public",
+      "with_check": "((auth.uid() IS NOT NULL) AND (EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_participants.event_id) AND (NOT COALESCE(e.is_deleted, false)) AND (is_super_user() OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             LEFT JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND cm.is_active AND ((cm.profile_id = auth.uid()) OR (pp.linked_auth_user_id = auth.uid()))))) OR ((e.event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(e.id, e.created_by_auth_user_id)))))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "match_players",
+      "permissive": "PERMISSIVE",
+      "policyname": "match_players_super_user_select",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (matches m\n     JOIN events e ON ((e.id = m.event_id)))\n  WHERE ((m.id = match_players.match_id) AND ((auth.uid() IS NOT NULL) AND (NOT COALESCE(e.is_deleted, false)) AND (is_super_user() OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             LEFT JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND cm.is_active AND ((cm.profile_id = auth.uid()) OR (pp.linked_auth_user_id = auth.uid()))))) OR ((e.event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(e.id, e.created_by_auth_user_id)))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "match_players",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_players_delete",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "match_players",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_players_insert_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "match_players",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_players_select_compat",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "match_players",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_players_update_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (matches m\n     JOIN events e ON ((e.id = m.event_id)))\n  WHERE ((m.id = match_results.match_id) AND ((auth.uid() IS NOT NULL) AND (NOT COALESCE(e.is_deleted, false)) AND (is_super_user() OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             LEFT JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND cm.is_active AND ((cm.profile_id = auth.uid()) OR (pp.linked_auth_user_id = auth.uid()))))) OR ((e.event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(e.id, e.created_by_auth_user_id)))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "match_results",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_results_delete",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "match_results",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_results_insert_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "match_results",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_results_select_compat",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "match_results",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_match_results_update_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "matches",
+      "permissive": "PERMISSIVE",
+      "policyname": "matches_super_user_select",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = matches.event_id) AND ((auth.uid() IS NOT NULL) AND (NOT COALESCE(e.is_deleted, false)) AND (is_super_user() OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             LEFT JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND cm.is_active AND ((cm.profile_id = auth.uid()) OR (pp.linked_auth_user_id = auth.uid()))))) OR ((e.event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(e.id, e.created_by_auth_user_id)))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "matches",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_matches_delete",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "matches",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_matches_insert_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "matches",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_matches_select_compat",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "matches",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_matches_update_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = rounds.event_id) AND ((auth.uid() IS NOT NULL) AND (NOT COALESCE(e.is_deleted, false)) AND (is_super_user() OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             LEFT JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND cm.is_active AND ((cm.profile_id = auth.uid()) OR (pp.linked_auth_user_id = auth.uid()))))) OR ((e.event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(e.id, e.created_by_auth_user_id)))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "rounds",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_rounds_delete",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "rounds",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_rounds_insert_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "rounds",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_rounds_select_compat",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "rounds",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls08_rounds_update_compat",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "rounds",
+      "permissive": "PERMISSIVE",
+      "policyname": "rounds_super_user_select",
+      "schemaname": "public",
+      "with_check": null
+    }
+  ],
+  "triggers": [
+    {
+      "def": "CREATE TRIGGER guard_participant_identity BEFORE UPDATE ON public.event_participants FOR EACH ROW EXECUTE FUNCTION participants_identity_private.guard_identity()",
+      "table": "event_participants"
+    },
+    {
+      "def": "CREATE TRIGGER profile_link_participant_reference BEFORE INSERT OR UPDATE OF player_profile_id, profile_id ON public.event_participants FOR EACH ROW EXECUTE FUNCTION profile_link_private.guard_reference('player_profile_id')",
+      "table": "event_participants"
+    },
+    {
+      "def": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.match_players FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'match_id', 'participant_id')",
+      "table": "match_players"
+    },
+    {
+      "def": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.match_results FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'match_id')",
+      "table": "match_results"
+    },
+    {
+      "def": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.matches FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'event_id', 'round_id')",
+      "table": "matches"
+    },
+    {
+      "def": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.rounds FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'event_id')",
+      "table": "rounds"
+    }
+  ],
+  "privileges": [
+    {
+      "role": "anon",
+      "table": "event_participants",
+      "allowed": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "anon",
+      "table": "event_participants",
+      "allowed": false,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "anon",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "anon",
+      "table": "event_participants",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "anon",
+      "table": "event_participants",
+      "allowed": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "event_participants",
+      "allowed": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "authenticated",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "authenticated",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "authenticated",
+      "table": "event_participants",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "table": "event_participants",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "anon",
+      "table": "match_players",
+      "allowed": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "anon",
+      "table": "match_players",
+      "allowed": false,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "anon",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "anon",
+      "table": "match_players",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "anon",
+      "table": "match_players",
+      "allowed": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_players",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "table": "match_players",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "anon",
+      "table": "match_results",
+      "allowed": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "anon",
+      "table": "match_results",
+      "allowed": false,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "anon",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "anon",
+      "table": "match_results",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "anon",
+      "table": "match_results",
+      "allowed": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_results",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "table": "match_results",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "anon",
+      "table": "matches",
+      "allowed": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "anon",
+      "table": "matches",
+      "allowed": false,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "anon",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "anon",
+      "table": "matches",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "anon",
+      "table": "matches",
+      "allowed": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "authenticated",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "authenticated",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "authenticated",
+      "table": "matches",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "table": "matches",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "anon",
+      "table": "rounds",
+      "allowed": false,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "anon",
+      "table": "rounds",
+      "allowed": false,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "anon",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "anon",
+      "table": "rounds",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "anon",
+      "table": "rounds",
+      "allowed": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "authenticated",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "authenticated",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "authenticated",
+      "table": "rounds",
+      "allowed": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "authenticated",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "service_role",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "DELETE"
+    },
+    {
+      "role": "service_role",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "INSERT"
+    },
+    {
+      "role": "service_role",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "SELECT"
+    },
+    {
+      "role": "service_role",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "service_role",
+      "table": "rounds",
+      "allowed": true,
+      "privilege": "UPDATE"
+    }
+  ],
+  "new_function": [
+    {
+      "hash": "531c629e031b942c8df4a823b319880b",
+      "config": [
+        "search_path=\"\""
+      ],
+      "definer": false,
+      "function": "match_identity_private.guard_identity()"
+    }
+  ],
+  "other_acl_hash": "1e6c2e292a8ead96c732a3b608ecc287",
+  "constraints_hash": "c9f1c5606b1da156add33352e950ee18",
+  "existing_functions": [
+    {
+      "hash": "dfcd8e4115a0de3ef3bf48cbee99c87c",
+      "owner": "postgres",
+      "definer": true,
+      "function": "can_manage_friendly_team_event_by_sides(uuid,uuid)"
+    },
+    {
+      "hash": "ee0f750bcd347e9fb19f897eec6842e3",
+      "owner": "postgres",
+      "definer": false,
+      "function": "events_identity_private.guard_event_identity()"
+    },
+    {
+      "hash": "9021a55737120f3e9a91e459d4d7f27c",
+      "owner": "postgres",
+      "definer": true,
+      "function": "is_super_user()"
+    },
+    {
+      "hash": "ed736c5deb511f254f028d0f858fabad",
+      "owner": "postgres",
+      "definer": false,
+      "function": "participants_identity_private.guard_identity()"
+    },
+    {
+      "hash": "017c9054a72a5d210611c20b8e37d9b7",
+      "owner": "postgres",
+      "definer": true,
+      "function": "profile_link_private.guard_reference()"
+    },
+    {
+      "hash": "f891b37607d4a3d711e8ab2e689cd147",
+      "owner": "postgres",
+      "definer": true,
+      "function": "profile_link_private.merge_profiles(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid)"
+    }
+  ],
+  "other_policies_hash": "1e756df1363a25520bb6a49a188fc90a"
+}

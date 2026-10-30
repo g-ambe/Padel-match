@@ -1,4 +1,4 @@
-# セット03：event_participants INSERT/UPDATE（本番適用済み・画面確認待ち）
+# セット03：event_participants INSERT/UPDATE（本番適用・画面確認済み）
 
 推奨モード：Sol・中。2026-10-30。対象プロジェクトpadel-hub / ntczrmvffmpjzilfebyi。
 準備時はREAD ONLYの定義・権限・件数確認だけを実施。参加者519件、event_id NULLは0件。
@@ -11,7 +11,7 @@
 
 rollback.sqlの事前ガードだけをREAD ONLYで実行し、本番定義で通ることを確認した（切り戻し自体は未実施）。新スキーマのUSAGE/CREATEと新関数のEXECUTEはanon/authenticatedに許可なし。新関数はSECURITY INVOKER、search_path空。Security Advisorsの追加・削除指摘なし。本番データに対するINSERT/UPDATE/DELETE/TRUNCATEテストは行っていない。
 
-production-application.jsonに直前・直後の定義と比較結果を保存した。現在11/33完了＋2項目の画面確認待ち。次の本番RLS変更は今回の画面確認後に検討する。
+production-application.jsonに直前・直後の定義と比較結果を保存した。2026-10-30、ユーザーが開催作成時のメンバー自動表示、ゲスト追加・名前変更後の再読込、休憩・復帰それぞれの再読込後の状態維持を全て確認した。INSERT/UPDATEを完了計上し、現在13/33完了、残り20項目。切り戻しは不要だった。Round生成そのものの追加確認は今回の報告に含まれない。
 
 ## 実操作と許可範囲
 

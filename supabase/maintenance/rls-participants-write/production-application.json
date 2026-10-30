@@ -688,5 +688,11 @@
   },
   "production_write_tests_performed": false,
   "rollback_executed": false,
-  "user_ui_check": "pending"
+  "user_ui_check": {
+    "status": "passed",
+    "date": "2026-10-30",
+    "reported_by": "user",
+    "checks": ["開催作成時のグループメンバー自動表示", "ゲスト追加・名前変更の再読込後の保存", "休憩・復帰それぞれの再読込後の状態維持"],
+    "round_generation_additional_check": "not reported"
+  }
 }

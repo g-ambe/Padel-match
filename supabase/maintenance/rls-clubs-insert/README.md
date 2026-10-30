@@ -1,4 +1,4 @@
-# Step 3：clubs INSERT（本番適用済み・画面確認待ち）
+# Step 3：clubs INSERT（本番適用・主要画面確認済み）
 
 対象：padel-hub / ntczrmvffmpjzilfebyi。Step 1 UPDATE制限、Step 2直接DELETE禁止に続く1操作の改修。
 ユーザーの明示承認で本番適用済み。production-record.md参照。以下の適用手順は再実行指示ではない。

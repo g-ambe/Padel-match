@@ -7,14 +7,14 @@ SQL修正が不要でも、意図する公開範囲と実効権限を確認で�
 |---|---|---|
 | clubs | 4/4 | INSERT/SELECT/UPDATE/DELETE適用・確認済み |
 | events | 2/4 | INSERT作成・DELETE権限整理は本番適用・作成/論理削除画面確認済み。SELECT/UPDATEは未完了 |
-| event_participants | 2/4 | INSERT/UPDATEは本番適用・画面確認済み。DELETEはセット04本番適用済み・画面確認待ち。SELECTは後続 |
-| rounds | 0/4 | セット04：DELETEを本番適用済み・画面確認待ち |
-| matches | 0/4 | セット04：DELETEを本番適用済み・画面確認待ち |
-| match_players | 0/4 | セット04：DELETEを本番適用済み・画面確認待ち |
-| match_results | 0/4 | セット04：DELETEを本番適用済み・画面確認待ち |
+| event_participants | 3/4 | INSERT/UPDATE/DELETEは本番適用・確認済み。SELECTは後続 |
+| rounds | 1/4 | DELETEは本番適用・画面確認済み |
+| matches | 1/4 | DELETEは本番適用・画面確認済み |
+| match_players | 1/4 | DELETEは本番適用・画面確認済み |
+| match_results | 1/4 | DELETEは本番適用・画面確認済み |
 | player_stats | 4/4 | セット02本番適用・画面確認済み。旧表の直接アクセスを停止。関連75項目と本番メタデータ9比較成功 |
 | padel_facilities | 1/1 | 公開施設マスタのSELECT。確認済み・変更不要 |
-| 合計 | **13/33** | 残り20項目のうち5項目は本番適用済み・画面確認待ち。関連98項目と本番12比較成功。確認後18/33 |
+| 合計 | **18/33** | セット04の自動組み合わせでの採点済み試合削除・Round整理と、手動組み合わせの選手変更を再読込で確認済み。残り15項目 |
 
 施設の列はid/name/prefecture/address/source_url/created_atであり、グループの非公開情報・個人情報を保持する構造ではない。実装は施設選択の候補としてSELECTするだけ。既存RLSはanon/authenticatedにSELECTのみtrueを許可し、本番匿名ロールのREAD ONLY参照で読めることを確認した。開発用というポリシー名だけのために変更はしない。
 

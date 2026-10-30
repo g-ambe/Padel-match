@@ -1,4 +1,4 @@
-# セット04：5テーブルのDELETE（本番適用済み・画面確認待ち）
+# セット04：5テーブルのDELETE（本番適用・画面確認済み）
 
 推奨Sol・中。対象padel-hub / ntczrmvffmpjzilfebyi。2026-10-30、ユーザーの明示承認後に本番適用した。
 
@@ -12,8 +12,8 @@ restrict_match_data_delete_and_guard_identitiesは成功。直前のポリシー
 
 新スキーマのUSAGE/CREATEと新関数EXECUTEはanon/authenticatedに許可なし。4つのトリガーが有効。rollback.sqlの事前ガードを本番READ ONLYで実行し成功した（切り戻し本体は未実施）。Security Advisorsの追加・削除指摘なし。既存件数は参加者522、Round251、試合400、選手枠1600、結果364のまま。本番データに対するDMLテストは行っていない。
 
-production-application.jsonに直前・直後の定義と確認結果を保存。現在13/33完了＋5項目の画面確認待ち。確認後に18/33へ計上する。
-対象はevent_participants、rounds、matches、match_players、match_resultsのDELETE各1項目。現在13/33、適用・確認後18/33。補助ガードやTRUNCATE撤回は重複計上しない。
+production-application.jsonに直前・直後の定義と確認結果を保存。2026-10-30、ユーザーが自動組み合わせでのスコア保存済み試合の削除、結果消去、残存Round番号の1への整理を再読込で確認した。手動組み合わせでも未採点試合の選手変更後、4枠と変更内容の維持を再読込で確認した。2経路とも成功し、切り戻しは不要だった。
+対象のevent_participants、rounds、matches、match_players、match_resultsのDELETE各1項目を完了計上し、現在18/33、残り15項目。参加者の物理DELETE拒否は既存DB検証・本番権限確認により確認し、今回ユーザーがその拒否操作を実行したとは扱わない。補助ガードやTRUNCATE撤回は重複計上しない。
 
 ## 一連の実操作への影響
 

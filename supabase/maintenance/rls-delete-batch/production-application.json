@@ -3531,5 +3531,11 @@
   },
   "production_data_write_tests_performed": false,
   "rollback_executed": false,
-  "user_ui_check": "pending"
+  "user_ui_check": {
+    "status": "passed",
+    "date": "2026-10-30",
+    "reported_by": "user",
+    "checks": ["自動組み合わせの採点済み試合・結果の削除と残存Round番号の整理を再読込で確認", "手動組み合わせの選手変更後、4枠と新しい組み合わせの維持を再読込で確認"],
+    "participant_delete_rejection_ui_test": "not performed; covered by DB tests and production privilege checks"
+  }
 }

@@ -1,7 +1,7 @@
-# Step 3：clubs INSERT（ローカル検証済み・本番未適用）
+# Step 3：clubs INSERT（本番適用済み・画面確認待ち）
 
 対象：padel-hub / ntczrmvffmpjzilfebyi。Step 1 UPDATE制限、Step 2直接DELETE禁止に続く1操作の改修。
-本番ではポリシー・トリガー・関連関数を読み取っただけで、変更していない。
+ユーザーの明示承認で本番適用済み。production-record.md参照。以下の適用手順は再実行指示ではない。
 
 ## 変更理由と仕様
 

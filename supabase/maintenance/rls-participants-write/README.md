@@ -1,7 +1,17 @@
-# セット03：event_participants INSERT/UPDATE（準備済み・本番未適用）
+# セット03：event_participants INSERT/UPDATE（本番適用済み・画面確認待ち）
 
 推奨モード：Sol・中。2026-10-30。対象プロジェクトpadel-hub / ntczrmvffmpjzilfebyi。
-本番適用にはこの具体的セットへの承認が必要。今工程の本番作業はREAD ONLYの定義・権限・件数確認だけ。参加者519件、event_id NULLは0件。
+準備時はREAD ONLYの定義・権限・件数確認だけを実施。参加者519件、event_id NULLは0件。
+
+## 本番適用結果（2026-10-30）
+
+ユーザーの明示承認後、restrict_event_participants_insert_updateを本番適用して成功した。直前の定義・権限は準備時スナップショットから差分なし。親eventsのIDガードが有効なこと、新スキーマが存在しないことも確認してから適用した。
+
+適用後の10比較は全て成功：RLS有効、5ポリシーが期待定義と完全一致、参加者件数519件不変、本人連携関数不変、他テーブルのポリシー・ACL不変、対象の実効権限・直接ACLはTRUNCATE撤回のみ、既存トリガー維持、新トリガー1件だけ追加。
+
+rollback.sqlの事前ガードだけをREAD ONLYで実行し、本番定義で通ることを確認した（切り戻し自体は未実施）。新スキーマのUSAGE/CREATEと新関数のEXECUTEはanon/authenticatedに許可なし。新関数はSECURITY INVOKER、search_path空。Security Advisorsの追加・削除指摘なし。本番データに対するINSERT/UPDATE/DELETE/TRUNCATEテストは行っていない。
+
+production-application.jsonに直前・直後の定義と比較結果を保存した。現在11/33完了＋2項目の画面確認待ち。次の本番RLS変更は今回の画面確認後に検討する。
 
 ## 実操作と許可範囲
 

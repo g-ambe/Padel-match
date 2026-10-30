@@ -1,2 +1,7 @@
 # Local PostgreSQL validation dependencies (separate from application dependencies)
 .rls-validation/
+node_modules/
+.next/
+.open-next/
+.wrangler/
+*.tsbuildinfo

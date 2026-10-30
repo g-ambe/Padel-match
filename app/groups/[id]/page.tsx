@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
@@ -11,6 +11,7 @@ import { canDeleteGroup, canEditGroupProfile, canManageMembers, canManageTargetM
 import { profileErrorMessage, PlayerProfileError, saveClubMemberRole, saveUnlinkedClubMemberName, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
 import { effectiveJoinStatus, linkStatusLabel, profileLinkRpc, requestPlayerProfileLink, reviewPlayerProfileLink, type AccountCandidate, type LinkStatus, type ProfileLinkRequest, type ProfileMergePreview } from "@/lib/profile-links";
 import { ProfileMergeSummary } from "@/components/profile-merge-summary";
+import { AppDialog } from "@/components/app-dialog";
 
 type Role = "main_admin" | "sub_admin" | "member";
 type Member = {
@@ -45,6 +46,8 @@ const roleRank: Record<Role, number> = { main_admin: 0, sub_admin: 1, member: 2 
 
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const groupDeleteInFlight = useRef(false);
   const [tab, setTab] = useState<MainTab>("グループ管理");
   const [statTab, setStatTab] = useState<StatTab>("個人ランキング");
   const [groupName, setGroupName] = useState("グループ");
@@ -375,7 +378,28 @@ export default function GroupDetailPage() {
     } catch (cause) { logMemberError("復帰に失敗しました", cause); setError(`復帰に失敗しました。${profileErrorMessage(cause)}`); }
     finally { setLoading(false); }
   };
-  const doDeleteGroup = async () => { if (!canDeleteGroup) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); await s.from("clubs").update({ is_active: false }).eq("id", id); setConfirmGroupDelete(false); setConfirmChecked(false); setMessage("反映しました"); setLoading(false); await load(); };
+  const doDeleteGroup = async () => {
+    if (!canDeleteGroupAction) return deny();
+    if (!confirmGroupDelete || !confirmChecked || loading || groupDeleteInFlight.current) return;
+    const s = getSupabaseClient();
+    if (!s || !id) return setError("接続情報を取得できません。再読み込みしてお試しください");
+    groupDeleteInFlight.current = true;
+    setLoading(true); setError(""); setMessage("");
+    try {
+      const { data, error: deleteError } = await s.from("clubs").update({ is_active: false })
+        .eq("id", id).eq("is_active", true).select("id").single();
+      if (deleteError || data?.id !== id) {
+        setError("グループを削除できませんでした。権限と現在の状態を確認し、再読み込みしてください");
+        return;
+      }
+      setConfirmGroupDelete(false); setConfirmChecked(false);
+      router.push("/groups");
+    } catch {
+      setError("グループ削除の通信に失敗しました。再読み込みして状態を確認してください");
+    } finally {
+      groupDeleteInFlight.current = false; setLoading(false);
+    }
+  };
   const saveGroupName = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupNameInput.trim(); if (!trimmed) return setError("グループ名を入力してください"); if (trimmed === groupName) { setEditingGroupName(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ name: trimmed }).eq("id", id); if (e) setError("グループ名の更新に失敗しました"); else setMessage("グループ名を更新しました"); setEditingGroupName(false); setLoading(false); await load(); };
   const saveGroupDescription = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupDescriptionInput.trim(); if (trimmed === groupDescription) { setEditingDescription(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ description: trimmed || null }).eq("id", id); if (e) setError("グループ説明の更新に失敗しました"); else setMessage("更新しました"); setEditingDescription(false); setLoading(false); await load(); };
   const saveFacility = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ main_facility_id: facilityId }).eq("id", id); if (e) setError("メインの活動場所の更新に失敗しました"); else setMessage("メインの活動場所を更新しました"); setEditingFacility(false); setLoading(false); await load(); };
@@ -528,6 +552,17 @@ export default function GroupDetailPage() {
       {canManage && <Card title="連携申請一覧"><div className="space-y-2">{linkRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : linkRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><Link href={`/profile/links/${r.id}`} className="underline">{r.source_display_name} / {linkStatusLabel[r.status]}</Link>{r.status === "pending" && <button disabled={loading} className="mt-2 block rounded-lg border border-zinc-500 p-2" onClick={() => void cancelLinkRequest(r)}>申請を取り消す</button>}</div>)}</div></Card>}
       {canManage && <Card title="加入申請一覧"><div className="space-y-2">{joinRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : joinRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3"><p className="font-semibold">{r.requester_display_name}</p><p className="text-xs text-zinc-300">{linkStatusLabel[r.status]} / 希望メンバー：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.target_club_member_id && <p className="text-xs text-amber-200">{r.consent_at ? "本人の統合同意を記録済み" : "旧申請：本人の同意を再確認して再申請が必要です"}</p>}<p className="text-xs text-zinc-300">メッセージ：{r.message ?? "なし"}</p>{r.status === "pending" && <div className="mt-2 flex gap-2"><button disabled={loading} className="w-1/2 rounded-lg bg-accent py-2 text-black" onClick={() => void reviewJoinRequest(r,"approved")}>承認</button><button disabled={loading} className="w-1/2 rounded-lg border border-zinc-500 py-2" onClick={() => void reviewJoinRequest(r,"rejected")}>拒否</button></div>}</div>)}</div></Card>}
 
+      <AppDialog open={confirmGroupDelete} title="グループを削除しますか？" busy={loading} onClose={() => { setConfirmGroupDelete(false); setConfirmChecked(false); }}>
+        <div className="space-y-4 overflow-y-auto p-4">
+          <p className="break-words text-sm">「{groupName}」をグループ一覧から非表示にします。グループと過去の試合データ自体は残ります。</p>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmChecked} disabled={loading} onChange={event => setConfirmChecked(event.target.checked)} />内容を確認しました</label>
+          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" disabled={loading} className="rounded-lg border border-zinc-500 p-3" onClick={() => { setConfirmGroupDelete(false); setConfirmChecked(false); }}>キャンセル</button>
+            <button type="button" disabled={loading || !confirmChecked} className="rounded-lg bg-red-600 p-3 text-white disabled:opacity-50" onClick={() => void doDeleteGroup()}>{loading ? "削除中..." : "削除する"}</button>
+          </div>
+        </div>
+      </AppDialog>
       {confirmLeave && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" role="presentation">
         <div role="dialog" aria-modal="true" aria-labelledby="leave-title" aria-describedby="leave-description" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto rounded-xl bg-card p-5" onKeyDown={event => { if (event.key === "Escape" && !loading) { setConfirmLeave(null); setConfirmChecked(false); } }}>
           <h2 id="leave-title" className="font-semibold">{confirmLeave.display_name}さんを非表示／退会にしますか？</h2>

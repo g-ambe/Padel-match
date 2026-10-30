@@ -1,0 +1,71 @@
+{
+  "project": "ntczrmvffmpjzilfebyi",
+  "rls": true,
+  "time": "2026-10-30T01:36:45.097458+00:00",
+  "grants": [
+    {
+      "role": "authenticated",
+      "delete": true,
+      "insert": true,
+      "select": true,
+      "update": true
+    },
+    {
+      "role": "anon",
+      "delete": false,
+      "insert": false,
+      "select": true,
+      "update": false
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "roles": "{authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "clubs_super_user_select",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "is_super_user()",
+      "roles": "{authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "clubs_super_user_update",
+      "with_check": "is_super_user()"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "true",
+      "roles": "{anon,authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls01_clubs_delete_compat",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": "{anon,authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls01_clubs_insert_compat",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": "{anon,authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls01_clubs_select_compat",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = clubs.id) AND (cm.is_active = true) AND (cm.role = 'main_admin'::text) AND ((cm.profile_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM player_profiles pp\n          WHERE ((pp.id = cm.player_profile_id) AND (pp.linked_auth_user_id = ( SELECT auth.uid() AS uid)))))))))",
+      "roles": "{authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "rls01_clubs_update_main_admin",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = clubs.id) AND (cm.is_active = true) AND (cm.role = 'main_admin'::text) AND ((cm.profile_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM player_profiles pp\n          WHERE ((pp.id = cm.player_profile_id) AND (pp.linked_auth_user_id = ( SELECT auth.uid() AS uid)))))))))"
+    }
+  ]
+}

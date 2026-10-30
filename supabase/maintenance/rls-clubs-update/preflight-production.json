@@ -1,0 +1,90 @@
+{
+  "date": "2026-10-30",
+  "project": "ntczrmvffmpjzilfebyi",
+  "mode": "read-only",
+  "rls": {
+    "forced": false,
+    "enabled": true
+  },
+  "grants": [
+    {
+      "role": "authenticated",
+      "delete": true,
+      "insert": true,
+      "select": true,
+      "update": true
+    },
+    {
+      "role": "anon",
+      "delete": false,
+      "insert": false,
+      "select": true,
+      "update": false
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "roles": "{authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "clubs_super_user_select",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "is_super_user()",
+      "roles": "{authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "clubs_super_user_update",
+      "with_check": "is_super_user()"
+    },
+    {
+      "cmd": "ALL",
+      "qual": "true",
+      "roles": "{anon,authenticated}",
+      "permissive": "PERMISSIVE",
+      "policyname": "dev_all_clubs",
+      "with_check": "true"
+    }
+  ],
+  "triggers": [
+    "CREATE TRIGGER profile_link_club_owner BEFORE INSERT OR UPDATE OF owner_id ON public.clubs FOR EACH ROW EXECUTE FUNCTION profile_link_private.guard_club_owner()"
+  ],
+  "functions": [
+    {
+      "name": "public.is_super_user",
+      "definition": "CREATE OR REPLACE FUNCTION public.is_super_user()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(auth.jwt() ->> 'email', '') = 'testuser01@example.com'\r\n    or exists (\r\n      select 1 from public.app_admins\r\n      where profile_id = auth.uid()\r\n        and is_active = true\r\n    );\r\n$function$\n"
+    },
+    {
+      "name": "profile_link_private.guard_club_owner",
+      "definition": "CREATE OR REPLACE FUNCTION profile_link_private.guard_club_owner()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\r\nbegin\r\n  if current_user in ('anon','authenticated') and ((TG_OP = 'INSERT' and new.owner_id is distinct from auth.uid()) or (TG_OP = 'UPDATE' and new.owner_id is distinct from old.owner_id)) then raise exception 'グループ所有者を変更できません'; end if;\r\n  return new;\r\nend $function$\n"
+    }
+  ],
+  "dependencies": [
+    {
+      "cmd": "SELECT",
+      "qual": "((profile_id = auth.uid()) OR is_super_user())",
+      "roles": "{authenticated}",
+      "tablename": "app_admins",
+      "policyname": "app_admins_read",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": "{anon,authenticated}",
+      "tablename": "club_members",
+      "policyname": "club_members_read",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(is_active OR (linked_auth_user_id = auth.uid()) OR is_super_user())",
+      "roles": "{anon,authenticated}",
+      "tablename": "player_profiles",
+      "policyname": "player_profiles_read",
+      "with_check": null
+    }
+  ]
+}

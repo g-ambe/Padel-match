@@ -1,4 +1,4 @@
-# Step 1：clubs UPDATE（本番適用済み・画面確認待ち）
+# Step 1：clubs UPDATE（本番適用・主要画面確認済み）
 
 2026-10-30。対象本番プロジェクトは padel-hub / ntczrmvffmpjzilfebyi。
 このフォルダは自動適用されない手動実行用。ユーザーの明示承認を受けて本番適用済み。実施結果は production-record.md を参照。以下の適用手順は再実行の指示ではない。

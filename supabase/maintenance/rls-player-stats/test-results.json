@@ -1,0 +1,78 @@
+{
+  "engine": "PGlite 0.3.14",
+  "scope": "local synthetic data only",
+  "results": [
+    {
+      "name": "stats apply refuses partial privilege drift",
+      "status": "PASS"
+    },
+    {
+      "name": "stats closure applies actual SQL",
+      "status": "PASS"
+    },
+    {
+      "name": "direct anon SELECT denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct anon INSERT denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct anon UPDATE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct anon DELETE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct anon TRUNCATE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct authenticated SELECT denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct authenticated INSERT denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct authenticated UPDATE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct authenticated DELETE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "direct authenticated TRUNCATE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "data remains unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "service_role maintenance access remains",
+      "status": "PASS"
+    },
+    {
+      "name": "SECURITY DEFINER integrity lookup still reads stats",
+      "status": "PASS"
+    },
+    {
+      "name": "repeat apply refuses",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores original policy and grants",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply succeeds",
+      "status": "PASS"
+    }
+  ]
+}

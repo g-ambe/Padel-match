@@ -1,0 +1,57 @@
+{
+  "project": "ntczrmvffmpjzilfebyi",
+  "mode": "read-only",
+  "rows": 1,
+  "time": "2026-10-30T05:39:32.376172+00:00",
+  "views": [],
+  "grants": [
+    {
+      "role": "authenticated",
+      "delete": true,
+      "insert": true,
+      "select": true,
+      "update": true,
+      "truncate": true
+    },
+    {
+      "role": "anon",
+      "delete": false,
+      "insert": false,
+      "select": true,
+      "update": false,
+      "truncate": true
+    },
+    {
+      "role": "service_role",
+      "delete": true,
+      "insert": true,
+      "select": true,
+      "update": true,
+      "truncate": true
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "ALL",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "player_stats",
+      "permissive": "PERMISSIVE",
+      "policyname": "dev_all_player_stats",
+      "schemaname": "public",
+      "with_check": "true"
+    }
+  ],
+  "triggers": [],
+  "functions": [
+    {
+      "name": "merge_profiles",
+      "schema": "profile_link_private",
+      "definer": true,
+      "definition": "CREATE OR REPLACE FUNCTION profile_link_private.merge_profiles(p_source uuid, p_target uuid, p_user uuid, p_club uuid, p_requested_by uuid, p_approved_by uuid, p_link uuid, p_join uuid)\n RETURNS uuid\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\r\ndeclare source public.player_profiles; target public.player_profiles; merge_id uuid; ref record; count_changed integer; counts jsonb := '{}';\r\nbegin\r\n  perform profile_link_private.check_reference_schema();\r\n  perform profile_link_private.lock_references();\r\n  select * into source from public.player_profiles where id = p_source for update;\r\n  select * into target from public.player_profiles where id = p_target for update;\r\n  if source.id is null or target.id is null or p_source = p_target or not source.is_active or source.linked_auth_user_id is not null\r\n    or not target.is_active or target.linked_auth_user_id is distinct from p_user\r\n    or profile_link_private.canonical(p_user, p_target) is distinct from p_target then raise exception '統合元の未連携状態と本人の正規プロフィールを確認してください'; end if;\r\n  if exists (select 1 from public.player_profile_merges where source_player_profile_id = p_source and restored_at is null) then raise exception 'この仮プロフィールは統合済みです'; end if;\r\n  if exists (select 1 from public.club_members where player_profile_id = p_source and profile_id is not null and profile_id <> p_user)\r\n    or exists (select 1 from public.event_participants where player_profile_id = p_source and profile_id is not null and profile_id <> p_user)\r\n    or exists (select 1 from public.join_requests where requester_player_profile_id = p_source and requester_auth_user_id <> p_user)\r\n    or (p_source <> p_user and exists (select 1 from public.player_stats where profile_id = p_source)) then raise exception '旧profile_idのアカウント参照に不整合があります。権限・戦績を確認するまで統合できません'; end if;\r\n  if exists (select 1 from public.club_members where player_profile_id in (p_source,p_target) or (player_profile_id is null and profile_id = p_user) group by club_id having count(*) > 1) then raise exception '同じグループに複数の所属行があります。役職・在籍状態は自動統合しません'; end if;\r\n  if exists (select 1 from public.event_participants where player_profile_id in (p_source,p_target) or (player_profile_id is null and profile_id = p_user and participant_type = 'member') group by event_id having count(*) > 1) then raise exception '同じイベントに複数の参加記録があります。試合結果は変更しません'; end if;\r\n  if exists (select 1 from public.match_players mp join public.event_participants ep on ep.id = mp.participant_id where ep.player_profile_id in (p_source,p_target) or (ep.player_profile_id is null and ep.profile_id = p_user and ep.participant_type = 'member') group by mp.match_id having count(*) > 1) then raise exception '同じ試合に統合元と統合先または同一選手の複数枠があります'; end if;\r\n  if exists (select 1 from public.event_team_matches tm cross join lateral unnest(array[tm.team_a_player1_profile_id,tm.team_a_player2_profile_id,tm.team_b_player1_profile_id,tm.team_b_player2_profile_id]) p(id) where p.id in (p_source,p_target) group by tm.id having count(*) > 1) then raise exception 'フレンドリーチーム戦で同一選手が複数枠になります'; end if;\r\n  if exists (select 1 from public.official_matches om cross join lateral unnest(array[om.our_player1_profile_id,om.our_player2_profile_id]) p(id) where p.id in (p_source,p_target) group by om.id having count(*) > 1) then raise exception '公式戦で同一選手が複数枠になります'; end if;\r\n\r\n  insert into public.player_profile_merges(link_request_id, join_request_id, source_player_profile_id, target_player_profile_id, target_auth_user_id, club_id, requested_by_auth_user_id, approved_by_auth_user_id)\r\n    values (p_link, p_join, p_source, p_target, p_user, p_club, p_requested_by, p_approved_by) returning id into merge_id;\r\n  for ref in select * from (values\r\n    ('club_members','player_profile_id'), ('event_participants','player_profile_id'), ('join_requests','requester_player_profile_id'),\r\n    ('event_team_matches','team_a_player1_profile_id'), ('event_team_matches','team_a_player2_profile_id'),\r\n    ('event_team_matches','team_b_player1_profile_id'), ('event_team_matches','team_b_player2_profile_id'),\r\n    ('official_matches','our_player1_profile_id'), ('official_matches','our_player2_profile_id')\r\n  ) refs(table_name,column_name) loop\r\n    -- 同じ試合行の別列を更新した場合も、最初のbeforeと最後のafterを保存する。\r\n    execute format('insert into profile_link_private.merge_changes(merge_id,source_schema,source_table,row_id,before_row,after_row)\r\n      select $1,''public'',%L,id,to_jsonb(t),to_jsonb(t) from public.%I t where %I = $2 on conflict do nothing', ref.table_name, ref.table_name, ref.column_name) using merge_id,p_source;\r\n    execute format('update public.%I set %I = $1 where %I = $2', ref.table_name, ref.column_name, ref.column_name) using p_target,p_source;\r\n    get diagnostics count_changed = row_count;\r\n    counts := counts || jsonb_build_object(ref.table_name || '.' || ref.column_name, count_changed);\r\n    execute format('update profile_link_private.merge_changes c set after_row = to_jsonb(t) from public.%I t where c.merge_id = $1 and c.source_table = %L and c.row_id = t.id', ref.table_name, ref.table_name) using merge_id;\r\n  end loop;\r\n  update public.player_profiles set linked_auth_user_id = null, is_active = false where id = p_source;\r\n  insert into profile_link_private.merge_changes select merge_id,'public','player_profiles',p_source,to_jsonb(source),to_jsonb(p) from public.player_profiles p where id = p_source;\r\n  update public.player_profile_merges set changed_counts = counts || jsonb_build_object('player_profiles',1) where id = merge_id;\r\n  return merge_id;\r\nend $function$\n"
+    }
+  ]
+}

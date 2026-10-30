@@ -70,7 +70,15 @@ async function prepare(db) {
 }
 async function fixture(run, extra = '', apply = true) {
   const db = new PGlite();
-  try { await prepare(db); if (extra) await db.exec(extra); if (apply) await db.exec(migration); await run(db); }
+  try {
+    await prepare(db); if (extra) await db.exec(extra); if (apply) await db.exec(migration);
+    if (process.env.PADEL_CLOSED_STATS_TEST === '1') {
+      // Align this fixture's broad grants with production, then exercise the real linking flow after closure.
+      await db.exec('revoke insert,update,delete on public.player_stats from anon');
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-player-stats/apply.sql'),'utf8'));
+    }
+    await run(db);
+  }
   finally { await db.close(); }
 }
 async function asUser(db, uid, run, role = 'authenticated') {

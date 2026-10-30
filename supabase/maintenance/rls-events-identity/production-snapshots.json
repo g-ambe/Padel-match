@@ -1,0 +1,69 @@
+{
+  "project": "ntczrmvffmpjzilfebyi",
+  "pre": {
+    "time": "2026-10-30T04:39:08.65209+00:00",
+    "grants": [
+      {
+        "role": "authenticated",
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true,
+        "truncate": true
+      },
+      {
+        "role": "anon",
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false,
+        "truncate": true
+      }
+    ],
+    "triggers": [],
+    "policies_hash": "a54236dba4e0094addb10d066dd4ebe8",
+    "schema_exists": false
+  },
+  "post": {
+    "time": "2026-10-30T04:39:25.768628+00:00",
+    "grants": [
+      {
+        "role": "authenticated",
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true,
+        "truncate": true
+      },
+      {
+        "role": "anon",
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false,
+        "truncate": true
+      }
+    ],
+    "triggers": [
+      {
+        "name": "guard_event_identity",
+        "enabled": "O",
+        "definition": "CREATE TRIGGER guard_event_identity BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION events_identity_private.guard_event_identity()"
+      }
+    ],
+    "policies_hash": "a54236dba4e0094addb10d066dd4ebe8",
+    "schema_exists": true
+  },
+  "functionVerification": {
+    "config": [
+      "search_path=\"\""
+    ],
+    "source": "\nBEGIN\n IF current_user IN ('anon','authenticated')\n AND (NEW.id IS DISTINCT FROM OLD.id\n   OR NEW.club_id IS DISTINCT FROM OLD.club_id\n   OR NEW.created_by_auth_user_id IS DISTINCT FROM OLD.created_by_auth_user_id)\n THEN\n   RAISE EXCEPTION '開催のID・所属グループ・作成者は変更できません' USING ERRCODE='42501';\n END IF;\n RETURN NEW;\nEND\n",
+    "definition": "CREATE OR REPLACE FUNCTION events_identity_private.guard_event_identity()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nBEGIN\n IF current_user IN ('anon','authenticated')\n AND (NEW.id IS DISTINCT FROM OLD.id\n   OR NEW.club_id IS DISTINCT FROM OLD.club_id\n   OR NEW.created_by_auth_user_id IS DISTINCT FROM OLD.created_by_auth_user_id)\n THEN\n   RAISE EXCEPTION '開催のID・所属グループ・作成者は変更できません' USING ERRCODE='42501';\n END IF;\n RETURN NEW;\nEND\n$function$\n",
+    "execute_anon": false,
+    "security_definer": false,
+    "schema_usage_anon": false,
+    "execute_authenticated": false,
+    "schema_usage_authenticated": false
+  }
+}

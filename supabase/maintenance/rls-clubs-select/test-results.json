@@ -1,0 +1,407 @@
+{
+  "engine": "@electric-sql/pglite@0.3.14",
+  "version": "PostgreSQL 17.5 on aarch64-unknown-linux-gnu, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 3.1.74 (1092ec30a3fb1d46b1782ff1b4db5094d3d06ae5), 32-bit",
+  "scope": "local synthetic data only; no Supabase API/Auth/production DML",
+  "results": [
+    {
+      "name": "baseline broad UPDATE permits outsider",
+      "status": "PASS"
+    },
+    {
+      "name": "apply actual SQL",
+      "status": "PASS"
+    },
+    {
+      "name": "linked main admin",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy main admin",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin",
+      "status": "PASS"
+    },
+    {
+      "name": "member",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive admin",
+      "status": "PASS"
+    },
+    {
+      "name": "outsider",
+      "status": "PASS"
+    },
+    {
+      "name": "owner of other group",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin",
+      "status": "PASS"
+    },
+    {
+      "name": "other group stays unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "anonymous denied",
+      "status": "PASS"
+    },
+    {
+      "name": "logical deletion allowed to main admin",
+      "status": "PASS"
+    },
+    {
+      "name": "owner change blocked by existing trigger",
+      "status": "PASS"
+    },
+    {
+      "name": "WITH CHECK rejects id reassignment",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT remains broad",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT and DELETE remain compatible",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply guard refuses without partial changes",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback exact baseline policies",
+      "status": "PASS"
+    },
+    {
+      "name": "apply drift guard rejects extra policy",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores prior broad access",
+      "status": "PASS"
+    },
+    {
+      "name": "apply after rollback",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback drift guard rejects extra policy",
+      "status": "PASS"
+    },
+    {
+      "name": "owner only has no UPDATE authority",
+      "status": "PASS"
+    },
+    {
+      "name": "existing JWT email super-user branch preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "verify SQL executes",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE step applies actual SQL",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: linked main",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: legacy main",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: sub",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: member",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: inactive",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: outsider",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: owner only",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: super",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: email super",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE denied: anon",
+      "status": "PASS"
+    },
+    {
+      "name": "cascade children remain intact",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin logical deletion and setting update still work",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT and SELECT preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin UI logical deletion preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE apply reexecution refuses",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE rollback refuses extra permissive policy",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE rollback restores only DELETE step",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE restored by rollback cascades synthetic child",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE apply refuses extra ALL policy",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE reapply and verify",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT baseline already rejects other owner via trigger",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT actual SQL applies",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT self succeeds: unaffiliated",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT self succeeds: ordinary member",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT self succeeds: sub admin",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT self succeeds: main admin",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT self succeeds: super admin",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT to membership bootstrap to UPDATE succeeds",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT denied: other owner",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT denied: null owner",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT denied: missing uid",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT denied: anon",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT denied: super other owner",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT policy independently rejects other owner",
+      "status": "PASS"
+    },
+    {
+      "name": "previous DELETE denial retained",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT reapply rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT rollback rejects extra INSERT policy",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT rollback exact previous policies",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT rollback leaves owner trigger effective",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT apply rejects extra ALL policy",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT reapply and verify succeed",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT stops when shared-name prerequisite is missing",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name actual prerequisite SQL applies",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT applies actual SQL",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT owner",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT sub member",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT ordinary member",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT linked member",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT inactive membership",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT outsider",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT other-group owner",
+      "status": "PASS"
+    },
+    {
+      "name": "private SELECT super",
+      "status": "PASS"
+    },
+    {
+      "name": "anonymous cannot read private club or list clubs",
+      "status": "PASS"
+    },
+    {
+      "name": "public discovery remains visible only for active public clubs",
+      "status": "PASS"
+    },
+    {
+      "name": "new private INSERT RETURNING works before membership",
+      "status": "PASS"
+    },
+    {
+      "name": "bootstrap membership and logical deletion still work",
+      "status": "PASS"
+    },
+    {
+      "name": "shared private name only: anon",
+      "status": "PASS"
+    },
+    {
+      "name": "shared private name only: authenticated",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name invalid capability invalid",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name invalid capability disabled",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name invalid capability active-event",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name invalid capability deleted-event",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name invalid capability no-club",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name invalid capability ",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name invalid capability null",
+      "status": "PASS"
+    },
+    {
+      "name": "token rotation immediately invalidates old token",
+      "status": "PASS"
+    },
+    {
+      "name": "public wrapper is invoker and private schema cannot be modified",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT refuses repeated application",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT rollback refuses extra permissive SELECT",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT rollback restores exact pre-step policies",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT apply refuses an extra ALL policy",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name rollback removes only new objects",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-name and SELECT reapply",
+      "status": "PASS"
+    }
+  ]
+}

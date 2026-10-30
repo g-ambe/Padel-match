@@ -7,7 +7,7 @@ SQL修正が不要でも、意図する公開範囲と実効権限を確認で�
 |---|---|---|
 | clubs | 4/4 | INSERT/SELECT/UPDATE/DELETE適用・確認済み |
 | events | 2/4 | INSERT作成・DELETE権限整理は本番適用・作成/論理削除画面確認済み。SELECT/UPDATEは未完了 |
-| event_participants | 0/4 | 未完了 |
+| event_participants | 0/4 | セット03：INSERT/UPDATEの2操作を準備済み・本番未適用。関連52項目成功。SELECT/DELETEは後続 |
 | rounds | 0/4 | 未完了 |
 | matches | 0/4 | 未完了 |
 | match_players | 0/4 | 未完了 |

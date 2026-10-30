@@ -77,6 +77,11 @@ async function fixture(run, extra = '', apply = true) {
       await db.exec('revoke insert,update,delete on public.player_stats from anon');
       await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-player-stats/apply.sql'),'utf8'));
     }
+    if (process.env.PADEL_PARTICIPANTS_WRITE_TEST === '1') {
+      await db.exec('revoke insert,update,delete on public.event_participants from anon');
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-events-identity/apply.sql'),'utf8'));
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-participants-write/apply.sql'),'utf8'));
+    }
     await run(db);
   }
   finally { await db.close(); }

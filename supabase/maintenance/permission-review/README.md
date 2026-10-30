@@ -44,6 +44,6 @@ production-readonly.jsonは本番メタデータの保存であり、本番書�
 
 ## 次工程のモード
 
-次は「高」を推奨：今回の指摘とSQLを再レビューし、eventsの所属/作成者の変更防止と適用順、不要TRUNCATE権限の扱いを設計する。本番適用は高レビュー後に具体的SQL・切り戻し・操作影響を提示し、別途ユーザー承認を得る。
+利用可能なSol・中／Astra・低を確認したため、現在はSol・中を推奨。「高」必須という前の案は更新する。eventsの付け替え防止とINSERT制限の順、不要TRUNCATE権限の扱いを具体的に検証し、別途承認を得て本番適用する。
 
 公式根拠：[PostgreSQL 17 RLS（TRUNCATEは対象外）](https://www.postgresql.org/docs/17/ddl-rowsecurity.html)、[PostgRESTのテーブルAPI](https://docs.postgrest.org/en/v12/references/api/tables_views.html)。

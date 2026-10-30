@@ -1,0 +1,13 @@
+{
+  "scope": "synthetic DB actual profile linking migrations under participant-write and five-table delete restrictions",
+  "tests": 5,
+  "pass": 5,
+  "fail": 0,
+  "cases": [
+    "本人承認による2グループ統合",
+    "同意付き加入",
+    "通常加入",
+    "統合前参照への手動復旧",
+    "復帰済み仮選手の統合"
+  ]
+}

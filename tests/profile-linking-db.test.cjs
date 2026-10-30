@@ -82,6 +82,16 @@ async function fixture(run, extra = '', apply = true) {
       await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-events-identity/apply.sql'),'utf8'));
       await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-participants-write/apply.sql'),'utf8'));
     }
+    if (process.env.PADEL_MATCH_DELETE_TEST === '1') {
+      assert.equal(process.env.PADEL_PARTICIPANTS_WRITE_TEST,'1','Participant-write prerequisite must be enabled');
+      const deleteEvidence=JSON.parse(readFileSync(join(__dirname,'../supabase/maintenance/rls-delete-batch/preflight-production.json'),'utf8'));
+      await db.exec('create role service_role bypassrls');
+      for (const table of ['event_participants','rounds','matches','match_players','match_results']) {
+        await db.exec('revoke all on '+table+' from anon,authenticated,service_role');
+      }
+      for (const grant of deleteEvidence.acl) await db.exec('grant '+grant.privilege+' on '+grant.table+' to '+grant.grantee);
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-delete-batch/apply.sql'),'utf8'));
+    }
     await run(db);
   }
   finally { await db.close(); }

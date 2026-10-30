@@ -1,6 +1,18 @@
-# セット04：5テーブルのDELETE（準備済み・本番未適用）
+# セット04：5テーブルのDELETE（本番適用済み・画面確認待ち）
 
-推奨Sol・中。対象padel-hub / ntczrmvffmpjzilfebyi。本番適用は本セットへの明示承認後。
+推奨Sol・中。対象padel-hub / ntczrmvffmpjzilfebyi。2026-10-30、ユーザーの明示承認後に本番適用した。
+
+## 本番適用結果
+
+restrict_match_data_delete_and_guard_identitiesは成功。直前のポリシー・ACL・件数・関数などは準備時から差分なし。前提のevents/参加者IDガードが有効で、新スキーマが存在しないことも確認した。
+
+最初のapply_migrationは接続ツールのInvalid or expired requestStateで失敗した。verify.sqlの全スナップショットが適用直前と同じで、新関数も存在しないことをREAD ONLYで確認してから再実行し、成功した。
+
+適用後12比較が全て成功。5テーブルのポリシー/ACLは検証時の期待定義と一致。RLS有効、件数不変、既存の認可/本人連携/IDガード関数・参照制約・他テーブルのポリシー/ACLは不変。実効権限の差分は予定した参加者DELETEと4テーブルTRUNCATEの撤回だけ。既存トリガーを維持し、4件のIDガードを追加。新関数はSECURITY INVOKER、search_path空。
+
+新スキーマのUSAGE/CREATEと新関数EXECUTEはanon/authenticatedに許可なし。4つのトリガーが有効。rollback.sqlの事前ガードを本番READ ONLYで実行し成功した（切り戻し本体は未実施）。Security Advisorsの追加・削除指摘なし。既存件数は参加者522、Round251、試合400、選手枠1600、結果364のまま。本番データに対するDMLテストは行っていない。
+
+production-application.jsonに直前・直後の定義と確認結果を保存。現在13/33完了＋5項目の画面確認待ち。確認後に18/33へ計上する。
 対象はevent_participants、rounds、matches、match_players、match_resultsのDELETE各1項目。現在13/33、適用・確認後18/33。補助ガードやTRUNCATE撤回は重複計上しない。
 
 ## 一連の実操作への影響

@@ -1,6 +1,6 @@
-# Step 2：clubs 物理DELETE（ローカル検証済み、本番未適用）
+# Step 2：clubs 物理DELETE（本番適用済み）
 
-対象：padel-hub / ntczrmvffmpjzilfebyi。Step 1のUPDATE改修後を前提とする。ユーザーの次工程への指示は準備・検証として扱い、本番適用の承認はまだ得ていない。
+対象：padel-hub / ntczrmvffmpjzilfebyi。Step 1のUPDATE改修後を前提とする。ユーザーの「まずはWebアプリ側のデリートは防ごう」により今回の本番適用を承認。適用結果はproduction-record.md参照。以下の手順は再実行指示ではない。
 
 ## 方針と影響
 

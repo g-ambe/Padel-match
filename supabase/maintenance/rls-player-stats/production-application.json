@@ -540,6 +540,11 @@
     ],
     "removed": []
   },
-  "user_ui_check": "pending",
+  "user_ui_check": {
+    "status": "passed",
+    "date": "2026-10-30",
+    "reported_by": "user",
+    "checks": ["所属グループの戦績・ランキング表示", "自分の個人戦績表示", "終了済み開催の試合結果表示"]
+  },
   "rollback_executed": false
 }

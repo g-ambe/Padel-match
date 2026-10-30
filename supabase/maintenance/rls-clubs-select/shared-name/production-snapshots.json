@@ -1,0 +1,204 @@
+{
+  "project": "ntczrmvffmpjzilfebyi",
+  "pre": {
+    "time": "2026-10-30T03:35:20.219076+00:00",
+    "grants": [
+      {
+        "role": "authenticated",
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      },
+      {
+        "role": "anon",
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    ],
+    "rpc_exists": false,
+    "policies_hash": "0b3be9caa42af417a6206539f956e01b",
+    "schema_exists": false,
+    "clubs_policies": [
+      {
+        "cmd": "SELECT",
+        "qual": "is_super_user()",
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "clubs_super_user_select",
+        "with_check": null
+      },
+      {
+        "cmd": "UPDATE",
+        "qual": "is_super_user()",
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "clubs_super_user_update",
+        "with_check": "is_super_user()"
+      },
+      {
+        "cmd": "SELECT",
+        "qual": "true",
+        "roles": "{anon,authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls01_clubs_select_compat",
+        "with_check": null
+      },
+      {
+        "cmd": "UPDATE",
+        "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = clubs.id) AND (cm.is_active = true) AND (cm.role = 'main_admin'::text) AND ((cm.profile_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM player_profiles pp\n          WHERE ((pp.id = cm.player_profile_id) AND (pp.linked_auth_user_id = ( SELECT auth.uid() AS uid)))))))))",
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls01_clubs_update_main_admin",
+        "with_check": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = clubs.id) AND (cm.is_active = true) AND (cm.role = 'main_admin'::text) AND ((cm.profile_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM player_profiles pp\n          WHERE ((pp.id = cm.player_profile_id) AND (pp.linked_auth_user_id = ( SELECT auth.uid() AS uid)))))))))"
+      },
+      {
+        "cmd": "DELETE",
+        "qual": "false",
+        "roles": "{anon,authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls02_clubs_delete_denied",
+        "with_check": null
+      },
+      {
+        "cmd": "INSERT",
+        "qual": null,
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls03_clubs_insert_self",
+        "with_check": "((auth.uid() IS NOT NULL) AND (owner_id = auth.uid()))"
+      }
+    ]
+  },
+  "post": {
+    "time": "2026-10-30T03:36:03.887288+00:00",
+    "grants": [
+      {
+        "role": "authenticated",
+        "delete": true,
+        "insert": true,
+        "select": true,
+        "update": true
+      },
+      {
+        "role": "anon",
+        "delete": false,
+        "insert": false,
+        "select": true,
+        "update": false
+      }
+    ],
+    "rpc_exists": true,
+    "policies_hash": "0b3be9caa42af417a6206539f956e01b",
+    "schema_exists": true,
+    "clubs_policies": [
+      {
+        "cmd": "SELECT",
+        "qual": "is_super_user()",
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "clubs_super_user_select",
+        "with_check": null
+      },
+      {
+        "cmd": "UPDATE",
+        "qual": "is_super_user()",
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "clubs_super_user_update",
+        "with_check": "is_super_user()"
+      },
+      {
+        "cmd": "SELECT",
+        "qual": "true",
+        "roles": "{anon,authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls01_clubs_select_compat",
+        "with_check": null
+      },
+      {
+        "cmd": "UPDATE",
+        "qual": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = clubs.id) AND (cm.is_active = true) AND (cm.role = 'main_admin'::text) AND ((cm.profile_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM player_profiles pp\n          WHERE ((pp.id = cm.player_profile_id) AND (pp.linked_auth_user_id = ( SELECT auth.uid() AS uid)))))))))",
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls01_clubs_update_main_admin",
+        "with_check": "(EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = clubs.id) AND (cm.is_active = true) AND (cm.role = 'main_admin'::text) AND ((cm.profile_id = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1\n           FROM player_profiles pp\n          WHERE ((pp.id = cm.player_profile_id) AND (pp.linked_auth_user_id = ( SELECT auth.uid() AS uid)))))))))"
+      },
+      {
+        "cmd": "DELETE",
+        "qual": "false",
+        "roles": "{anon,authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls02_clubs_delete_denied",
+        "with_check": null
+      },
+      {
+        "cmd": "INSERT",
+        "qual": null,
+        "roles": "{authenticated}",
+        "permissive": "PERMISSIVE",
+        "policyname": "rls03_clubs_insert_self",
+        "with_check": "((auth.uid() IS NOT NULL) AND (owner_id = auth.uid()))"
+      }
+    ]
+  },
+  "verification": {
+    "roles": [
+      {
+        "role": "authenticated",
+        "usage": true,
+        "create": false,
+        "execute": true
+      },
+      {
+        "role": "anon",
+        "usage": true,
+        "create": false,
+        "execute": true
+      }
+    ],
+    "functions": [
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "service_role=X/postgres",
+          "anon=X/postgres",
+          "authenticated=X/postgres"
+        ],
+        "name": "get_shared_official_club_name(text)",
+        "config": [
+          "search_path=\"\""
+        ],
+        "definition": "CREATE OR REPLACE FUNCTION public.get_shared_official_club_name(p_share_token text)\n RETURNS text\n LANGUAGE sql\n STABLE\n SET search_path TO ''\nAS $function$ SELECT shared_read_private.official_club_name(p_share_token) $function$\n",
+        "return_type": "text",
+        "security_definer": false
+      },
+      {
+        "acl": [
+          "postgres=X/postgres",
+          "anon=X/postgres",
+          "authenticated=X/postgres"
+        ],
+        "name": "shared_read_private.official_club_name(text)",
+        "config": [
+          "search_path=\"\""
+        ],
+        "definition": "CREATE OR REPLACE FUNCTION shared_read_private.official_club_name(p_share_token text)\n RETURNS text\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO ''\nAS $function$\n SELECT c.name\n FROM public.official_events oe JOIN public.clubs c ON c.id=oe.club_id\n WHERE p_share_token IS NOT NULL AND btrim(p_share_token)<>''\n   AND oe.share_token=p_share_token AND oe.share_enabled=true\n   AND oe.status='closed' AND coalesce(oe.is_deleted,false)=false\n LIMIT 1\n$function$\n",
+        "return_type": "text",
+        "security_definer": true
+      }
+    ]
+  },
+  "anonymousNegativeTests": {
+    "role": "anon",
+    "null_rejected": true,
+    "empty_rejected": true,
+    "unknown_rejected": true
+  },
+  "validShareRead": {
+    "samples": 1,
+    "allNamesMatched": true
+  }
+}

@@ -1,8 +1,20 @@
-# セット05：試合データ4テーブルのINSERT/UPDATE（準備済み・本番未適用）
+# セット05：試合データ4テーブルのINSERT/UPDATE（本番適用済み・画面確認待ち）
 
 推奨Sol・中。対象padel-hub / ntczrmvffmpjzilfebyi。2026-10-30。
 対象はrounds、matches、match_players、match_resultsの作成/更新8操作。現在18/33、適用・確認後26/33。残りは開催eventsのUPDATE1項目とSELECT6項目。
-このセットへの明示承認前に本番変更を行わない。SQL・切り戻しを用意し、本番作業はREAD ONLYの定義・権限・件数確認のみ。
+このセットへの明示承認後、2026-10-30に本番適用した。以下の準備・検証記録とあわせて適用結果を残す。
+
+## 本番適用結果
+
+restrict_match_data_insert_updateは成功。直前のverify.sql結果は準備時スナップショットから差分なし。apply.sqlの事前ガードだけを本番READ ONLYで実行し、参照整合性とIDガードの前提も満たすことを確認してから適用した。
+
+最初のapply_migration呼出しは接続ツールのInvalid or expired requestStateで失敗。全スナップショットが適用直前と同じであることをREAD ONLYで確認し、再実行で成功した。
+
+適用後12比較が全て成功。新ポリシーは検証時の期待定義と一致し、差分は8本の置換だけ。対象ACL/実効権限・RLS・件数・既存トリガー/関数・参照制約・他テーブルのポリシー/ACLは不変。件数は参加者530、Round253、試合402、選手枠1608、結果364。
+
+rollback.sqlの事前ガードも本番READ ONLYで成功した。切り戻し本体は未実施。Security Advisorsの追加・削除指摘なし。本番データに対するINSERT/UPDATE/DELETE/TRUNCATEの試験は行っていない。
+
+production-application.jsonに前後の定義と確認結果を保存。現在18/33完了＋8項目画面確認待ち。2経路の確認後に26/33として計上する。
 
 ## 実操作への影響
 

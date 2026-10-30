@@ -1,6 +1,6 @@
 # Step 5：events INSERT（準備・ローカル検証済み、本番未適用）
 
-**一次再レビュー後の扱い：適用判断を保留。** permission-review/README.mdのR1参照。提案SQLは直接INSERTを制限するが、広いUPDATEでグループなし開催の所属/作成者を付け替える迂回が合成DBで再現した。通常運営を維持するID変更防止策との順序を、高モードで再検討してから本番適用する。既存SQLは比較・レビュー用として保持する。
+**現在の扱い：セット01に組み込み、本番承認待ち。** 一次レビューで見つけたUPDATEによるID/所属/作成者付け替えは、先行するガードを本番適用・画面確認済み。Sol・中で順序と組合せを検証した。本SQLの単独版と切り戻しは保持し、まとめた適用・確認はrls-batch-01/README.md参照。
 
 対象：padel-hub / ntczrmvffmpjzilfebyi、public.events INSERTのみ。
 本番はメタデータのREAD ONLY参照のみ。アプリ実装・RLS・本番データはまだ変更していない。

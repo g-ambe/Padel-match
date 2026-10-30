@@ -1,0 +1,74 @@
+{
+  "project": "ntczrmvffmpjzilfebyi",
+  "mode": "read-only",
+  "time": "2026-10-30T04:54:08.42013+00:00",
+  "grants": [
+    {
+      "role": "authenticated",
+      "table": "clubs",
+      "delete": true,
+      "truncate": true
+    },
+    {
+      "role": "anon",
+      "table": "clubs",
+      "delete": false,
+      "truncate": true
+    },
+    {
+      "role": "authenticated",
+      "table": "events",
+      "delete": true,
+      "truncate": true
+    },
+    {
+      "role": "anon",
+      "table": "events",
+      "delete": false,
+      "truncate": true
+    }
+  ],
+  "function_paths": [],
+  "facility_columns": [
+    {
+      "name": "id",
+      "type": "uuid"
+    },
+    {
+      "name": "name",
+      "type": "text"
+    },
+    {
+      "name": "prefecture",
+      "type": "text"
+    },
+    {
+      "name": "address",
+      "type": "text"
+    },
+    {
+      "name": "source_url",
+      "type": "text"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone"
+    }
+  ],
+  "facility_policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "padel_facilities",
+      "permissive": "PERMISSIVE",
+      "policyname": "dev_all_padel_facilities",
+      "schemaname": "public",
+      "with_check": null
+    }
+  ],
+  "event_identity_trigger": "CREATE TRIGGER guard_event_identity BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION events_identity_private.guard_event_identity()"
+}

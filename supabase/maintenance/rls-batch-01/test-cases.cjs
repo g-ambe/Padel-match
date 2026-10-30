@@ -1,0 +1,20 @@
+const fs=require('node:fs'),path=require('node:path');
+module.exports=async({db,context,test,uid,assert})=>{
+ const run=async file=>{await db.exec('RESET ROLE');await db.exec(fs.readFileSync(path.join(__dirname,file),'utf8'));};
+ const snapshot=async()=>{await db.exec('RESET ROLE');return (await db.query("SELECT policyname,roles::text,cmd,qual,with_check FROM pg_policies WHERE tablename='events' ORDER BY policyname")).rows;};
+ await run('../rls-events-insert/rollback.sql');
+ await db.exec('GRANT TRUNCATE ON clubs,events TO anon,authenticated');
+ const before=await snapshot();
+ await test('batch atomically applies all four changes',()=>run('apply.sql'));
+ const after=await snapshot();
+ await test('batch denies arbitrary event INSERT',async()=>{await context(6);await assert.rejects(db.query("INSERT INTO events(id,name,club_id,created_by_auth_user_id) VALUES($1,'bad',$2,$3)",[uid(3000),uid(601),uid(6)]),e=>e.code==='42501');});
+ await test('batch normal event create and participant setup preserved',async()=>{await context(4);await db.query("INSERT INTO events(id,name,club_id,created_by_auth_user_id) VALUES($1,'batch-own',$2,$3)",[uid(3001),uid(601),uid(4)]);assert.equal((await db.query("INSERT INTO event_participants(id,event_id,player_profile_id,status,participant_type) VALUES($1,$2,$3,'active','member') RETURNING id",[uid(3002),uid(3001),uid(620)])).rows.length,1);});
+ await test('batch physical DELETE denied even to application super admin',async()=>{for(const user of [4,6,9]){await context(user);await assert.rejects(db.query('DELETE FROM events WHERE id=$1',[uid(3001)]),e=>e.code==='42501');}});
+ await test('batch denies both TRUNCATE privileges without affecting data',async()=>{await db.exec('RESET ROLE');for(const role of ['anon','authenticated'])for(const table of ['clubs','events'])assert.equal((await db.query('SELECT has_table_privilege($1,$2,\'TRUNCATE\') allowed',[role,table])).rows[0].allowed,false);});
+ await test('batch logical deletion still succeeds',async()=>{await context(4);assert.equal((await db.query('UPDATE events SET is_deleted=true WHERE id=$1 RETURNING id',[uid(3001)])).rows.length,1);});
+ await test('batch retains identity protection',async()=>{await context(6);await assert.rejects(db.query('UPDATE events SET club_id=$1 WHERE id=$2',[uid(602),uid(3001)]),e=>e.code==='42501');});
+ await test('batch reexecution fails with no partial changes',async()=>{await assert.rejects(run('apply.sql'));await db.exec('ROLLBACK');assert.deepEqual(await snapshot(),after);});
+ await test('batch rollback restores policies and privileges exactly',async()=>{await run('rollback.sql');assert.deepEqual(await snapshot(),before);for(const role of ['anon','authenticated'])for(const table of ['clubs','events'])assert.equal((await db.query('SELECT has_table_privilege($1,$2,\'TRUNCATE\') allowed',[role,table])).rows[0].allowed,true);assert.equal((await db.query("SELECT has_table_privilege('authenticated','events','DELETE') allowed")).rows[0].allowed,true);});
+ await test('batch mid-operation failure is atomic',async()=>{await db.exec('REVOKE TRUNCATE ON clubs FROM anon');await assert.rejects(run('apply.sql'));await db.exec('ROLLBACK');assert.deepEqual(await snapshot(),before);assert.equal((await db.query("SELECT has_table_privilege('authenticated','events','DELETE') allowed")).rows[0].allowed,true);await db.exec('GRANT TRUNCATE ON clubs TO anon');});
+ await test('batch reapply after rollback succeeds',async()=>{await run('apply.sql');assert.deepEqual(await snapshot(),after);});
+};

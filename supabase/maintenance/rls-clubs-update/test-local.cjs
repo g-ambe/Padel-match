@@ -82,10 +82,14 @@ const results = [];
    if (!process.argv.includes('--events-insert')) throw new Error('--review requires --events-insert');
    await require('../permission-review/test-cases.cjs')({db,context,test,uid,assert});
  }
+ if (process.argv.includes('--batch')) {
+   if (!process.argv.includes('--identity-guard')) throw new Error('--batch requires --identity-guard');
+   await require('../rls-batch-01/test-cases.cjs')({db,context,test,uid,assert});
+ }
  await db.exec('RESET ROLE');
  const version=(await db.query('SELECT version() v')).rows[0].v;
  const output = process.argv.includes('--events-insert') ? path.join(__dirname,'../rls-events-insert/test-results.json') : process.argv.includes('--select') ? path.join(__dirname,'../rls-clubs-select/test-results.json') : process.argv.includes('--insert') ? path.join(__dirname,'../rls-clubs-insert/test-results.json') : process.argv.includes('--delete') ? path.join(__dirname,'../rls-clubs-delete/test-results.json') : path.join(__dirname,'test-results.json');
  const finalOutput=process.argv.includes('--identity-guard') ? path.join(__dirname,'../rls-events-identity/test-results.json') : process.argv.includes('--review') ? path.join(__dirname,'../permission-review/test-results.json') : output;
- fs.writeFileSync(finalOutput, JSON.stringify({engine:'@electric-sql/pglite@0.3.14',version,scope:'local synthetic data only; no Supabase API/Auth/production DML; review tests assert presence of residual risks',results},null,2)+'\n');
+ fs.writeFileSync(process.argv.includes('--batch') ? path.join(__dirname,'../rls-batch-01/test-results.json') : finalOutput, JSON.stringify({engine:'@electric-sql/pglite@0.3.14',version,scope:'local synthetic data only; no Supabase API/Auth/production DML; review tests assert presence of residual risks',results},null,2)+'\n');
  await db.close(); console.log(`Completed: ${results.length} PASS`);
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

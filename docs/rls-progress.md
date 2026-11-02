@@ -6,7 +6,7 @@ SQL修正が不要でも、意図する公開範囲と実効権限を確認で�
 | テーブル | 完了/予定 | 状態 |
 |---|---|---|
 | clubs | 4/4 | INSERT/SELECT/UPDATE/DELETE適用・確認済み |
-| events | 2/4 | INSERT作成・DELETE権限整理は本番適用・作成/論理削除画面確認済み。SELECT/UPDATEは未完了 |
+| events | 2/4 | INSERT/DELETE確認済み。UPDATEはセット06準備済み・本番未適用（61項目成功）。SELECTは後続 |
 | event_participants | 3/4 | INSERT/UPDATE/DELETEは本番適用・確認済み。SELECTは後続 |
 | rounds | 3/4 | INSERT/UPDATE/DELETE本番適用・画面確認済み。SELECTは後続 |
 | matches | 3/4 | INSERT/UPDATE/DELETE本番適用・画面確認済み。SELECTは後続 |

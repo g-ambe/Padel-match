@@ -26,7 +26,7 @@ Next.js本番ビルドも成功。初回はNext.js設定ファイルへの権限
 
 2026-11-02、本番Data APIへOPTIONSだけを送り、Access-Control-Allow-Headersにx-padel-share-tokenが含まれることを確認した。ブラウザのCORS確認であり、ユーザーデータの取得・変更は行っていない。
 
-## 後続SQLの方針（セット07本番適用済み・画面確認待ち）
+## 後続SQLの方針（セット07本番適用・画面確認済み）
 
 - 所属中メンバー、グループなし開催作成者、既存スーパー管理者、チーム開催の閲覧者は維持。
 - 共有は、終了済み・共有ON・未削除に加え、提示されたトークンと対象開催の一致を要求する。共有用クライアントはanonなので、ログイン状態による挙動差をなくす。
@@ -41,3 +41,8 @@ Next.js本番ビルドも成功。初回はNext.js設定ファイルへの権限
 2026-11-02、ユーザー提供の https://padel-match.ranbo-ga.workers.dev/ の公開HTML・共有ページのJavaScriptを読み取り、トークン送信とセッション分離の配信反映を確認した。deployment-verification.jsonへ証拠を保存。その後、補助修正を含む明示承認を得てDB定義を再確認し、restrict_event_scope_select_and_shared_tokensを本番適用した。13比較と匿名GET8項目が全て成功。ポリシー・ACL・関数・件数の前後比較とAPI結果はproduction-application.json/production-http-verification.jsonへ保存。現在は画面確認待ちで、確認後32/33＋別タスク保留1項目とする。
 
 参考：[Supabaseのリクエスト情報とAPI保護](https://supabase.com/docs/guides/api/securing-your-api)。共有ヘッダーはData APIで検証し、Realtime等へ同じ動作を推定しない。
+
+
+## 最新状況：ユーザー実操作確認完了
+
+一般メンバーの開催中/終了済み詳細・戦績、匿名/ログイン済み共有の再読み込み、Round生成とスコア保存/修正後の保持が全てOKと報告された。本文の準備時・画面確認待ちの記述は経緯として保持し、現状は32/33完了＋events UPDATE1項目保留とする。共有参加メンバー一覧表示はdocs/rls-deferred-shared-participants.mdに別課題として登録。チームカード追加と別アカウントによる対象外URLの実画面確認は未報告。

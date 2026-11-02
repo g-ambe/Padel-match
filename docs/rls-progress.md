@@ -6,7 +6,7 @@ SQL修正が不要でも、意図する公開範囲と実効権限を確認で�
 | テーブル | 完了/予定 | 状態 |
 |---|---|---|
 | clubs | 4/4 | INSERT/SELECT/UPDATE/DELETE適用・確認済み |
-| events | 3/4 | INSERT/DELETE確認済み。UPDATEは実操作NGにより別タスク保留。SELECTはセット07本番適用・ユーザー実操作確認済み |
+| events | 4/4 | INSERT/SELECT/UPDATE/DELETE適用・確認済み。後続PR #173の一般メンバー実操作も全てOK |
 | event_participants | 4/4 | INSERT/UPDATE/DELETE確認済み。SELECTはセット07本番適用・ユーザー実操作確認済み |
 | rounds | 4/4 | INSERT/UPDATE/DELETE確認済み。SELECTはセット07本番適用・ユーザー実操作確認済み |
 | matches | 4/4 | INSERT/UPDATE/DELETE確認済み。SELECTはセット07本番適用・ユーザー実操作確認済み |
@@ -14,7 +14,7 @@ SQL修正が不要でも、意図する公開範囲と実効権限を確認で�
 | match_results | 4/4 | INSERT/UPDATE/DELETE確認済み。SELECTはセット07本番適用・ユーザー実操作確認済み |
 | player_stats | 4/4 | セット02本番適用・画面確認済み。旧表の直接アクセスを停止。関連75項目と本番メタデータ9比較成功 |
 | padel_facilities | 1/1 | 公開施設マスタのSELECT。確認済み・変更不要 |
-| 合計 | **32/33** | SELECT6操作はセット07本番適用・ユーザー実操作確認済み。ローカル181項目、本番13比較、匿名API読取り8項目成功。32/33完了＋別タスク保留1 |
+| 合計 | **33/33** | SELECT6操作はセット07本番適用・ユーザー実操作確認済み。ローカル181項目、本番13比較、匿名API読取り8項目成功。33/33完了。events UPDATEの保留も実操作確認済み |
 
 施設の列はid/name/prefecture/address/source_url/created_atであり、グループの非公開情報・個人情報を保持する構造ではない。実装は施設選択の候補としてSELECTするだけ。既存RLSはanon/authenticatedにSELECTのみtrueを許可し、本番匿名ロールのREAD ONLY参照で読めることを確認した。開発用というポリシー名だけのために変更はしない。
 
@@ -35,3 +35,8 @@ SELECT6操作の調査を開始。共有リンクの提示をDBでも検証す�
 ## 今回の作業範囲の区切り
 
 本番適用・確認済みのRLS対処履歴をGitHubへ保存し、本工程を区切る。未完了1操作（events UPDATEの実画面）は[別課題 #170](https://github.com/g-ambe/Padel-match/issues/170)へ移管し、分母33を変更したり完了として水増ししない。共有参加メンバー一覧は[別課題 #171](https://github.com/g-ambe/Padel-match/issues/171)。以後はこの2課題を後続修正として扱う。
+
+
+## 最終実操作確認
+
+ユーザーが一般メンバーで開催名の保存/再読込/復元、コート数の保存/再読込/復元と既存試合・スコア保持、終了/再開と再読込後の状態保持を全てOKと報告。これによりevents UPDATEも完了し、33/33完了。共有参加者一覧・従来の結果・匿名/ログイン済み再読込もOK。追加の共有表示要望（未出場者除外、3試合分のスクロール/拡大、表示順）はRLS完了とは別のWeb調整として#171に継続記録する。

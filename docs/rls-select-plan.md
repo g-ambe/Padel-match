@@ -18,9 +18,11 @@
 
 前提確認：実Supabase SDKの通信テスト5項目＋既存の共有名RPCテスト5項目が成功し、TypeScriptチェックも成功。通信テストは保存済みの他アカウントのセッションを読まないこと、別トークン間の分離、実際のHTTPヘッダー、無効リンクを確認した。
 
-Next.js本番ビルドも成功。初回はNext.js設定ファイルへの権限制限で停止し、テレメトリー無効・承認された権限制限外の実行で成功した。OpenNextのCloudflare変換は--skipNextBuildで実行したが、Windows非対応警告後120秒以上進捗がなく、実行セッションを停止した。Cloudflare専用変換の成功・実デプロイ・ブラウザ実操作は未確認。
+Next.js本番ビルドも成功。初回はNext.js設定ファイルへの権限制限で停止し、テレメトリー無効・承認された権限制限外の実行で成功した。OpenNextのCloudflare変換は--skipNextBuildで実行したが、Windows非対応警告後120秒以上進捗がなく、実行セッションを停止した。ローカルCloudflare変換の成功とデプロイ管理画面は未確認。後述のとおり共有ページの実表示はユーザーが確認済み。
 
-共有ページの3ファイルだけをmainベースのcodex/shared-event-token-readへ分離し、[PR #169](https://github.com/g-ambe/Padel-match/pull/169)を作成した。2026-11-02、ユーザーの明示承認後にmainへsquash merge済み（e5752bae7805fd1ca7b4e8ec183e0066d27e68ad）。GitHubでもmerged=trueを確認した。SQL/権限の変更やRLS履歴全体はPRへ含めていない。デプロイ完了と実画面の確認は未実施で、本番の閲覧RLSも未変更。反映後に匿名とログイン済みの共有表示を確認してから次のSQLへ進む。
+共有ページの3ファイルだけをmainベースのcodex/shared-event-token-readへ分離し、[PR #169](https://github.com/g-ambe/Padel-match/pull/169)を作成した。2026-11-02、ユーザーの明示承認後にmainへsquash merge済み（e5752bae7805fd1ca7b4e8ec183e0066d27e68ad）。GitHubでもmerged=trueを確認した。SQL/権限の変更やRLS履歴全体はPRへ含めていない。
+
+2026-11-02、マージ後に案内した「終了済みフレンドリーマッチの共有リンクを未ログイン・ログイン中の双方で開き、開催名・選手・結果を確認する」手順に対し、ユーザーがOKと回答した。画面表示の確認済みとして記録する。通信ヘッダーや配信済みコミットSHAまでユーザーが確認したとは扱わず、SELECT制限の本番適用直前には専用ヘッダーを送る変更の反映も確認する。本番の閲覧RLSは未変更で、次はSQL・切り戻し・DB検証の準備へ進む。
 
 2026-11-02、本番Data APIへOPTIONSだけを送り、Access-Control-Allow-Headersにx-padel-share-tokenが含まれることを確認した。ブラウザのCORS確認であり、ユーザーデータの取得・変更は行っていない。
 

@@ -1,0 +1,13 @@
+{
+  "scope": "synthetic local DB with actual migrations through 0039 and participant write SQL applied",
+  "tests": 5,
+  "pass": 5,
+  "fail": 0,
+  "cases": [
+    "本人承認でA・Bを同一正規IDへ統合",
+    "同意付き加入申請の管理者承認",
+    "通常の加入申請",
+    "統合参照の手動復旧",
+    "復帰済み仮選手の本人承認・統合"
+  ]
+}

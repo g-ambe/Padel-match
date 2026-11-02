@@ -1,0 +1,40 @@
+{
+  "guards": [
+    {
+      "name": "guard_participant_identity",
+      "table": "event_participants",
+      "enabled": "O"
+    },
+    {
+      "name": "guard_event_identity",
+      "table": "events",
+      "enabled": "O"
+    },
+    {
+      "name": "guard_match_identity",
+      "table": "match_players",
+      "enabled": "O"
+    },
+    {
+      "name": "guard_match_identity",
+      "table": "match_results",
+      "enabled": "O"
+    },
+    {
+      "name": "guard_match_identity",
+      "table": "matches",
+      "enabled": "O"
+    },
+    {
+      "name": "guard_match_identity",
+      "table": "rounds",
+      "enabled": "O"
+    }
+  ],
+  "null_match_event": 0,
+  "null_match_round": 0,
+  "null_round_event": 0,
+  "round_event_mismatch": 0,
+  "invalid_player_parent": 0,
+  "invalid_result_parent": 0
+}

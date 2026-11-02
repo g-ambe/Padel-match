@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-02",
+  "app_url": "https://padel-match.ranbo-ga.workers.dev/",
+  "scope": "Public HTML and JavaScript only; no login or database mutation",
+  "html_url": "https://padel-match.ranbo-ga.workers.dev/share/events/rls-deployment-check",
+  "html_status": 200,
+  "script_url": "https://padel-match.ranbo-ga.workers.dev/_next/static/chunks/app/share/events/%5Btoken%5D/page-08015721c610daf2.js",
+  "script_status": 200,
+  "token_header_present": true,
+  "isolated_storage_key_present": true,
+  "persist_session_disabled": true,
+  "auto_refresh_disabled": true,
+  "url_session_detection_disabled": true,
+  "saved_script_sha256": "6E33A4B3EC1A4C651CD439B185D5DB35AE66412FD1E8EFF0719F1343D6D4B10F",
+  "production_rls_changed": false
+}

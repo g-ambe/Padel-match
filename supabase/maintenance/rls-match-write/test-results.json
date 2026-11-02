@@ -1,0 +1,662 @@
+{
+  "engine": "PGlite 0.3.14",
+  "scope": "synthetic local full migrations through 0039 plus deployed prerequisites",
+  "results": [
+    {
+      "name": "baseline outsider INSERT/UPDATE remains possible before this batch",
+      "status": "PASS"
+    },
+    {
+      "name": "apply refuses disabled parent identity guard",
+      "status": "PASS"
+    },
+    {
+      "name": "apply refuses policy drift atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "apply refuses unsupported legacy null Round instead of changing data",
+      "status": "PASS"
+    },
+    {
+      "name": "apply actual SQL without changing data, grants, or triggers",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin legacy UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "other group in own event UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email INSERT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email UPDATE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email INSERT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email UPDATE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email INSERT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email UPDATE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email INSERT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email UPDATE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership INSERT rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership UPDATE rounds returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership INSERT matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership UPDATE matches returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership INSERT match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership UPDATE match_players returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership INSERT match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership UPDATE match_results returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only INSERT rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only UPDATE rounds returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only INSERT matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only UPDATE matches returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only INSERT match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only UPDATE match_players returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only INSERT match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group only UPDATE match_results returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated INSERT rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated UPDATE rounds returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated INSERT matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated UPDATE matches returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated INSERT match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated UPDATE match_players returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated INSERT match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated UPDATE match_results returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event INSERT rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event UPDATE rounds returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event INSERT matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event UPDATE matches returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event INSERT match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event UPDATE match_players returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event INSERT match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event UPDATE match_results returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event INSERT rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event UPDATE rounds returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event INSERT matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event UPDATE matches returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event INSERT match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event UPDATE match_players returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event INSERT match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event UPDATE match_results returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing INSERT rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing UPDATE rounds returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing INSERT matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing UPDATE matches returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing INSERT match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing UPDATE match_players returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing INSERT match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing UPDATE match_results returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "anon INSERT rounds denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon UPDATE rounds denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon INSERT matches denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon UPDATE matches denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon INSERT match_players denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon UPDATE match_players denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon INSERT match_results denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon UPDATE match_results denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "match INSERT rejects foreign Round",
+      "status": "PASS"
+    },
+    {
+      "name": "match INSERT rejects different own event Round",
+      "status": "PASS"
+    },
+    {
+      "name": "match INSERT rejects foreign event and own Round",
+      "status": "PASS"
+    },
+    {
+      "name": "match INSERT rejects null Round",
+      "status": "PASS"
+    },
+    {
+      "name": "match INSERT rejects missing Round",
+      "status": "PASS"
+    },
+    {
+      "name": "player INSERT rejects foreign participant",
+      "status": "PASS"
+    },
+    {
+      "name": "player INSERT rejects different own event participant",
+      "status": "PASS"
+    },
+    {
+      "name": "player INSERT rejects foreign match",
+      "status": "PASS"
+    },
+    {
+      "name": "player INSERT rejects null participant",
+      "status": "PASS"
+    },
+    {
+      "name": "player INSERT rejects null match",
+      "status": "PASS"
+    },
+    {
+      "name": "player INSERT rejects missing match",
+      "status": "PASS"
+    },
+    {
+      "name": "player INSERT rejects missing participant",
+      "status": "PASS"
+    },
+    {
+      "name": "rounds rejects invalid event null",
+      "status": "PASS"
+    },
+    {
+      "name": "rounds rejects invalid event 20000000-0000-4000-8000-000000999999",
+      "status": "PASS"
+    },
+    {
+      "name": "matches rejects invalid event null",
+      "status": "PASS"
+    },
+    {
+      "name": "matches rejects invalid event 20000000-0000-4000-8000-000000999999",
+      "status": "PASS"
+    },
+    {
+      "name": "result rejects invalid match null",
+      "status": "PASS"
+    },
+    {
+      "name": "result rejects invalid match 20000000-0000-4000-8000-000000999999",
+      "status": "PASS"
+    },
+    {
+      "name": "own rounds event_id cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "own matches event_id cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "own matches round_id cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "own match_players match_id cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "own match_players participant_id cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "own match_results match_id cannot be reassigned",
+      "status": "PASS"
+    },
+    {
+      "name": "closed but undeleted own event keeps score correction and generation",
+      "status": "PASS"
+    },
+    {
+      "name": "team-side manager capability preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "current ordinary-member workflow creates round/lineup, saves twice, changes lineup and removes match",
+      "status": "PASS"
+    },
+    {
+      "name": "mixed valid/foreign lineup bulk INSERT is atomic",
+      "status": "PASS"
+    },
+    {
+      "name": "multirow UPDATE changes own rows and preserves foreign rows",
+      "status": "PASS"
+    },
+    {
+      "name": "service maintenance keeps existing bypass",
+      "status": "PASS"
+    },
+    {
+      "name": "anonymous shared-style reads unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign DELETE still returns zero",
+      "status": "PASS"
+    },
+    {
+      "name": "participant DELETE remains denied",
+      "status": "PASS"
+    },
+    {
+      "name": "TRUNCATE remains denied",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback refuses policy drift",
+      "status": "PASS"
+    },
+    {
+      "name": "repeat apply refuses atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores exact policies, ACL, triggers and leaves data intact",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores original foreign UPDATE",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply succeeds",
+      "status": "PASS"
+    }
+  ]
+}

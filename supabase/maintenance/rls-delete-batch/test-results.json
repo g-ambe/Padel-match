@@ -1,0 +1,378 @@
+{
+  "engine": "PGlite 0.3.14",
+  "scope": "synthetic local full migrations through 0039 plus prerequisites",
+  "results": [
+    {
+      "name": "apply actual SQL and preserve rows",
+      "status": "PASS"
+    },
+    {
+      "name": "main DELETE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "main DELETE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "main DELETE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "main DELETE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "sub DELETE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "sub DELETE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "sub DELETE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "sub DELETE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "member DELETE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "member DELETE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "member DELETE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "member DELETE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "linked member DELETE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "linked member DELETE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "linked member DELETE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "linked member DELETE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator DELETE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator DELETE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator DELETE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator DELETE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin DELETE rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin DELETE matches",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin DELETE match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin DELETE match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive member denied rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive member denied matches",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive member denied match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive member denied match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "other-group admin denied rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "other-group admin denied matches",
+      "status": "PASS"
+    },
+    {
+      "name": "other-group admin denied match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "other-group admin denied match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated denied rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated denied matches",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated denied match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated denied match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "other creator denied rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "other creator denied matches",
+      "status": "PASS"
+    },
+    {
+      "name": "other creator denied match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "other creator denied match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event denied rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event denied matches",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event denied match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event denied match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing denied rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing denied matches",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing denied match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing denied match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "anon participant physical DELETE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated participant physical DELETE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "anon DELETE rounds denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon DELETE matches denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon DELETE match_players denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon DELETE match_results denied by grant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon TRUNCATE rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "anon TRUNCATE matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "anon TRUNCATE match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "anon TRUNCATE match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated TRUNCATE rounds denied",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated TRUNCATE matches denied",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated TRUNCATE match_players denied",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated TRUNCATE match_results denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign rounds id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign rounds event_id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign matches id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign matches event_id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign matches round_id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign match_players id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign match_players match_id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign match_players participant_id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign match_results id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign match_results match_id reassignment denied",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign participant reassignment changes zero rows",
+      "status": "PASS"
+    },
+    {
+      "name": "own participant reassignment still denied",
+      "status": "PASS"
+    },
+    {
+      "name": "parent event reassignment still denied",
+      "status": "PASS"
+    },
+    {
+      "name": "own round cascade removes match, result and player rows",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign round cascade rejected; all child rows retained",
+      "status": "PASS"
+    },
+    {
+      "name": "selection edit DELETE then INSERT works",
+      "status": "PASS"
+    },
+    {
+      "name": "UI result -> players -> match -> empty round flow works",
+      "status": "PASS"
+    },
+    {
+      "name": "round renumber and score/video updates stay usable",
+      "status": "PASS"
+    },
+    {
+      "name": "closed own event deletion preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy match without round can be deleted",
+      "status": "PASS"
+    },
+    {
+      "name": "super-user email existing access preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "maintenance role can change identities and delete participant",
+      "status": "PASS"
+    },
+    {
+      "name": "anon share-style read remains",
+      "status": "PASS"
+    },
+    {
+      "name": "general member generates, saves scores, edits lineup and deletes a full match",
+      "status": "PASS"
+    },
+    {
+      "name": "private identity helper cannot be invoked or changed by web roles",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback refuses policy drift",
+      "status": "PASS"
+    },
+    {
+      "name": "repeat apply refuses atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores exact policies, ACL and triggers",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores foreign deletion",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply works",
+      "status": "PASS"
+    }
+  ]
+}

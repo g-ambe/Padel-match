@@ -1,0 +1,1775 @@
+{
+  "date": "2026-10-30 Asia/Tokyo",
+  "project": "ntczrmvffmpjzilfebyi",
+  "commit": "0350eed479959989516c2b9bb11b44ebf323aebe",
+  "full_policies": [
+    {
+      "schemaname": "public",
+      "tablename": "app_admins",
+      "policyname": "app_admins_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((profile_id = auth.uid()) OR is_super_user())",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "club_members",
+      "policyname": "club_members_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_members.club_id) AND (c.owner_id = auth.uid())))) AND (profile_id = auth.uid()) AND (role = 'main_admin'::text) AND (EXISTS ( SELECT 1\n   FROM player_profiles pp\n  WHERE ((pp.id = club_members.player_profile_id) AND (pp.linked_auth_user_id = auth.uid()) AND pp.is_active)))) OR (can_manage_player_profile_club(club_id) AND (profile_id IS NULL) AND (role = 'member'::text) AND (EXISTS ( SELECT 1\n   FROM player_profiles pp\n  WHERE ((pp.id = club_members.player_profile_id) AND (pp.linked_auth_user_id IS NULL) AND pp.is_active)))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "club_members",
+      "policyname": "club_members_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "club_members",
+      "policyname": "club_members_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "can_edit_player_profile_member(club_id, role)",
+      "with_check": "can_edit_player_profile_member(club_id, role)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "clubs",
+      "policyname": "clubs_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "clubs",
+      "policyname": "clubs_super_user_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "is_super_user()",
+      "with_check": "is_super_user()"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "clubs",
+      "policyname": "dev_all_clubs",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_participants",
+      "policyname": "dev_all_event_participants",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_participants",
+      "policyname": "event_participants_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_team_guests",
+      "policyname": "event_team_guests_manage",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_team_guests.event_id) AND (e.event_mode = 'team'::text) AND (COALESCE(e.is_deleted, false) = false) AND (e.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins aa\n          WHERE ((aa.profile_id = auth.uid()) AND (aa.is_active = true)))) OR (e.created_by_auth_user_id = auth.uid()) OR (EXISTS ( SELECT 1\n           FROM ((event_team_sides ets\n             JOIN club_members cm ON ((cm.club_id = ets.club_id)))\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((ets.event_id = e.id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (pp.linked_auth_user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n           FROM (event_team_sides ets\n             JOIN club_members cm ON ((cm.club_id = ets.club_id)))\n          WHERE ((ets.event_id = e.id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (cm.profile_id = auth.uid()))))))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_team_guests.event_id) AND (e.event_mode = 'team'::text) AND (COALESCE(e.is_deleted, false) = false) AND (e.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins aa\n          WHERE ((aa.profile_id = auth.uid()) AND (aa.is_active = true)))) OR (e.created_by_auth_user_id = auth.uid()) OR (EXISTS ( SELECT 1\n           FROM ((event_team_sides ets\n             JOIN club_members cm ON ((cm.club_id = ets.club_id)))\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((ets.event_id = e.id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (pp.linked_auth_user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n           FROM (event_team_sides ets\n             JOIN club_members cm ON ((cm.club_id = ets.club_id)))\n          WHERE ((ets.event_id = e.id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (cm.profile_id = auth.uid()))))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_team_guests",
+      "policyname": "event_team_guests_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_team_guests.event_id) AND (e.event_mode = 'team'::text) AND (COALESCE(e.is_deleted, false) = false) AND ((auth.role() = 'authenticated'::text) OR ((e.status = 'closed'::text) AND (e.share_enabled = true) AND (e.share_token IS NOT NULL))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_team_matches",
+      "policyname": "event_team_matches_manage",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_team_matches.event_id) AND (e.event_mode = 'team'::text) AND (COALESCE(e.is_deleted, false) = false) AND (e.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins aa\n          WHERE ((aa.profile_id = auth.uid()) AND (aa.is_active = true)))) OR (e.created_by_auth_user_id = auth.uid()) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (pp.linked_auth_user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (cm.profile_id = auth.uid()))))))))",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_team_matches",
+      "policyname": "event_team_matches_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_team_matches.event_id) AND (e.event_mode = 'team'::text) AND (COALESCE(e.is_deleted, false) = false) AND ((auth.role() = 'authenticated'::text) OR ((e.status = 'closed'::text) AND (e.share_enabled = true) AND (e.share_token IS NOT NULL))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_team_sides",
+      "policyname": "event_team_sides_manage",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_team_sides.event_id) AND (e.event_mode = 'team'::text) AND (COALESCE(e.is_deleted, false) = false) AND (e.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins aa\n          WHERE ((aa.profile_id = auth.uid()) AND (aa.is_active = true)))) OR (e.created_by_auth_user_id = auth.uid()) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (pp.linked_auth_user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (cm.profile_id = auth.uid()))))))))",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_team_sides",
+      "policyname": "event_team_sides_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_team_sides.event_id) AND (e.event_mode = 'team'::text) AND (COALESCE(e.is_deleted, false) = false) AND ((auth.role() = 'authenticated'::text) OR ((e.status = 'closed'::text) AND (e.share_enabled = true) AND (e.share_token IS NOT NULL))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_clicks",
+      "policyname": "event_video_clicks_no_direct_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "false"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_clicks",
+      "policyname": "event_video_clicks_no_direct_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "false",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_clicks",
+      "policyname": "event_video_clicks_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_link_clicks",
+      "policyname": "event_video_link_clicks_no_direct_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "false"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_link_clicks",
+      "policyname": "event_video_link_clicks_no_direct_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "false",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_link_clicks",
+      "policyname": "event_video_link_clicks_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_links",
+      "policyname": "event_video_links_authenticated_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_video_links.event_id) AND (COALESCE(e.is_deleted, false) = false))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_links",
+      "policyname": "event_video_links_manage",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_video_links.event_id) AND (COALESCE(e.is_deleted, false) = false) AND ((EXISTS ( SELECT 1\n           FROM app_admins aa\n          WHERE ((aa.profile_id = auth.uid()) AND (aa.is_active = true)))) OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (pp.linked_auth_user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (cm.profile_id = auth.uid()))))))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_video_links.event_id) AND (COALESCE(e.is_deleted, false) = false) AND ((EXISTS ( SELECT 1\n           FROM app_admins aa\n          WHERE ((aa.profile_id = auth.uid()) AND (aa.is_active = true)))) OR ((e.club_id IS NULL) AND (e.created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (pp.linked_auth_user_id = auth.uid())))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = e.club_id) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])) AND (cm.is_active = true) AND (cm.profile_id = auth.uid()))))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_links",
+      "policyname": "event_video_links_shared_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon}",
+      "cmd": "SELECT",
+      "qual": "((video_url IS NOT NULL) AND (btrim(video_url) <> ''::text) AND (EXISTS ( SELECT 1\n   FROM events e\n  WHERE ((e.id = event_video_links.event_id) AND (e.status = 'closed'::text) AND (e.share_enabled = true) AND (e.share_token IS NOT NULL) AND (COALESCE(e.is_deleted, false) = false)))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "event_video_links",
+      "policyname": "event_video_links_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "dev_all_events",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_delete_friendly_team_match_managers",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "DELETE",
+      "qual": "((event_mode = 'team'::text) AND can_manage_friendly_team_event_by_sides(id, created_by_auth_user_id))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((created_by_auth_user_id = auth.uid()) AND ((club_id IS NULL) OR (EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true)))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_public_shared_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon}",
+      "cmd": "SELECT",
+      "qual": "((status = 'closed'::text) AND (share_enabled = true) AND (share_token IS NOT NULL) AND (COALESCE(is_deleted, false) = false))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true)))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true)))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_select_friendly_team_match_viewers",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((event_mode = 'team'::text) AND (COALESCE(is_deleted, false) = false) AND can_view_friendly_team_event_by_sides(id, created_by_auth_user_id))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_super_user_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "is_super_user()",
+      "with_check": "is_super_user()"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_update_creator_or_group_admin",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))))",
+      "with_check": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "events",
+      "policyname": "events_update_friendly_team_match_managers",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "((event_mode = 'team'::text) AND (COALESCE(is_deleted, false) = false) AND can_manage_friendly_team_event_by_sides(id, created_by_auth_user_id))",
+      "with_check": "((event_mode = 'team'::text) AND (COALESCE(is_deleted, false) = false) AND (stats_mode = ANY (ARRAY['official'::text, 'record_only'::text, 'undecided'::text])) AND (status = ANY (ARRAY['active'::text, 'closed'::text])) AND can_manage_friendly_team_event_by_sides(id, created_by_auth_user_id))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "health_check",
+      "policyname": "anon_can_read_health_check",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon}",
+      "cmd": "SELECT",
+      "qual": "(id = 1)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "join_requests",
+      "policyname": "join_requests_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((requester_auth_user_id = auth.uid()) OR can_manage_player_profile_club(club_id))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "match_players",
+      "policyname": "dev_all_match_players",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "match_players",
+      "policyname": "match_players_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "match_results",
+      "policyname": "dev_all_match_results",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "matches",
+      "policyname": "dev_all_matches",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "matches",
+      "policyname": "matches_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "notifications",
+      "policyname": "notifications_insert_own_or_admin",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((auth.uid() = target_auth_user_id) OR (EXISTS ( SELECT 1\n   FROM app_admins a\n  WHERE ((a.profile_id = auth.uid()) AND (a.is_active = true)))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "notifications",
+      "policyname": "notifications_select_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(auth.uid() = target_auth_user_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "notifications",
+      "policyname": "notifications_update_read_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(auth.uid() = target_auth_user_id)",
+      "with_check": "(auth.uid() = target_auth_user_id)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_events",
+      "policyname": "official_events_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "((created_by_auth_user_id = auth.uid()) AND ((club_id IS NULL) OR (EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = official_events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = official_events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_events",
+      "policyname": "official_events_public_shared_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon}",
+      "cmd": "SELECT",
+      "qual": "((share_enabled = true) AND (share_token IS NOT NULL) AND (status = 'closed'::text))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_events",
+      "policyname": "official_events_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = official_events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true)))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = official_events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true)))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_events",
+      "policyname": "official_events_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_events",
+      "policyname": "official_events_super_user_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "is_super_user()",
+      "with_check": "is_super_user()"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_events",
+      "policyname": "official_events_update_operations",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = official_events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = official_events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))))",
+      "with_check": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = official_events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = official_events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_events",
+      "policyname": "official_events_update_share",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = official_events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = official_events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))))",
+      "with_check": "((EXISTS ( SELECT 1\n   FROM app_admins\n  WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR ((club_id IS NULL) AND (created_by_auth_user_id = auth.uid())) OR (EXISTS ( SELECT 1\n   FROM (club_members cm\n     JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n  WHERE ((cm.club_id = official_events.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.club_id = official_events.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_matches",
+      "policyname": "official_matches_delete",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "DELETE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_matches.official_event_id) AND (oe.status = 'active'::text) AND (COALESCE(oe.is_deleted, false) = false) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_matches",
+      "policyname": "official_matches_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM (official_events oe\n     JOIN official_opponents oo ON ((oo.official_event_id = oe.id)))\n  WHERE ((oe.id = official_matches.official_event_id) AND (oo.id = official_matches.official_opponent_id) AND (oe.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_matches",
+      "policyname": "official_matches_public_shared_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_matches.official_event_id) AND (oe.share_enabled = true) AND (oe.share_token IS NOT NULL) AND (oe.status = 'closed'::text))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_matches",
+      "policyname": "official_matches_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_matches.official_event_id) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true))))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_matches",
+      "policyname": "official_matches_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_matches",
+      "policyname": "official_matches_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_matches.official_event_id) AND (oe.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_matches.official_event_id) AND (oe.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_opponents",
+      "policyname": "official_opponents_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_opponents.official_event_id) AND (oe.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_opponents",
+      "policyname": "official_opponents_public_shared_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_opponents.official_event_id) AND (oe.share_enabled = true) AND (oe.share_token IS NOT NULL) AND (oe.status = 'closed'::text))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_opponents",
+      "policyname": "official_opponents_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_opponents.official_event_id) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true))))))))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_opponents",
+      "policyname": "official_opponents_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_opponents",
+      "policyname": "official_opponents_update",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_opponents.official_event_id) AND (oe.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))))",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM official_events oe\n  WHERE ((oe.id = official_opponents.official_event_id) AND (oe.status <> 'closed'::text) AND ((EXISTS ( SELECT 1\n           FROM app_admins\n          WHERE ((app_admins.profile_id = auth.uid()) AND (app_admins.is_active = true)))) OR (EXISTS ( SELECT 1\n           FROM (club_members cm\n             JOIN player_profiles pp ON ((pp.id = cm.player_profile_id)))\n          WHERE ((cm.club_id = oe.club_id) AND (pp.linked_auth_user_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text]))))) OR (EXISTS ( SELECT 1\n           FROM club_members cm\n          WHERE ((cm.club_id = oe.club_id) AND (cm.profile_id = auth.uid()) AND (cm.is_active = true) AND (cm.role = ANY (ARRAY['main_admin'::text, 'sub_admin'::text])))))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_video_clicks",
+      "policyname": "official_video_clicks_no_direct_insert",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "false"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_video_clicks",
+      "policyname": "official_video_clicks_no_direct_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "false",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "official_video_clicks",
+      "policyname": "official_video_clicks_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "padel_facilities",
+      "policyname": "dev_all_padel_facilities",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "player_profile_link_requests",
+      "policyname": "profile_link_requests_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((target_auth_user_id = auth.uid()) OR can_manage_player_profile_club(club_id))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "player_profile_merges",
+      "policyname": "profile_merges_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "((target_auth_user_id = auth.uid()) OR can_manage_player_profile_club(club_id))",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "player_profiles",
+      "policyname": "player_profiles_edit_details",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(is_active AND ((linked_auth_user_id = auth.uid()) OR ((linked_auth_user_id IS NULL) AND (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.player_profile_id = player_profiles.id) AND can_edit_player_profile_member(cm.club_id, cm.role)))))))",
+      "with_check": "(is_active AND ((linked_auth_user_id = auth.uid()) OR ((linked_auth_user_id IS NULL) AND (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.player_profile_id = player_profiles.id) AND can_edit_player_profile_member(cm.club_id, cm.role)))))))"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "player_profiles",
+      "policyname": "player_profiles_read",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "(is_active OR (linked_auth_user_id = auth.uid()) OR is_super_user())",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "player_stats",
+      "policyname": "dev_all_player_stats",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "profiles",
+      "policyname": "profiles_insert_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(id = auth.uid())"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "profiles",
+      "policyname": "profiles_read_names",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "SELECT",
+      "qual": "true",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "profiles",
+      "policyname": "profiles_update_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "UPDATE",
+      "qual": "(id = auth.uid())",
+      "with_check": "(id = auth.uid())"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "rounds",
+      "policyname": "dev_all_rounds",
+      "permissive": "PERMISSIVE",
+      "roles": "{anon,authenticated}",
+      "cmd": "ALL",
+      "qual": "true",
+      "with_check": "true"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "rounds",
+      "policyname": "rounds_super_user_select",
+      "permissive": "PERMISSIVE",
+      "roles": "{authenticated}",
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "user_preferences",
+      "policyname": "user_preferences_insert_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "INSERT",
+      "qual": null,
+      "with_check": "(auth.uid() = auth_user_id)"
+    },
+    {
+      "schemaname": "public",
+      "tablename": "user_preferences",
+      "policyname": "user_preferences_select_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "SELECT",
+      "qual": "(auth.uid() = auth_user_id)",
+      "with_check": null
+    },
+    {
+      "schemaname": "public",
+      "tablename": "user_preferences",
+      "policyname": "user_preferences_update_own",
+      "permissive": "PERMISSIVE",
+      "roles": "{public}",
+      "cmd": "UPDATE",
+      "qual": "(auth.uid() = auth_user_id)",
+      "with_check": "(auth.uid() = auth_user_id)"
+    }
+  ],
+  "privileges": [
+    {
+      "relname": "clubs",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "clubs",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "event_participants",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "event_participants",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "events",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "events",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "match_players",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "match_players",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "match_results",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "match_results",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "matches",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "matches",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "padel_facilities",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "padel_facilities",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "player_stats",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "player_stats",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    },
+    {
+      "relname": "rounds",
+      "relrowsecurity": true,
+      "rolname": "anon",
+      "sel": true,
+      "ins": false,
+      "upd": false,
+      "del": false
+    },
+    {
+      "relname": "rounds",
+      "relrowsecurity": true,
+      "rolname": "authenticated",
+      "sel": true,
+      "ins": true,
+      "upd": true,
+      "del": true
+    }
+  ],
+  "structure": [
+    {
+      "table_name": "club_members",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "club_members",
+      "column_name": "club_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "club_members",
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "club_members",
+      "column_name": "role",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "club_members",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "club_members",
+      "column_name": "player_profile_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "club_members",
+      "column_name": "is_active",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "club_members",
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "name",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "owner_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "description",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "is_active",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "main_facility_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "image_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "visibility",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "is_deleted",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "clubs",
+      "column_name": "deleted_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "event_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "guest_name",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "participant_type",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "event_participants",
+      "column_name": "player_profile_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "club_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "name",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "category",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "court_count",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "status",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "closed_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "is_deleted",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "deleted_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "share_enabled",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "share_token",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "share_token_updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "event_mode",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "stats_mode",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "events",
+      "column_name": "created_by_auth_user_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "description",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "memo",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "events",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "match_players",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "match_players",
+      "column_name": "match_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "match_players",
+      "column_name": "participant_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "match_players",
+      "column_name": "team",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "match_players",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "match_results",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "match_results",
+      "column_name": "match_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "match_results",
+      "column_name": "score_a",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "match_results",
+      "column_name": "score_b",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "match_results",
+      "column_name": "winner_team",
+      "data_type": "text",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "match_results",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "matches",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "matches",
+      "column_name": "event_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "matches",
+      "column_name": "round_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "matches",
+      "column_name": "court_number",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "matches",
+      "column_name": "youtube_url",
+      "data_type": "text",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "matches",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "matches",
+      "column_name": "completed",
+      "data_type": "boolean",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "club_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "profile_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "match_count",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "win_count",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "win_rate",
+      "data_type": "numeric",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "mvp_daily_count",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "mvp_total_count",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "updated_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "loss_count",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "player_stats",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "rounds",
+      "column_name": "id",
+      "data_type": "uuid",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "rounds",
+      "column_name": "event_id",
+      "data_type": "uuid",
+      "is_nullable": "YES"
+    },
+    {
+      "table_name": "rounds",
+      "column_name": "round_number",
+      "data_type": "integer",
+      "is_nullable": "NO"
+    },
+    {
+      "table_name": "rounds",
+      "column_name": "created_at",
+      "data_type": "timestamp with time zone",
+      "is_nullable": "YES"
+    }
+  ],
+  "triggers": [
+    {
+      "relname": "clubs",
+      "tgname": "profile_link_club_owner",
+      "definition": "CREATE TRIGGER profile_link_club_owner BEFORE INSERT OR UPDATE OF owner_id ON public.clubs FOR EACH ROW EXECUTE FUNCTION profile_link_private.guard_club_owner()",
+      "proname": "guard_club_owner",
+      "function_definition": "CREATE OR REPLACE FUNCTION profile_link_private.guard_club_owner()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\r\nbegin\r\n  if current_user in ('anon','authenticated') and ((TG_OP = 'INSERT' and new.owner_id is distinct from auth.uid()) or (TG_OP = 'UPDATE' and new.owner_id is distinct from old.owner_id)) then raise exception 'グループ所有者を変更できません'; end if;\r\n  return new;\r\nend $function$\n"
+    },
+    {
+      "relname": "event_participants",
+      "tgname": "profile_link_participant_reference",
+      "definition": "CREATE TRIGGER profile_link_participant_reference BEFORE INSERT OR UPDATE OF player_profile_id, profile_id ON public.event_participants FOR EACH ROW EXECUTE FUNCTION profile_link_private.guard_reference('player_profile_id')",
+      "proname": "guard_reference",
+      "function_definition": "CREATE OR REPLACE FUNCTION profile_link_private.guard_reference()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\r\ndeclare column_name text; new_id uuid; old_id uuid; linked uuid; active boolean;\r\nbegin\r\n  foreach column_name in array TG_ARGV loop\r\n    new_id := (to_jsonb(new)->>column_name)::uuid;\r\n    old_id := case when TG_OP = 'UPDATE' then (to_jsonb(old)->>column_name)::uuid end;\r\n    if new_id is not null and (TG_OP = 'INSERT' or new_id is distinct from old_id) then\r\n      select linked_auth_user_id,is_active into linked,active from public.player_profiles where id = new_id for share;\r\n      if not found or not active then raise exception '無効化・統合済みの選手には新しい所属・参加・試合を追加できません'; end if;\r\n      if current_setting('role') in ('anon','authenticated') and TG_TABLE_NAME in ('club_members','event_participants') and (to_jsonb(new)->>'profile_id') is not null\r\n        and linked is distinct from (to_jsonb(new)->>'profile_id')::uuid then raise exception '旧profile_idと選手の連携アカウントが一致しません'; end if;\r\n    end if;\r\n  end loop;\r\n  return new;\r\nend $function$\n"
+    }
+  ],
+  "functions": [
+    {
+      "proname": "is_super_user",
+      "prosecdef": true,
+      "proacl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.is_super_user()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(auth.jwt() ->> 'email', '') = 'testuser01@example.com'\r\n    or exists (\r\n      select 1 from public.app_admins\r\n      where profile_id = auth.uid()\r\n        and is_active = true\r\n    );\r\n$function$\n"
+    },
+    {
+      "proname": "can_view_friendly_team_event_by_sides",
+      "prosecdef": true,
+      "proacl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.can_view_friendly_team_event_by_sides(p_event_id uuid, p_created_by_auth_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_super_user()\r\n    or p_created_by_auth_user_id = auth.uid()\r\n    or exists (\r\n      select 1\r\n      from public.event_team_sides ets\r\n      join public.club_members cm on cm.club_id = ets.club_id\r\n      join public.player_profiles pp on pp.id = cm.player_profile_id\r\n      where ets.event_id = p_event_id\r\n        and cm.is_active = true\r\n        and pp.linked_auth_user_id = auth.uid()\r\n    )\r\n    or exists (\r\n      select 1\r\n      from public.event_team_sides ets\r\n      join public.club_members cm on cm.club_id = ets.club_id\r\n      where ets.event_id = p_event_id\r\n        and cm.is_active = true\r\n        and cm.profile_id = auth.uid()\r\n    );\r\n$function$\n"
+    },
+    {
+      "proname": "can_manage_friendly_team_event_by_sides",
+      "prosecdef": true,
+      "proacl": "{=X/postgres,postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+      "definition": "CREATE OR REPLACE FUNCTION public.can_manage_friendly_team_event_by_sides(p_event_id uuid, p_created_by_auth_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_super_user()\r\n    or p_created_by_auth_user_id = auth.uid()\r\n    or exists (\r\n      select 1\r\n      from public.event_team_sides ets\r\n      join public.club_members cm on cm.club_id = ets.club_id\r\n      join public.player_profiles pp on pp.id = cm.player_profile_id\r\n      where ets.event_id = p_event_id\r\n        and cm.is_active = true\r\n        and cm.role in ('main_admin', 'sub_admin')\r\n        and pp.linked_auth_user_id = auth.uid()\r\n    )\r\n    or exists (\r\n      select 1\r\n      from public.event_team_sides ets\r\n      join public.club_members cm on cm.club_id = ets.club_id\r\n      where ets.event_id = p_event_id\r\n        and cm.is_active = true\r\n        and cm.role in ('main_admin', 'sub_admin')\r\n        and cm.profile_id = auth.uid()\r\n    );\r\n$function$\n"
+    }
+  ],
+  "constraints": [
+    {
+      "table_name": "club_members",
+      "conname": "club_members_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "club_members",
+      "conname": "club_members_player_profile_id_fkey",
+      "definition": "FOREIGN KEY (player_profile_id) REFERENCES player_profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "club_members",
+      "conname": "club_members_profile_id_fkey",
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "clubs",
+      "conname": "clubs_main_facility_id_fkey",
+      "definition": "FOREIGN KEY (main_facility_id) REFERENCES padel_facilities(id)"
+    },
+    {
+      "table_name": "clubs",
+      "conname": "clubs_owner_id_fkey",
+      "definition": "FOREIGN KEY (owner_id) REFERENCES profiles(id)"
+    },
+    {
+      "table_name": "event_participants",
+      "conname": "event_participants_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_participants",
+      "conname": "event_participants_player_profile_id_fkey",
+      "definition": "FOREIGN KEY (player_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "event_participants",
+      "conname": "event_participants_profile_id_fkey",
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id)"
+    },
+    {
+      "table_name": "event_team_guests",
+      "conname": "event_team_guests_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_team_matches",
+      "conname": "event_team_matches_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_team_matches",
+      "conname": "event_team_matches_team_a_player1_profile_id_fkey",
+      "definition": "FOREIGN KEY (team_a_player1_profile_id) REFERENCES player_profiles(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "event_team_matches",
+      "conname": "event_team_matches_team_a_player2_profile_id_fkey",
+      "definition": "FOREIGN KEY (team_a_player2_profile_id) REFERENCES player_profiles(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "event_team_matches",
+      "conname": "event_team_matches_team_b_player1_profile_id_fkey",
+      "definition": "FOREIGN KEY (team_b_player1_profile_id) REFERENCES player_profiles(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "event_team_matches",
+      "conname": "event_team_matches_team_b_player2_profile_id_fkey",
+      "definition": "FOREIGN KEY (team_b_player2_profile_id) REFERENCES player_profiles(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "event_team_sides",
+      "conname": "event_team_sides_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "event_team_sides",
+      "conname": "event_team_sides_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_video_clicks",
+      "conname": "event_video_clicks_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_video_clicks",
+      "conname": "event_video_clicks_match_id_fkey",
+      "definition": "FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_video_clicks",
+      "conname": "event_video_clicks_round_id_fkey",
+      "definition": "FOREIGN KEY (round_id) REFERENCES rounds(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "event_video_link_clicks",
+      "conname": "event_video_link_clicks_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_video_link_clicks",
+      "conname": "event_video_link_clicks_event_video_link_id_fkey",
+      "definition": "FOREIGN KEY (event_video_link_id) REFERENCES event_video_links(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "event_video_links",
+      "conname": "event_video_links_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "events",
+      "conname": "events_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "join_requests",
+      "conname": "join_requests_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "join_requests",
+      "conname": "join_requests_consent_source_player_profile_id_fkey",
+      "definition": "FOREIGN KEY (consent_source_player_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "join_requests",
+      "conname": "join_requests_requester_player_profile_id_fkey",
+      "definition": "FOREIGN KEY (requester_player_profile_id) REFERENCES player_profiles(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "join_requests",
+      "conname": "join_requests_target_club_member_id_fkey",
+      "definition": "FOREIGN KEY (target_club_member_id) REFERENCES club_members(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "match_players",
+      "conname": "match_players_match_id_fkey",
+      "definition": "FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "match_players",
+      "conname": "match_players_participant_id_fkey",
+      "definition": "FOREIGN KEY (participant_id) REFERENCES event_participants(id)"
+    },
+    {
+      "table_name": "match_results",
+      "conname": "match_results_match_id_fkey",
+      "definition": "FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "matches",
+      "conname": "matches_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "matches",
+      "conname": "matches_round_id_fkey",
+      "definition": "FOREIGN KEY (round_id) REFERENCES rounds(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "notifications",
+      "conname": "notifications_related_club_id_fkey",
+      "definition": "FOREIGN KEY (related_club_id) REFERENCES clubs(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "notifications",
+      "conname": "notifications_related_join_request_id_fkey",
+      "definition": "FOREIGN KEY (related_join_request_id) REFERENCES join_requests(id) ON DELETE SET NULL"
+    },
+    {
+      "table_name": "notifications",
+      "conname": "notifications_related_profile_link_request_id_fkey",
+      "definition": "FOREIGN KEY (related_profile_link_request_id) REFERENCES player_profile_link_requests(id)"
+    },
+    {
+      "table_name": "official_events",
+      "conname": "official_events_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+    },
+    {
+      "table_name": "official_matches",
+      "conname": "official_matches_official_event_id_fkey",
+      "definition": "FOREIGN KEY (official_event_id) REFERENCES official_events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "official_matches",
+      "conname": "official_matches_official_opponent_id_fkey",
+      "definition": "FOREIGN KEY (official_opponent_id) REFERENCES official_opponents(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "official_matches",
+      "conname": "official_matches_our_player1_profile_id_fkey",
+      "definition": "FOREIGN KEY (our_player1_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "official_matches",
+      "conname": "official_matches_our_player2_profile_id_fkey",
+      "definition": "FOREIGN KEY (our_player2_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "official_opponents",
+      "conname": "official_opponents_official_event_id_fkey",
+      "definition": "FOREIGN KEY (official_event_id) REFERENCES official_events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "official_video_clicks",
+      "conname": "official_video_clicks_official_event_id_fkey",
+      "definition": "FOREIGN KEY (official_event_id) REFERENCES official_events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "official_video_clicks",
+      "conname": "official_video_clicks_official_match_id_fkey",
+      "definition": "FOREIGN KEY (official_match_id) REFERENCES official_matches(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "official_video_clicks",
+      "conname": "official_video_clicks_official_opponent_id_fkey",
+      "definition": "FOREIGN KEY (official_opponent_id) REFERENCES official_opponents(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "player_profile_link_requests",
+      "conname": "player_profile_link_requests_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+    },
+    {
+      "table_name": "player_profile_link_requests",
+      "conname": "player_profile_link_requests_expected_target_player_profil_fkey",
+      "definition": "FOREIGN KEY (expected_target_player_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "player_profile_link_requests",
+      "conname": "player_profile_link_requests_source_club_member_id_fkey",
+      "definition": "FOREIGN KEY (source_club_member_id) REFERENCES club_members(id)"
+    },
+    {
+      "table_name": "player_profile_link_requests",
+      "conname": "player_profile_link_requests_source_player_profile_id_fkey",
+      "definition": "FOREIGN KEY (source_player_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "player_profile_link_requests",
+      "conname": "player_profile_link_requests_target_auth_user_id_fkey",
+      "definition": "FOREIGN KEY (target_auth_user_id) REFERENCES auth.users(id)"
+    },
+    {
+      "table_name": "player_profile_merges",
+      "conname": "player_profile_merges_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id)"
+    },
+    {
+      "table_name": "player_profile_merges",
+      "conname": "player_profile_merges_join_request_id_fkey",
+      "definition": "FOREIGN KEY (join_request_id) REFERENCES join_requests(id)"
+    },
+    {
+      "table_name": "player_profile_merges",
+      "conname": "player_profile_merges_link_request_id_fkey",
+      "definition": "FOREIGN KEY (link_request_id) REFERENCES player_profile_link_requests(id)"
+    },
+    {
+      "table_name": "player_profile_merges",
+      "conname": "player_profile_merges_source_player_profile_id_fkey",
+      "definition": "FOREIGN KEY (source_player_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "player_profile_merges",
+      "conname": "player_profile_merges_target_player_profile_id_fkey",
+      "definition": "FOREIGN KEY (target_player_profile_id) REFERENCES player_profiles(id)"
+    },
+    {
+      "table_name": "player_stats",
+      "conname": "player_stats_club_id_fkey",
+      "definition": "FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "player_stats",
+      "conname": "player_stats_profile_id_fkey",
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "rounds",
+      "conname": "rounds_event_id_fkey",
+      "definition": "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE"
+    },
+    {
+      "table_name": "user_preferences",
+      "conname": "user_preferences_auth_user_id_fkey",
+      "definition": "FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE CASCADE"
+    }
+  ]
+}

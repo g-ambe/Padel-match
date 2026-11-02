@@ -1,0 +1,111 @@
+{
+  "engine": "@electric-sql/pglite@0.3.14",
+  "version": "PostgreSQL 17.5 on aarch64-unknown-linux-gnu, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 3.1.74 (1092ec30a3fb1d46b1782ff1b4db5094d3d06ae5), 32-bit",
+  "scope": "local synthetic data only; no Supabase API/Auth/production DML",
+  "results": [
+    {
+      "name": "baseline broad UPDATE permits outsider",
+      "status": "PASS"
+    },
+    {
+      "name": "apply actual SQL",
+      "status": "PASS"
+    },
+    {
+      "name": "linked main admin",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy main admin",
+      "status": "PASS"
+    },
+    {
+      "name": "sub admin",
+      "status": "PASS"
+    },
+    {
+      "name": "member",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive admin",
+      "status": "PASS"
+    },
+    {
+      "name": "outsider",
+      "status": "PASS"
+    },
+    {
+      "name": "owner of other group",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin",
+      "status": "PASS"
+    },
+    {
+      "name": "other group stays unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "anonymous denied",
+      "status": "PASS"
+    },
+    {
+      "name": "logical deletion allowed to main admin",
+      "status": "PASS"
+    },
+    {
+      "name": "owner change blocked by existing trigger",
+      "status": "PASS"
+    },
+    {
+      "name": "WITH CHECK rejects id reassignment",
+      "status": "PASS"
+    },
+    {
+      "name": "SELECT remains broad",
+      "status": "PASS"
+    },
+    {
+      "name": "INSERT and DELETE remain compatible",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply guard refuses without partial changes",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback exact baseline policies",
+      "status": "PASS"
+    },
+    {
+      "name": "apply drift guard rejects extra policy",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores prior broad access",
+      "status": "PASS"
+    },
+    {
+      "name": "apply after rollback",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback drift guard rejects extra policy",
+      "status": "PASS"
+    },
+    {
+      "name": "owner only has no UPDATE authority",
+      "status": "PASS"
+    },
+    {
+      "name": "existing JWT email super-user branch preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "verify SQL executes",
+      "status": "PASS"
+    }
+  ]
+}

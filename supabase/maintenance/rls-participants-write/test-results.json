@@ -1,0 +1,194 @@
+{
+  "engine": "PGlite 0.3.14",
+  "scope": "synthetic local only",
+  "results": [
+    {
+      "name": "baseline outsider could add and update",
+      "status": "PASS"
+    },
+    {
+      "name": "apply refuses policy drift atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "apply actual SQL",
+      "status": "PASS"
+    },
+    {
+      "name": "apply preserves all existing participant data",
+      "status": "PASS"
+    },
+    {
+      "name": "repeat apply refuses without partial changes",
+      "status": "PASS"
+    },
+    {
+      "name": "linked main admin guest add, rename, rest and restore",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy sub admin guest add, rename, rest and restore",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy member guest add, rename, rest and restore",
+      "status": "PASS"
+    },
+    {
+      "name": "linked member guest add, rename, rest and restore",
+      "status": "PASS"
+    },
+    {
+      "name": "app admin guest add, rename, rest and restore",
+      "status": "PASS"
+    },
+    {
+      "name": "existing email-based super-user capability preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive membership cannot add or update foreign event",
+      "status": "PASS"
+    },
+    {
+      "name": "other group admin cannot add or update foreign event",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated user cannot add or update foreign event",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated role without uid denied",
+      "status": "PASS"
+    },
+    {
+      "name": "anon INSERT and UPDATE denied by grants",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator can add self, guest and change state",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group outsider denied even if belongs elsewhere",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group legacy creator self profile accepted",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group cannot attach foreign member",
+      "status": "PASS"
+    },
+    {
+      "name": "guest cannot smuggle player reference",
+      "status": "PASS"
+    },
+    {
+      "name": "roster bulk inserts linked, provisional and legacy members",
+      "status": "PASS"
+    },
+    {
+      "name": "legacy roster profile-id fallback accepted",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign roster player denied",
+      "status": "PASS"
+    },
+    {
+      "name": "invalid player remains rejected by existing trigger",
+      "status": "PASS"
+    },
+    {
+      "name": "mismatched legacy account remains rejected",
+      "status": "PASS"
+    },
+    {
+      "name": "closed event roster auto-sync and historic inactive player status remain",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event insert and update denied",
+      "status": "PASS"
+    },
+    {
+      "name": "null and missing event cannot receive participants",
+      "status": "PASS"
+    },
+    {
+      "name": "team side manager existing capability preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "identity guard blocks id=10000000-0000-4000-8000-000000000999",
+      "status": "PASS"
+    },
+    {
+      "name": "identity guard blocks event_id=10000000-0000-4000-8000-000000000102",
+      "status": "PASS"
+    },
+    {
+      "name": "identity guard blocks event_id=10000000-0000-4000-8000-000000000105",
+      "status": "PASS"
+    },
+    {
+      "name": "identity guard blocks profile_id=10000000-0000-4000-8000-000000000001",
+      "status": "PASS"
+    },
+    {
+      "name": "identity guard blocks player_profile_id=10000000-0000-4000-8000-000000000201",
+      "status": "PASS"
+    },
+    {
+      "name": "identity guard blocks participant_type=member",
+      "status": "PASS"
+    },
+    {
+      "name": "parent event cannot be moved to evade participant checks",
+      "status": "PASS"
+    },
+    {
+      "name": "service maintenance can change references",
+      "status": "PASS"
+    },
+    {
+      "name": "definer linking-style updates bypass identity guard",
+      "status": "PASS"
+    },
+    {
+      "name": "anon shared-style read unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "DELETE compatibility intentionally unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "anon TRUNCATE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "authenticated TRUNCATE denied",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback refuses policy drift",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores original policies and truncate grants",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores original outsider writes",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply succeeds",
+      "status": "PASS"
+    }
+  ]
+}

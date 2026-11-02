@@ -1,0 +1,54 @@
+{
+  "project": "ntczrmvffmpjzilfebyi",
+  "scope": "GET only, no valid shared tokens or user sessions, no row values logged",
+  "checks": [
+    {
+      "name": "anonymous without token events",
+      "status": 200,
+      "passed": true,
+      "row_count": 0
+    },
+    {
+      "name": "anonymous without token event_participants",
+      "status": 200,
+      "passed": true,
+      "row_count": 0
+    },
+    {
+      "name": "anonymous without token rounds",
+      "status": 200,
+      "passed": true,
+      "row_count": 0
+    },
+    {
+      "name": "anonymous without token matches",
+      "status": 200,
+      "passed": true,
+      "row_count": 0
+    },
+    {
+      "name": "anonymous without token match_players",
+      "status": 200,
+      "passed": true,
+      "row_count": 0
+    },
+    {
+      "name": "anonymous without token match_results",
+      "status": 200,
+      "passed": true,
+      "row_count": 0
+    },
+    {
+      "name": "invalid token reveals no event",
+      "status": 200,
+      "passed": true,
+      "row_count": 0
+    },
+    {
+      "name": "anonymous cannot select internal memo",
+      "status": 401,
+      "passed": true,
+      "code": "42501"
+    }
+  ]
+}

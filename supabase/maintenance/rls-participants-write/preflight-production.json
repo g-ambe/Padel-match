@@ -1,0 +1,330 @@
+{
+  "acl": [
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "grantee": "postgres",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "grantee": "anon",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "grantee": "anon",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "grantee": "anon",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "grantee": "anon",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "grantee": "anon",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "grantee": "authenticated",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "INSERT"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "SELECT"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "UPDATE"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "DELETE"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "TRUNCATE"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "REFERENCES"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "TRIGGER"
+    },
+    {
+      "grantee": "service_role",
+      "grantable": false,
+      "privilege": "MAINTAIN"
+    }
+  ],
+  "counts": {
+    "all": 519,
+    "null_event": 0
+  },
+  "columns": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "default": "uuid_generate_v4()",
+      "nullable": "NO"
+    },
+    {
+      "name": "event_id",
+      "type": "uuid",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "name": "guest_name",
+      "type": "text",
+      "default": null,
+      "nullable": "YES"
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "default": null,
+      "nullable": "NO"
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "default": "now()",
+      "nullable": "YES"
+    },
+    {
+      "name": "participant_type",
+      "type": "text",
+      "default": "'guest'::text",
+      "nullable": "NO"
+    },
+    {
+      "name": "player_profile_id",
+      "type": "uuid",
+      "default": null,
+      "nullable": "YES"
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "((profile_id = auth.uid()) OR is_super_user())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "app_admins",
+      "permissive": "PERMISSIVE",
+      "policyname": "app_admins_read",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "club_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "club_members_insert",
+      "schemaname": "public",
+      "with_check": "(((EXISTS ( SELECT 1\n   FROM clubs c\n  WHERE ((c.id = club_members.club_id) AND (c.owner_id = auth.uid())))) AND (profile_id = auth.uid()) AND (role = 'main_admin'::text) AND (EXISTS ( SELECT 1\n   FROM player_profiles pp\n  WHERE ((pp.id = club_members.player_profile_id) AND (pp.linked_auth_user_id = auth.uid()) AND pp.is_active)))) OR (can_manage_player_profile_club(club_id) AND (profile_id IS NULL) AND (role = 'member'::text) AND (EXISTS ( SELECT 1\n   FROM player_profiles pp\n  WHERE ((pp.id = club_members.player_profile_id) AND (pp.linked_auth_user_id IS NULL) AND pp.is_active)))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "club_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "club_members_read",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "can_edit_player_profile_member(club_id, role)",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "club_members",
+      "permissive": "PERMISSIVE",
+      "policyname": "club_members_update",
+      "schemaname": "public",
+      "with_check": "can_edit_player_profile_member(club_id, role)"
+    },
+    {
+      "cmd": "ALL",
+      "qual": "true",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "event_participants",
+      "permissive": "PERMISSIVE",
+      "policyname": "dev_all_event_participants",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "is_super_user()",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "event_participants",
+      "permissive": "PERMISSIVE",
+      "policyname": "event_participants_super_user_select",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(is_active AND ((linked_auth_user_id = auth.uid()) OR ((linked_auth_user_id IS NULL) AND (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.player_profile_id = player_profiles.id) AND can_edit_player_profile_member(cm.club_id, cm.role)))))))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "player_profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "player_profiles_edit_details",
+      "schemaname": "public",
+      "with_check": "(is_active AND ((linked_auth_user_id = auth.uid()) OR ((linked_auth_user_id IS NULL) AND (EXISTS ( SELECT 1\n   FROM club_members cm\n  WHERE ((cm.player_profile_id = player_profiles.id) AND can_edit_player_profile_member(cm.club_id, cm.role)))))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(is_active OR (linked_auth_user_id = auth.uid()) OR is_super_user())",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "player_profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "player_profiles_read",
+      "schemaname": "public",
+      "with_check": null
+    }
+  ],
+  "triggers": [
+    "CREATE TRIGGER profile_link_participant_reference BEFORE INSERT OR UPDATE OF player_profile_id, profile_id ON public.event_participants FOR EACH ROW EXECUTE FUNCTION profile_link_private.guard_reference('player_profile_id')"
+  ],
+  "functions": [
+    {
+      "name": "is_super_user",
+      "definition": "CREATE OR REPLACE FUNCTION public.is_super_user()\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select coalesce(auth.jwt() ->> 'email', '') = 'testuser01@example.com'\r\n    or exists (\r\n      select 1 from public.app_admins\r\n      where profile_id = auth.uid()\r\n        and is_active = true\r\n    );\r\n$function$\n"
+    },
+    {
+      "name": "can_manage_friendly_team_event_by_sides",
+      "definition": "CREATE OR REPLACE FUNCTION public.can_manage_friendly_team_event_by_sides(p_event_id uuid, p_created_by_auth_user_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_super_user()\r\n    or p_created_by_auth_user_id = auth.uid()\r\n    or exists (\r\n      select 1\r\n      from public.event_team_sides ets\r\n      join public.club_members cm on cm.club_id = ets.club_id\r\n      join public.player_profiles pp on pp.id = cm.player_profile_id\r\n      where ets.event_id = p_event_id\r\n        and cm.is_active = true\r\n        and cm.role in ('main_admin', 'sub_admin')\r\n        and pp.linked_auth_user_id = auth.uid()\r\n    )\r\n    or exists (\r\n      select 1\r\n      from public.event_team_sides ets\r\n      join public.club_members cm on cm.club_id = ets.club_id\r\n      where ets.event_id = p_event_id\r\n        and cm.is_active = true\r\n        and cm.role in ('main_admin', 'sub_admin')\r\n        and cm.profile_id = auth.uid()\r\n    );\r\n$function$\n"
+    },
+    {
+      "name": "guard_reference",
+      "definition": "CREATE OR REPLACE FUNCTION profile_link_private.guard_reference()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\r\ndeclare column_name text; new_id uuid; old_id uuid; linked uuid; active boolean;\r\nbegin\r\n  foreach column_name in array TG_ARGV loop\r\n    new_id := (to_jsonb(new)->>column_name)::uuid;\r\n    old_id := case when TG_OP = 'UPDATE' then (to_jsonb(old)->>column_name)::uuid end;\r\n    if new_id is not null and (TG_OP = 'INSERT' or new_id is distinct from old_id) then\r\n      select linked_auth_user_id,is_active into linked,active from public.player_profiles where id = new_id for share;\r\n      if not found or not active then raise exception '無効化・統合済みの選手には新しい所属・参加・試合を追加できません'; end if;\r\n      if current_setting('role') in ('anon','authenticated') and TG_TABLE_NAME in ('club_members','event_participants') and (to_jsonb(new)->>'profile_id') is not null\r\n        and linked is distinct from (to_jsonb(new)->>'profile_id')::uuid then raise exception '旧profile_idと選手の連携アカウントが一致しません'; end if;\r\n    end if;\r\n  end loop;\r\n  return new;\r\nend $function$\n"
+    }
+  ],
+  "constraints": [
+    "FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE",
+    "CHECK ((((participant_type = 'member'::text) AND ((player_profile_id IS NOT NULL) OR (profile_id IS NOT NULL))) OR ((participant_type = 'guest'::text) AND (guest_name IS NOT NULL))))",
+    "CHECK ((participant_type = ANY (ARRAY['member'::text, 'guest'::text])))",
+    "PRIMARY KEY (id)",
+    "FOREIGN KEY (player_profile_id) REFERENCES player_profiles(id)",
+    "FOREIGN KEY (profile_id) REFERENCES profiles(id)",
+    "CHECK ((status = ANY (ARRAY['active'::text, 'resting'::text, 'absent'::text])))"
+  ]
+}

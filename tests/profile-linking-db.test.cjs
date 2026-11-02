@@ -70,7 +70,49 @@ async function prepare(db) {
 }
 async function fixture(run, extra = '', apply = true) {
   const db = new PGlite();
-  try { await prepare(db); if (extra) await db.exec(extra); if (apply) await db.exec(migration); await run(db); }
+  try {
+    await prepare(db); if (extra) await db.exec(extra); if (apply) await db.exec(migration);
+    if (process.env.PADEL_CLOSED_STATS_TEST === '1') {
+      // Align this fixture's broad grants with production, then exercise the real linking flow after closure.
+      await db.exec('revoke insert,update,delete on public.player_stats from anon');
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-player-stats/apply.sql'),'utf8'));
+    }
+    if (process.env.PADEL_PARTICIPANTS_WRITE_TEST === '1') {
+      await db.exec('revoke insert,update,delete on public.event_participants from anon');
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-events-identity/apply.sql'),'utf8'));
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-participants-write/apply.sql'),'utf8'));
+    }
+    if (process.env.PADEL_MATCH_DELETE_TEST === '1') {
+      assert.equal(process.env.PADEL_PARTICIPANTS_WRITE_TEST,'1','Participant-write prerequisite must be enabled');
+      const deleteEvidence=JSON.parse(readFileSync(join(__dirname,'../supabase/maintenance/rls-delete-batch/preflight-production.json'),'utf8'));
+      await db.exec('create role service_role bypassrls');
+      for (const table of ['event_participants','rounds','matches','match_players','match_results']) {
+        await db.exec('revoke all on '+table+' from anon,authenticated,service_role');
+      }
+      for (const grant of deleteEvidence.acl) await db.exec('grant '+grant.privilege+' on '+grant.table+' to '+grant.grantee);
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-delete-batch/apply.sql'),'utf8'));
+    }
+    if (process.env.PADEL_MATCH_WRITE_TEST === '1') {
+      assert.equal(process.env.PADEL_MATCH_DELETE_TEST,'1','Match-delete prerequisite must be enabled');
+      // This older linking fixture omits Round references; align it with the current production shape.
+      // Only synthetic rows are affected, before any linking-test baseline is captured.
+      for (const match of (await db.query('select id,event_id from matches where round_id is null')).rows) {
+        const round=(await db.query('insert into rounds(event_id,round_number) select $1,coalesce(max(round_number),0)+1 from rounds where event_id=$1 returning id',[match.event_id])).rows[0];
+        await db.query('update matches set round_id=$1 where id=$2',[round.id,match.id]);
+      }
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-match-write/apply.sql'),'utf8'));
+    }
+    if (process.env.PADEL_SELECT_SCOPE_TEST === '1') {
+      assert.equal(process.env.PADEL_MATCH_WRITE_TEST,'1','Match-write prerequisite must be enabled');
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-events-insert/apply.sql'),'utf8'));
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-events-update/apply.sql'),'utf8'));
+      const selectEvidence=JSON.parse(readFileSync(join(__dirname,'../supabase/maintenance/rls-select-batch/preflight-production.json'),'utf8'));
+      for (const table of ['events','event_participants','rounds','matches','match_players','match_results','event_team_sides','event_team_matches']) await db.exec('revoke all on '+table+' from anon,authenticated,service_role');
+      for (const grant of selectEvidence.acl) await db.exec('grant '+grant.privilege+' on '+grant.table+' to '+grant.grantee);
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-select-batch/apply.sql'),'utf8'));
+    }
+    await run(db);
+  }
   finally { await db.close(); }
 }
 async function asUser(db, uid, run, role = 'authenticated') {

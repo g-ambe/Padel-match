@@ -1,0 +1,250 @@
+{
+  "engine": "PGlite 0.3.14",
+  "scope": "synthetic local migrations and deployed write/delete prerequisites",
+  "results": [
+    {
+      "name": "baseline foreign event update was allowed",
+      "status": "PASS"
+    },
+    {
+      "name": "apply refuses disabled identity guard atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "apply actual SQL preserves data",
+      "status": "PASS"
+    },
+    {
+      "name": "main linked court count close reopen preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "sub legacy court count close reopen preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy court count close reopen preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked court count close reopen preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive cannot modify foreign normal event",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group cannot modify foreign normal event",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated cannot modify foreign normal event",
+      "status": "PASS"
+    },
+    {
+      "name": "uid missing cannot modify foreign normal event",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator manages own event",
+      "status": "PASS"
+    },
+    {
+      "name": "other account cannot modify no-group event",
+      "status": "PASS"
+    },
+    {
+      "name": "anon UPDATE remains denied by table grant",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field name",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field name",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field description",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field description",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field memo",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field memo",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field category",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field category",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field created_at",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field created_at",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field event_mode",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field event_mode",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field share_enabled",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field share_enabled",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field share_token",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field share_token",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field share_token_updated_at",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field share_token_updated_at",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field is_deleted",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field is_deleted",
+      "status": "PASS"
+    },
+    {
+      "name": "member 3 cannot alter management field deleted_at",
+      "status": "PASS"
+    },
+    {
+      "name": "member 4 cannot alter management field deleted_at",
+      "status": "PASS"
+    },
+    {
+      "name": "member cannot hide protected change in normal update",
+      "status": "PASS"
+    },
+    {
+      "name": "group admin 1 name and share updates preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "group admin 2 name and share updates preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin logical delete preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "normal member cannot update deleted event",
+      "status": "PASS"
+    },
+    {
+      "name": "team host ordinary member cannot update team event",
+      "status": "PASS"
+    },
+    {
+      "name": "team creator can close and logically delete event",
+      "status": "PASS"
+    },
+    {
+      "name": "team side admin can close share and logically delete event",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group team creator may delete event",
+      "status": "PASS"
+    },
+    {
+      "name": "super user 9 keeps event management",
+      "status": "PASS"
+    },
+    {
+      "name": "super user 10 keeps event management",
+      "status": "PASS"
+    },
+    {
+      "name": "existing identity guard still rejects id",
+      "status": "PASS"
+    },
+    {
+      "name": "existing identity guard still rejects club_id",
+      "status": "PASS"
+    },
+    {
+      "name": "existing identity guard still rejects created_by_auth_user_id",
+      "status": "PASS"
+    },
+    {
+      "name": "maintenance bypass remains",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-style SELECT remains for anon",
+      "status": "PASS"
+    },
+    {
+      "name": "helper schema and function unavailable to web roles",
+      "status": "PASS"
+    },
+    {
+      "name": "ordinary creator of group event still cannot rename it",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted team event cannot be restored by side admin",
+      "status": "PASS"
+    },
+    {
+      "name": "member workflow handles optimistic court update and close-reopen with score writes",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback refuses policy drift",
+      "status": "PASS"
+    },
+    {
+      "name": "repeat apply stops atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores policies and leaves data unchanged",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores foreign UPDATE behavior",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply works",
+      "status": "PASS"
+    }
+  ]
+}

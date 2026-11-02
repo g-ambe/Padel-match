@@ -1,0 +1,90 @@
+{
+  "engine": "PGlite 0.3.14",
+  "scope": "current SELECT policies plus actual page update payloads; synthetic data only",
+  "results": [
+    {
+      "name": "production guard reproduced before fix",
+      "status": "PASS"
+    },
+    {
+      "name": "apply changes guard only, not rows or policies or ACL",
+      "status": "PASS"
+    },
+    {
+      "name": "active member 3 auto rename/courts/close/reopen with exact page payload and reload",
+      "status": "PASS"
+    },
+    {
+      "name": "active member 3 manual rename/courts/close/reopen with exact page payload and reload",
+      "status": "PASS"
+    },
+    {
+      "name": "active member 4 auto rename/courts/close/reopen with exact page payload and reload",
+      "status": "PASS"
+    },
+    {
+      "name": "active member 4 manual rename/courts/close/reopen with exact page payload and reload",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive/foreign 5 cannot rename or close",
+      "status": "PASS"
+    },
+    {
+      "name": "inactive/foreign 6 cannot rename or close",
+      "status": "PASS"
+    },
+    {
+      "name": "anonymous cannot write",
+      "status": "PASS"
+    },
+    {
+      "name": "member still cannot alter share_enabled",
+      "status": "PASS"
+    },
+    {
+      "name": "member still cannot alter is_deleted",
+      "status": "PASS"
+    },
+    {
+      "name": "member still cannot alter club_id",
+      "status": "PASS"
+    },
+    {
+      "name": "member still cannot alter created_by_auth_user_id",
+      "status": "PASS"
+    },
+    {
+      "name": "member still cannot alter description",
+      "status": "PASS"
+    },
+    {
+      "name": "team host ordinary member remains unable to rename team event",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator and administrators retain rename",
+      "status": "PASS"
+    },
+    {
+      "name": "deleted event remains unavailable to member update",
+      "status": "PASS"
+    },
+    {
+      "name": "repeat apply detects drift",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores guard without changing rows/metadata",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback rejects member rename but preserves existing close/reopen",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply succeeds",
+      "status": "PASS"
+    }
+  ]
+}

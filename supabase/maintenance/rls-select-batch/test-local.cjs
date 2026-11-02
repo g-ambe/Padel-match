@@ -145,5 +145,6 @@ async function rawRows(){await db.exec('RESET ROLE');const o={};for(const t of t
  await test('rollback restores policies, effective ACL and helper without modifying rows',async()=>{const rows=await eventRows();await run('rollback.sql');assert.deepEqual(await state(),before);assert.deepEqual(await eventRows(),rows);});
  await test('rollback restores broad anonymous read',async()=>{await context(null,'anon');assert((await db.query('SELECT memo FROM events')).rows.length>1);});
  await test('reapply succeeds after removing column grants',()=>run('apply.sql'));
+ if(process.env.PADEL_MEMBER_CONTROLS_TEST==='1')await require('../event-member-controls/test-followup.cjs')({db,context,id});
  fs.writeFileSync(path.join(__dirname,'test-results.json'),JSON.stringify({engine:'PGlite 0.3.14',scope:'synthetic local actual migrations and all deployed write/delete prerequisites',results},null,2)+'\n');console.log(results.length+' PASS');
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{if(db)await db.close();});

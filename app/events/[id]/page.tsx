@@ -296,6 +296,7 @@ export default function EventDetailPage() {
     const isNoGroupCreator = !!uid && !event?.club_id && event?.created_by_auth_user_id === uid;
     let allowManageShare = superUser || isNoGroupCreator;
     let allowCopyShare = allowManageShare;
+    let allowOperateEvent = allowManageShare;
     if (uid && event?.club_id) {
       const { data: linkedProfiles } = await supabase.from("player_profiles").select("id").eq("linked_auth_user_id", uid);
       const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
@@ -309,6 +310,7 @@ export default function EventDetailPage() {
         memberRoles = data ?? [];
       }
       const roles = new Set(memberRoles.map((x: any) => x.role));
+      allowOperateEvent = allowOperateEvent || (memberRoles.length > 0 && ["auto", "manual"].includes(event.event_mode ?? "auto"));
       allowViewVideoClickCounts = allowViewVideoClickCounts || roles.has("main_admin");
       allowManageShare = allowManageShare || roles.has("main_admin") || roles.has("sub_admin");
       allowManageEventVideos = allowManageEventVideos || roles.has("main_admin") || roles.has("sub_admin");
@@ -317,7 +319,7 @@ export default function EventDetailPage() {
     setCanViewVideoClickCounts(allowViewVideoClickCounts);
     setCanManageShare(allowManageShare);
     setCanManageEventVideos(allowManageEventVideos);
-    setCanManageEventName(allowManageEventVideos);
+    setCanManageEventName(allowManageEventVideos || allowOperateEvent);
     setCanCopyShare(allowCopyShare);
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
@@ -521,8 +523,8 @@ export default function EventDetailPage() {
     if (!canManageEventName) return setError("この操作を行う権限がありません");
     const supabase = getSupabaseClient();
     if (!supabase) return;
-    const { error: e } = await supabase.from("events").update({ name: nextName, updated_at: new Date().toISOString() }).eq("id", eventId);
-    if (e) return setError("更新に失敗しました");
+    const { data: saved, error: e } = await supabase.from("events").update({ name: nextName, updated_at: new Date().toISOString() }).eq("id", eventId).eq("is_deleted", false).select("id").single();
+    if (e || saved?.id !== eventId) return setError("更新に失敗しました。所属状態を確認し、再読み込みしてお試しください");
     setEventName(nextName);
     setIsEditingEventName(false);
     setMessage("更新しました");
@@ -753,7 +755,7 @@ export default function EventDetailPage() {
       .from("events")
       .update({ status: "closed", closed_at: new Date().toISOString(), stats_mode: eventMode === "manual" ? closeStatsMode : "official" })
       .eq("id", eventId).eq("is_deleted", false).select("id").single();
-    if (closeError) return setError("イベントの終了に失敗しました");
+    if (closeError) { console.error("イベント終了の保存失敗", { code: closeError.code, message: closeError.message }); return setError("イベントの終了に失敗しました。再読み込みし、所属状態と保存済みスコアを確認してください"); }
     scoreQueue.invalidateReads(scoreScope);setEventStatus("closed");
     setShowCloseModal(false);
     await loadAll();
@@ -774,7 +776,7 @@ export default function EventDetailPage() {
     if (!supabase || !eventId) return;
     const { error: reopenError } = await supabase.from("events").update({ status: "active", stats_mode: eventMode === "manual" ? "undecided" : "official" })
       .eq("id", eventId).eq("is_deleted", false).select("id").single();
-    if (reopenError) return setError("イベントの再開に失敗しました");
+    if (reopenError) { console.error("イベント再開の保存失敗", { code: reopenError.code, message: reopenError.message }); return setError("イベントの再開に失敗しました。再読み込みし、所属状態を確認してください"); }
     scoreQueue.invalidateReads(scoreScope);setEventStatus("active");
     await loadAll();
   };

@@ -17,3 +17,8 @@
 既存33操作には追加計上しない別のWeb改善課題。公式戦とフレンドリーマッチの共有画面は異なるため、実装時に対象画面を確定する。
 
 GitHub課題：[#171](https://github.com/g-ambe/Padel-match/issues/171)。ユーザー指定により今回のRLS履歴保存から切り離し、後続の対応として管理する。
+
+
+## 後続の対応状況
+
+別ブランチcodex/event-controls-shared-participantsで実装と検証を準備。詳細はsupabase/maintenance/event-member-controls/README.mdを参照。本番の追加変更・実操作確認は未実施で、課題は未完了のまま維持する。

@@ -26,7 +26,7 @@ Next.js本番ビルドも成功。初回はNext.js設定ファイルへの権限
 
 2026-11-02、本番Data APIへOPTIONSだけを送り、Access-Control-Allow-Headersにx-padel-share-tokenが含まれることを確認した。ブラウザのCORS確認であり、ユーザーデータの取得・変更は行っていない。
 
-## 後続SQLの方針（セット07準備済み・本番未適用）
+## 後続SQLの方針（セット07本番適用済み・画面確認待ち）
 
 - 所属中メンバー、グループなし開催作成者、既存スーパー管理者、チーム開催の閲覧者は維持。
 - 共有は、終了済み・共有ON・未削除に加え、提示されたトークンと対象開催の一致を要求する。共有用クライアントはanonなので、ログイン状態による挙動差をなくす。
@@ -38,6 +38,6 @@ Next.js本番ビルドも成功。初回はNext.js設定ファイルへの権限
 
 セット07としてsupabase/maintenance/rls-select-batchに変更SQL・切り戻しSQL・検証SQLと結果を用意した。専用176項目＋本人連携実SQL5項目＝181項目成功。本番では事前ガードだけをREAD ONLYで実行して成功した。主6表に加え、閲覧の根拠となるチーム設定を不正追加して権限を作る迂回を防ぐため、event_team_sides/event_team_matchesの既存WITH CHECKを補助修正する案も含める。元の33項目には追加計上せず別記する。
 
-2026-11-02、ユーザー提供の https://padel-match.ranbo-ga.workers.dev/ の公開HTML・共有ページのJavaScriptを読み取り、トークン送信とセッション分離の配信反映を確認した。deployment-verification.jsonへ証拠を保存。補助修正も含む明示承認後に、DB定義を再確認して適用する。先行アプリ変更だけでデータベースの一覧取得制限が完了したとは扱わない。
+2026-11-02、ユーザー提供の https://padel-match.ranbo-ga.workers.dev/ の公開HTML・共有ページのJavaScriptを読み取り、トークン送信とセッション分離の配信反映を確認した。deployment-verification.jsonへ証拠を保存。その後、補助修正を含む明示承認を得てDB定義を再確認し、restrict_event_scope_select_and_shared_tokensを本番適用した。13比較と匿名GET8項目が全て成功。ポリシー・ACL・関数・件数の前後比較とAPI結果はproduction-application.json/production-http-verification.jsonへ保存。現在は画面確認待ちで、確認後32/33＋別タスク保留1項目とする。
 
 参考：[Supabaseのリクエスト情報とAPI保護](https://supabase.com/docs/guides/api/securing-your-api)。共有ヘッダーはData APIで検証し、Realtime等へ同じ動作を推定しない。

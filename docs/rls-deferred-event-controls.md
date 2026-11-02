@@ -26,3 +26,6 @@ app/events/[id]/page.tsxのコート数ボタン表示、openCourtDialog、saveC
 - 一般メンバーの画面表示と保存処理、再読込後の維持を実操作で確認する。
 
 進捗は32/33完了。events UPDATE1項目はDB検証・本番適用済み、実操作確認保留として残す。完了したSELECT6項目と重複計上しない。
+
+
+GitHub課題：[#170](https://github.com/g-ambe/Padel-match/issues/170)。ユーザー指定により今回のRLS履歴保存から切り離し、後続の対応として管理する。

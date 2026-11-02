@@ -19,6 +19,9 @@ import { FRIENDLY_MODE_UNLOCK_MATCHES, friendlyRoundModes, generateFriendlyRound
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { readEventCourts, saveEventCourts, validCourtCount } from "@/lib/event-courts";
 import { fetchBalancePastStats } from "@/lib/friendly-balance-history";
+import { EventFixedPairs } from "@/components/event-fixed-pairs";
+import { generateFriendlyRoundWithFixedPairs, type FixedPair } from "@/lib/friendly-fixed-pairs";
+import { readEventFixedPairs, saveEventFixedPairs, createEventFixedRound, finishEventWithFixedPairs, readPendingFixedRound, storePendingFixedRound, FixedPairRequestError, type FixedPairState, type FixedRoundRequest } from "@/lib/event-fixed-pairs";
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
 type TeamResult = "A" | "B" | "draw";
@@ -59,7 +62,7 @@ export default function EventDetailPage() {
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [eventName, setEventName] = useState("-");
   const [courtCount, setCourtCount] = useState(1);
-  const boardOperation = useRef<"court" | "round" | "delete" | null>(null);
+  const boardOperation = useRef<"court" | "round" | "delete" | "fixed" | null>(null);
   const courtDialogRequest = useRef(0);
   const [showCourtDialog, setShowCourtDialog] = useState(false);
   const [courtDraft, setCourtDraft] = useState(1);
@@ -105,6 +108,18 @@ export default function EventDetailPage() {
   const [roundModeSelection, setRoundModeSelection] = useState<{ eventId: string; userId: string; mode: FriendlyRoundMode }>({ eventId: "", userId: "", mode: "normal" });
   const [eventMode, setEventMode] = useState<EventMode>("auto");
   const [eventClubId, setEventClubId] = useState<string | null>(null);
+  const [fixedState, setFixedState] = useState<FixedPairState | null>(null);
+  const [fixedError, setFixedError] = useState("");
+  const [fixedSaving, setFixedSaving] = useState(false);
+  const [fixedCloseChoice, setFixedCloseChoice] = useState<"official" | "record_only" | null>(null);
+  const pendingFixedRound = useRef<FixedRoundRequest | null>(null);
+  const pendingFixedOwner = useRef<string | null>(null);
+  const fixedScope = useRef("");
+  fixedScope.current = `${roundUserId ?? ""}:${eventId}`;
+  const fixedOwner = useRef<string | null>(null);
+  const scopedFixedState = fixedState?.event_id === eventId && fixedOwner.current === roundUserId ? fixedState : null;
+  const fixedFeature = !guestMode && eventMode === "auto" && !!eventClubId;
+  const usedFixedPairs = fixedFeature && !!scopedFixedState?.used_fixed_pairs;
   const [statsMode, setStatsMode] = useState<StatsMode>("official");
   const [closeStatsMode, setCloseStatsMode] = useState<StatsMode>("official");
   const [manualDrafts, setManualDrafts] = useState<ManualMatchDraft[]>([]);
@@ -321,6 +336,10 @@ export default function EventDetailPage() {
     setCanManageEventVideos(allowManageEventVideos);
     setCanManageEventName(allowManageEventVideos || allowOperateEvent);
     setCanCopyShare(allowCopyShare);
+    if (uid && event?.club_id && (event.event_mode ?? "auto") === "auto") {
+      try { const current = await readEventFixedPairs(supabase, eventId); fixedOwner.current = uid; setFixedState(current); setFixedError(""); }
+      catch (cause) { setFixedState(null); setFixedError(cause instanceof Error ? cause.message : "固定ペア設定を確認できませんでした"); }
+    } else { setFixedState(null); setFixedError(""); }
 
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
     if (event?.club_id) {
@@ -730,6 +749,36 @@ export default function EventDetailPage() {
 
   const scrollToResults = () => requestAnimationFrame(() => document.getElementById("event-results")?.scrollIntoView({ behavior: "smooth", block: "start" }));
 
+  const reloadFixedPairs = async () => {
+    const supabase = getSupabaseClient(), scope = fixedScope.current;
+    if (!supabase || !eventId || !fixedFeature) return;
+    try { const current = await readEventFixedPairs(supabase, eventId); if (scope === fixedScope.current) { fixedOwner.current = roundUserId; setFixedState(current); setFixedError(""); } }
+    catch (cause) { if (scope === fixedScope.current) { setFixedState(null); setFixedError(cause instanceof Error ? cause.message : "固定設定を確認できませんでした"); } }
+  };
+  const saveFixedPairs = async (pairs: FixedPair[]) => {
+    const supabase = getSupabaseClient(), scope = fixedScope.current;
+    if (!supabase || !scopedFixedState || !fixedFeature || eventStatus !== "active" || boardOperation.current || closingEvent.current) return false;
+    boardOperation.current = "fixed"; setFixedSaving(true); setFixedError(""); setMessage("");
+    try {
+      const current = await saveEventFixedPairs(supabase, scopedFixedState, pairs, crypto.randomUUID());
+      if (scope !== fixedScope.current) return false;
+      setFixedState(current); setMessage("固定ペア設定を保存しました。次Roundから反映します"); return true;
+    } catch (cause) { if (scope === fixedScope.current) setFixedError(cause instanceof Error ? cause.message : "固定ペアの保存に失敗しました"); return false; }
+    finally { boardOperation.current = null; setFixedSaving(false); }
+  };
+  const openCloseEvent = async () => {
+    if (boardOperation.current || closingEvent.current) return;
+    const supabase = getSupabaseClient(), scope = fixedScope.current;
+    if (fixedFeature && supabase && eventId) {
+      try {
+        const current = await readEventFixedPairs(supabase, eventId);
+        if (scope !== fixedScope.current) return;
+        fixedOwner.current = roundUserId; setFixedState(current); setFixedCloseChoice(null);
+      } catch (cause) { setError(cause instanceof Error ? cause.message : "固定ペアの利用状況を確認できませんでした"); return; }
+    }
+    setShowCloseModal(true);
+  };
+
   const closeEvent = async () => {
     if (closingEvent.current) return;
     if (boardOperation.current) return setError("Round生成・削除・コート数保存の完了後に終了してください");
@@ -751,6 +800,15 @@ export default function EventDetailPage() {
     }
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
+    if (fixedFeature) {
+      const current = await readEventFixedPairs(supabase, eventId);
+      fixedOwner.current = roundUserId; setFixedState(current);
+      if (current.used_fixed_pairs && !fixedCloseChoice) return setError("このイベントの戦績反映方法を選択してください");
+      if (current.used_fixed_pairs) {
+        await finishEventWithFixedPairs(supabase, current, true, fixedCloseChoice!);
+        scoreQueue.invalidateReads(scoreScope); setEventStatus("closed"); setShowCloseModal(false); await loadAll(); scrollToResults(); return;
+      }
+    }
     const { error: closeError } = await supabase
       .from("events")
       .update({ status: "closed", closed_at: new Date().toISOString(), stats_mode: eventMode === "manual" ? closeStatsMode : "official" })
@@ -760,9 +818,22 @@ export default function EventDetailPage() {
     setShowCloseModal(false);
     await loadAll();
     scrollToResults();
-    } finally { closingEvent.current = false; setIsClosingEvent(false); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "終了処理に失敗しました"); }
+    finally { closingEvent.current = false; setIsClosingEvent(false); }
   };
   const reopenEvent = async () => {
+    if (boardOperation.current || closingEvent.current) return;
+    if (fixedFeature && eventId) {
+      const supabase = getSupabaseClient(); if (!supabase) return;
+      closingEvent.current = true; setIsClosingEvent(true);
+      try {
+        const current = await readEventFixedPairs(supabase, eventId);
+        const saved = await finishEventWithFixedPairs(supabase, current, false);
+        scoreQueue.invalidateReads(scoreScope); setEventStatus("active"); setStatsMode(saved.stats_mode); await loadAll();
+      } catch (cause) { setError(cause instanceof Error ? cause.message : "再開処理に失敗しました"); }
+      finally { closingEvent.current = false; setIsClosingEvent(false); }
+      return;
+    }
     if (guestMode && eventId) {
       const ge = getGuestEvent(eventId);
       if (!ge) return;
@@ -1077,6 +1148,16 @@ export default function EventDetailPage() {
 
     try {
     if (!roundUserId) throw new Error("ログインしてからRoundを生成してください");
+    const pending = pendingFixedOwner.current === roundUserId && pendingFixedRound.current?.eventId === eventId ? pendingFixedRound.current : readPendingFixedRound(roundUserId, eventId);
+    if (pending) {
+      try { await createEventFixedRound(supabase, pending); }
+      catch (cause) {
+        if (cause instanceof FixedPairRequestError && cause.definitelyRejected) { pendingFixedRound.current = null; storePendingFixedRound(roundUserId, eventId, null); }
+        throw cause;
+      }
+      pendingFixedRound.current = null; storePendingFixedRound(roundUserId, eventId, null);
+      await loadAll(); setMessage("前回生成したRoundの保存を確認しました"); return;
+    }
     const requestedMode = selectedRoundMode;
     // 実行時の状態・参加者・スコアを確認する。履歴取得は既存の問い合わせを拡張する。
     const [eventResult, roundsResult, matchesResult, participantsResult] = await Promise.all([
@@ -1111,9 +1192,25 @@ export default function EventDetailPage() {
     const activeIds = (participantsResult.data ?? []).filter(p => p.status === "active" && (p.participant_type === "guest" || !currentEvent.club_id || memberIds.has(p.player_profile_id ?? p.profile_id))).map(p => p.id as string);
     const playedToday = requestedMode === "balance" ? new Set(scoredFriendlyMatches(eventId, historyMatches, knownIds).flatMap(match => match.players.map(p => p.participant_id))) : null;
     const pastFormStats = requestedMode === "balance" ? await fetchBalancePastStats(supabase, { id: eventId, club_id: currentEvent.club_id, created_at: currentEvent.created_at }, (participantsResult.data ?? []).filter(p => activeIds.includes(p.id) && playedToday?.has(p.id))) : undefined;
-    const generated = generateFriendlyRound({ eventId, participantIds: activeIds, knownParticipantIds: knownIds, courtCount: currentEvent.court_count, lastRound: lastRoundNumber, history: historyMatches, mode: requestedMode, pastFormStats });
+    const currentFixed = currentEvent.club_id ? await readEventFixedPairs(supabase, eventId, true) : null;
+    if (currentFixed) { setFixedState(currentFixed); setFixedError(""); }
+    const generationInput = { eventId, participantIds: activeIds, knownParticipantIds: knownIds, courtCount: currentEvent.court_count, lastRound: lastRoundNumber, history: historyMatches, mode: requestedMode, pastFormStats };
+    const generated = currentFixed?.pairs.length
+      ? generateFriendlyRoundWithFixedPairs({ ...generationInput, fixedPairs: currentFixed.pairs, eligibleRounds: currentFixed.eligible_rounds })
+      : generateFriendlyRound(generationInput);
     const bestMatches = generated.matches;
 
+    if (currentFixed) {
+      const request: FixedRoundRequest = { eventId, revision: currentFixed.revision, lastRound: lastRoundNumber, courtCount: currentEvent.court_count, mode: requestedMode, activeIds, matches: bestMatches, requestId: crypto.randomUUID() };
+      pendingFixedOwner.current = roundUserId; pendingFixedRound.current = request; storePendingFixedRound(roundUserId, eventId, request);
+      try { await createEventFixedRound(supabase, request); }
+      catch (cause) {
+        if (cause instanceof FixedPairRequestError && cause.definitelyRejected) { pendingFixedRound.current = null; storePendingFixedRound(roundUserId, eventId, null); }
+        throw cause;
+      }
+      pendingFixedRound.current = null; storePendingFixedRound(roundUserId, eventId, null);
+      await loadAll(); return;
+    }
     const roundNumber = lastRoundNumber + 1;
     const { data: round, error: roundInsertError } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
     if (roundInsertError?.code === "23505") {
@@ -1519,7 +1616,7 @@ export default function EventDetailPage() {
       )}
           {showCourtWarning && <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>}
           {eventStatus !== "closed" && <div className="space-y-2 border-t border-zinc-700 pt-3">
-            <button className="min-h-11 w-full rounded-xl border border-zinc-500 px-3 py-2 text-sm font-semibold disabled:opacity-50" onClick={() => setShowCloseModal(true)} disabled={isClosingEvent}>イベント終了</button>
+            <button className="min-h-11 w-full rounded-xl border border-zinc-500 px-3 py-2 text-sm font-semibold disabled:opacity-50" onClick={() => void openCloseEvent()} disabled={isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch}>イベント終了</button>
             <p className="text-xs text-zinc-400">終了後、ランキング・MVP・結果共有を確認できます</p>
             {unsavedScoreCount > 0 && <p role="status" className="text-xs text-amber-300">保存中・保存失敗のスコアが{unsavedScoreCount}件あります。保存完了・再試行後に次Round生成・終了できます。</p>}
           </div>}
@@ -1528,6 +1625,7 @@ export default function EventDetailPage() {
 
       <Card title="参加者">
         {eventStatus === "closed" && <p className="mb-2 text-sm text-zinc-300">この開催は終了済みです</p>}
+        {usedFixedPairs && eventStatus === "closed" && <p className="mb-2 text-sm text-zinc-300">戦績反映：{statsMode === "record_only" ? "このイベント内だけに保存" : statsMode === "official" ? "グループ通算戦績に反映" : "未選択"}</p>}
         <ul className="space-y-2">
           {participants.map((p) => (
             <li key={p.id} className="rounded-xl bg-zinc-800 p-3">
@@ -1537,7 +1635,7 @@ export default function EventDetailPage() {
                   type="button"
                   aria-label="参加状態切替"
                   onClick={() => updateStatus(p.id, p.status !== "active")}
-                  disabled={eventStatus === "closed"}
+                  disabled={eventStatus === "closed" || fixedSaving || isGeneratingRound || isClosingEvent}
                   className={`relative h-8 w-20 shrink-0 rounded-full px-1 transition ${p.status === "active" ? "bg-lime-500" : "bg-zinc-300"}`}
                 >
                   <span className={`absolute top-1 h-6 w-6 rounded-full bg-white transition ${p.status === "active" ? "right-1" : "left-1"}`} />
@@ -1562,6 +1660,7 @@ export default function EventDetailPage() {
             </li>
           ))}
         </ul>
+        {fixedFeature && <EventFixedPairs key={`${roundUserId}:${eventId}`} people={participants.map(p => ({ id: p.id, name: participantLabel(p), guest: p.participant_type === "guest", status: p.status }))} activeIds={candidateParticipants.map(p => p.id)} snapshot={scopedFixedState} error={fixedError} busy={fixedSaving || isGeneratingRound || isClosingEvent || courtSaving || isDeletingMatch} closed={eventStatus === "closed"} onSave={saveFixedPairs} onReload={reloadFixedPairs} />}
       </Card>
 
       
@@ -1608,7 +1707,7 @@ export default function EventDetailPage() {
 
       {eventStatus === "closed" && <Card title="開催操作">
         <p className="text-sm text-zinc-300">この開催は終了しました</p>
-        <button className="mt-2 min-h-11 w-full rounded-xl border border-zinc-500 py-3" onClick={reopenEvent}>イベント再開</button>
+        <button className="mt-2 min-h-11 w-full rounded-xl border border-zinc-500 py-3" disabled={isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch} onClick={reopenEvent}>イベント再開</button>
         {canDeleteEvent && <button className="mt-2 min-h-11 w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
       </Card>}
 
@@ -1643,6 +1742,11 @@ export default function EventDetailPage() {
             <p className="text-sm text-zinc-300">未確定の試合：{matches.filter(match => !hasEnteredFriendlyMatchScore(match)).length}件。未確定試合は正式な結果集計に含まれません。</p>
             {unsavedScoreCount > 0 && <p role="alert" className="text-sm text-amber-300">保存中・保存失敗のスコアがあります。保存完了・再試行後に終了してください。</p>}
             {(isGeneratingRound || courtSaving || isDeletingMatch) && <p role="alert" className="text-sm text-amber-300">Round生成・削除・コート数保存の完了後に終了してください。</p>}
+            {usedFixedPairs && <div className="space-y-2 rounded-xl bg-zinc-800 p-3 text-sm">
+              <p className="font-semibold">このイベントの戦績をどう扱いますか？</p>
+              <label className="flex min-h-12 items-center gap-3"><input type="radio" name="fixed_stats_mode" disabled={isClosingEvent} checked={fixedCloseChoice === "record_only"} onChange={() => setFixedCloseChoice("record_only")} /><span>このイベント内だけに保存<small className="mt-1 block text-zinc-300">当日の結果は残しますが、通算戦績には反映しません。</small></span></label>
+              <label className="flex min-h-12 items-center gap-3"><input type="radio" name="fixed_stats_mode" disabled={isClosingEvent} checked={fixedCloseChoice === "official"} onChange={() => setFixedCloseChoice("official")} /><span>グループ通算戦績に反映<small className="mt-1 block text-zinc-300">当日の結果をグループの通算ランキングにも反映します。</small></span></label>
+            </div>}
             {eventMode === "manual" && (
               <div className="mb-4 space-y-2 rounded-xl bg-zinc-800 p-3 text-sm">
                 <p className="font-semibold">このイベントの結果をグループ戦績に反映しますか？</p>
@@ -1652,7 +1756,7 @@ export default function EventDetailPage() {
             )}
             <div className="flex gap-2">
               <button className="w-1/2 rounded-xl border border-zinc-600 py-3" disabled={isClosingEvent} onClick={() => setShowCloseModal(false)}>キャンセル</button>
-              <button className="w-1/2 rounded-xl bg-accent py-3 font-semibold text-black disabled:opacity-40" disabled={isClosingEvent || isGeneratingRound || courtSaving || isDeletingMatch || unsavedScoreCount > 0} onClick={() => void closeEvent()}>{isClosingEvent ? "終了中…" : "終了する"}</button>
+              <button className="w-1/2 rounded-xl bg-accent py-3 font-semibold text-black disabled:opacity-40" disabled={isClosingEvent || isGeneratingRound || courtSaving || isDeletingMatch || fixedSaving || unsavedScoreCount > 0 || (usedFixedPairs && !fixedCloseChoice)} onClick={() => void closeEvent()}>{isClosingEvent ? "終了中…" : "終了する"}</button>
             </div>
           </div>
       </AppDialog>

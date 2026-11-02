@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Card } from "@/components/ui";
 import { SharedPageHeader } from "@/components/shared-page-header";
 import { getSupabaseClient } from "@/lib/supabase";
+import { getSharedEventClient } from "@/lib/shared-event-client";
 import { hasEnteredFriendlyMatchScore, isFriendlyMatchDraw } from "@/lib/friendly-match-results";
 
 type Row = { name: string; played: number; wins: number; losses: number; draws: number; scored: number; conceded: number; winRate: number; diff: number; matchPoints: number };
@@ -41,7 +42,8 @@ export default function SharedEventPage() {
   const [openRankingSections, setOpenRankingSections] = useState<Record<SharedRankingSectionKey, boolean>>({ wins: false, winRate: false, diff: false, mvp: false });
 
   useEffect(() => { void (async () => {
-    const supabase = getSupabaseClient(); if (!supabase || !token) return;
+    const supabase = getSharedEventClient(token);
+    if (!supabase) return setError("この共有リンクは無効です");
     const logSharedLoadError = (label: string, error: any) => {
       console.error(label, { message: error?.message, code: error?.code, details: error?.details, hint: error?.hint });
     };

@@ -1,8 +1,22 @@
-# セット07：閲覧6操作とチーム認可の補助修正（準備済み・本番未適用）
+# セット07：閲覧6操作とチーム認可の補助修正（本番適用済み・画面確認待ち）
 
 2026-11-02。推奨Sol・中。対象padel-hub / ntczrmvffmpjzilfebyi。
 対象SELECTはevents/event_participants/rounds/matches/match_players/match_resultsの6操作。現在26/33、本セットの適用・確認後32/33となる。events UPDATEの実操作とWeb側の操作権限1項目はユーザー指定で保留中。
-今回の補助修正は対象外2テーブルevent_team_sides/event_team_matchesの既存manageポリシーのWITH CHECK。33項目の分母に混ぜず、補助対策として明示する。本番適用にはこれらも含む明示承認を得る。
+今回の補助修正は対象外2テーブルevent_team_sides/event_team_matchesの既存manageポリシーのWITH CHECK。33項目の分母に混ぜず、補助対策として明示する。これらも含む明示承認後に2026-11-02、本番適用した。
+
+## 本番適用結果
+
+restrict_event_scope_select_and_shared_tokens成功。直前の全スナップショットは準備時から差分なし。事前ガードをREAD ONLYで通した後に適用した。
+
+適用後13比較が全て成功。ポリシー/テーブルACL/列ACLは検証時の期待定義と一致。既存件数、RLS、トリガー、制約、他表のポリシー/ACLは不変。関数は予定したcan_view_friendly_team_event_by_sidesの本体だけが変わり、所有者/ACL/設定等は不変。テーブル・列の実効権限も期待どおりだった。Security Advisorsの追加・削除指摘なし。
+
+rollback.sqlの事前ガードを本番READ ONLYで実行し成功。切り戻し本体は未実施。production-application.jsonに前後の状態を保存した。
+
+本番Data APIへの読取り専用GET8項目も成功。匿名のトークンなしで対象6表が全てHTTP200/0件、不正トークンでeventsが0件、内部メモ列はHTTP401/42501で拒否。実ユーザーのセッションや有効共有トークンは使わず、行の値は記録していない。公開キーだけを使用し、一時キーファイルは削除した。production-http-verification.jsonを参照。
+
+件数はevents77、参加者532、Round256、試合406、選手枠1624、結果368、チーム設定6、チーム試合3で不変。本番データへのINSERT/UPDATE/DELETE/TRUNCATE試験は行っていない。
+
+現在26/33完了＋6項目の画面確認待ち＋別タスク保留1項目。今回の画面確認後32/33に計上する。
 
 ## 実操作への影響
 

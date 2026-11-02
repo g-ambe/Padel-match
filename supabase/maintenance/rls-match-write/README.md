@@ -1,4 +1,4 @@
-# セット05：試合データ4テーブルのINSERT/UPDATE（本番適用済み・画面確認待ち）
+# セット05：試合データ4テーブルのINSERT/UPDATE（本番適用・画面確認済み）
 
 推奨Sol・中。対象padel-hub / ntczrmvffmpjzilfebyi。2026-10-30。
 対象はrounds、matches、match_players、match_resultsの作成/更新8操作。現在18/33、適用・確認後26/33。残りは開催eventsのUPDATE1項目とSELECT6項目。
@@ -14,7 +14,7 @@ restrict_match_data_insert_updateは成功。直前のverify.sql結果は準備�
 
 rollback.sqlの事前ガードも本番READ ONLYで成功した。切り戻し本体は未実施。Security Advisorsの追加・削除指摘なし。本番データに対するINSERT/UPDATE/DELETE/TRUNCATEの試験は行っていない。
 
-production-application.jsonに前後の定義と確認結果を保存。現在18/33完了＋8項目画面確認待ち。2経路の確認後に26/33として計上する。
+production-application.jsonに前後の定義と確認結果を保存。2026-11-02、ユーザーが自動生成での4選手枠・初回スコア保存/修正後の再読込、手動作成・未採点試合の選手変更後の4枠/変更内容の再読込を全て確認した。8項目を完了計上し26/33、残り7項目。切り戻し不要。
 
 ## 実操作への影響
 

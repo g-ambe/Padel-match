@@ -3601,5 +3601,10 @@
   },
   "production_data_write_tests_performed": false,
   "rollback_executed": false,
-  "user_ui_check": "pending"
+  "user_ui_check": {
+    "status": "passed",
+    "date": "2026-11-02",
+    "reported_by": "user",
+    "checks": ["自動Round生成・4選手枠・スコア保存/修正後の再読込", "手動試合作成・未採点の選手変更後の4枠と変更内容の再読込"]
+  }
 }

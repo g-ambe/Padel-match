@@ -895,5 +895,13 @@
   },
   "production_data_write_tests_performed": false,
   "rollback_executed": false,
-  "user_ui_check": "pending"
+  "user_ui_check": {
+    "status": "reported_failures_deferred_by_user",
+    "date": "2026-11-02",
+    "reported_by": "user",
+    "failures": ["一般メンバーのコート数変更ができない", "一般メンバーの終了・再開ができない"],
+    "new_preference": "一般メンバーも開催名を変更可能にする",
+    "decision": "現行RLSを維持し、WebロジックとRLSを含め別タスクで後日検討する",
+    "cause": "コート数には画面側の管理者向け条件あり。終了・再開の原因は未確定"
+  }
 }

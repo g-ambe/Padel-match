@@ -1,0 +1,7 @@
+{
+  "project": "ntczrmvffmpjzilfebyi",
+  "date": "2026-11-02",
+  "scope": "apply.sql DO guard only inside BEGIN READ ONLY",
+  "passed": true,
+  "production_ddl_or_row_writes": false
+}

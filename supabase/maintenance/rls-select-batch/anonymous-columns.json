@@ -1,0 +1,48 @@
+{
+  "events": [
+    "id",
+    "name",
+    "created_at",
+    "status",
+    "is_deleted",
+    "share_enabled",
+    "club_id",
+    "event_mode",
+    "share_token"
+  ],
+  "event_participants": [
+    "id",
+    "event_id",
+    "guest_name",
+    "participant_type",
+    "player_profile_id",
+    "profile_id"
+  ],
+  "rounds": [
+    "id",
+    "event_id",
+    "round_number"
+  ],
+  "matches": [
+    "id",
+    "event_id",
+    "round_id",
+    "court_number",
+    "completed",
+    "youtube_url",
+    "created_at"
+  ],
+  "match_players": [
+    "id",
+    "match_id",
+    "participant_id",
+    "team"
+  ],
+  "match_results": [
+    "id",
+    "match_id",
+    "score_a",
+    "score_b",
+    "winner_team"
+  ]
+}

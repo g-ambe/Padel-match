@@ -102,6 +102,15 @@ async function fixture(run, extra = '', apply = true) {
       }
       await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-match-write/apply.sql'),'utf8'));
     }
+    if (process.env.PADEL_SELECT_SCOPE_TEST === '1') {
+      assert.equal(process.env.PADEL_MATCH_WRITE_TEST,'1','Match-write prerequisite must be enabled');
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-events-insert/apply.sql'),'utf8'));
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-events-update/apply.sql'),'utf8'));
+      const selectEvidence=JSON.parse(readFileSync(join(__dirname,'../supabase/maintenance/rls-select-batch/preflight-production.json'),'utf8'));
+      for (const table of ['events','event_participants','rounds','matches','match_players','match_results','event_team_sides','event_team_matches']) await db.exec('revoke all on '+table+' from anon,authenticated,service_role');
+      for (const grant of selectEvidence.acl) await db.exec('grant '+grant.privilege+' on '+grant.table+' to '+grant.grantee);
+      await db.exec(readFileSync(join(__dirname,'../supabase/maintenance/rls-select-batch/apply.sql'),'utf8'));
+    }
     await run(db);
   }
   finally { await db.close(); }

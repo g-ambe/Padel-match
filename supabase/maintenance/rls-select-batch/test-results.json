@@ -1,0 +1,710 @@
+{
+  "engine": "PGlite 0.3.14",
+  "scope": "synthetic local actual migrations and all deployed write/delete prerequisites",
+  "results": [
+    {
+      "name": "baseline anonymous and foreign account could enumerate events",
+      "status": "PASS"
+    },
+    {
+      "name": "apply refuses unexpected column privileges atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "apply refuses supplementary team policy drift",
+      "status": "PASS"
+    },
+    {
+      "name": "apply SQL does not change any row",
+      "status": "PASS"
+    },
+    {
+      "name": "main linked SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "main linked SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "main linked SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "main linked SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "main linked SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "main linked SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "sub legacy SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "sub legacy SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "sub legacy SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "sub legacy SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "sub legacy SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "sub legacy SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "member legacy SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "member linked SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "own other group SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "own other group SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "own other group SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "own other group SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "own other group SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "own other group SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group creator SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group team creator SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group team creator SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group team creator SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group team creator SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group team creator SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "no-group team creator SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "super admin SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "super email SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "super email SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "super email SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "super email SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "super email SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "super email SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "team-side member SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "team-side member SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "team-side member SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "team-side member SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "team-side member SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "team-side member SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "departed cannot SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "departed cannot SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "departed cannot SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "departed cannot SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "departed cannot SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "departed cannot SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group cannot SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group cannot SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group cannot SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group cannot SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group cannot SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign group cannot SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated cannot SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated cannot SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated cannot SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated cannot SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated cannot SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "unaffiliated cannot SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event cannot SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event cannot SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event cannot SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event cannot SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event cannot SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign no-group event cannot SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "departed team creator cannot SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "departed team creator cannot SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "departed team creator cannot SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "departed team creator cannot SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "departed team creator cannot SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "departed team creator cannot SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "no uid cannot SELECT events",
+      "status": "PASS"
+    },
+    {
+      "name": "no uid cannot SELECT event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "no uid cannot SELECT rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "no uid cannot SELECT matches",
+      "status": "PASS"
+    },
+    {
+      "name": "no uid cannot SELECT match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "no uid cannot SELECT match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "anon no token sees no events",
+      "status": "PASS"
+    },
+    {
+      "name": "anon no token sees no event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "anon no token sees no rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "anon no token sees no matches",
+      "status": "PASS"
+    },
+    {
+      "name": "anon no token sees no match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "anon no token sees no match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "anon wrong token sees no events",
+      "status": "PASS"
+    },
+    {
+      "name": "anon wrong token sees no event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "anon wrong token sees no rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "anon wrong token sees no matches",
+      "status": "PASS"
+    },
+    {
+      "name": "anon wrong token sees no match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "anon wrong token sees no match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "anon active event sees no events",
+      "status": "PASS"
+    },
+    {
+      "name": "anon active event sees no event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "anon active event sees no rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "anon active event sees no matches",
+      "status": "PASS"
+    },
+    {
+      "name": "anon active event sees no match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "anon active event sees no match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "anon deleted event sees no events",
+      "status": "PASS"
+    },
+    {
+      "name": "anon deleted event sees no event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "anon deleted event sees no rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "anon deleted event sees no matches",
+      "status": "PASS"
+    },
+    {
+      "name": "anon deleted event sees no match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "anon deleted event sees no match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "anon stopped sharing sees no events",
+      "status": "PASS"
+    },
+    {
+      "name": "anon stopped sharing sees no event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "anon stopped sharing sees no rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "anon stopped sharing sees no matches",
+      "status": "PASS"
+    },
+    {
+      "name": "anon stopped sharing sees no match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "anon stopped sharing sees no match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 106 reads only events",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 106 reads only event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 106 reads only rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 106 reads only matches",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 106 reads only match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 106 reads only match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 107 reads only events",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 107 reads only event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 107 reads only rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 107 reads only matches",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 107 reads only match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 107 reads only match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 111 reads only events",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 111 reads only event_participants",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 111 reads only rounds",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 111 reads only matches",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 111 reads only match_players",
+      "status": "PASS"
+    },
+    {
+      "name": "correct token 111 reads only match_results",
+      "status": "PASS"
+    },
+    {
+      "name": "sharing header does not grant authenticated outsiders access",
+      "status": "PASS"
+    },
+    {
+      "name": "empty request headers setting safely denies anonymous reads",
+      "status": "PASS"
+    },
+    {
+      "name": "private columns and SELECT star are denied to anonymous even with correct token",
+      "status": "PASS"
+    },
+    {
+      "name": "shared-page event lookup and participant fields remain accessible",
+      "status": "PASS"
+    },
+    {
+      "name": "shared embedded Round/players/results query survives column grants",
+      "status": "PASS"
+    },
+    {
+      "name": "team shared sides/cards/guests and video policies inherit token scope",
+      "status": "PASS"
+    },
+    {
+      "name": "departed personal-history participant and actual match do not bypass membership",
+      "status": "PASS"
+    },
+    {
+      "name": "deactivation hides and reactivation restores normal and team history",
+      "status": "PASS"
+    },
+    {
+      "name": "shared link rotation stops the old token for all six tables",
+      "status": "PASS"
+    },
+    {
+      "name": "reopening shared event immediately hides anonymous results",
+      "status": "PASS"
+    },
+    {
+      "name": "general member generation/save/correction/lineup/deletion still works under SELECT",
+      "status": "PASS"
+    },
+    {
+      "name": "main admin logical delete with RETURNING remains possible",
+      "status": "PASS"
+    },
+    {
+      "name": "team side manager close and delete using exact count remains possible",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign side INSERT without RETURNING cannot manufacture membership",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign team card INSERT without RETURNING denied",
+      "status": "PASS"
+    },
+    {
+      "name": "own ordinary team viewer cannot add management side or card",
+      "status": "PASS"
+    },
+    {
+      "name": "team creator initializes both sides and opposing side admin adds a card",
+      "status": "PASS"
+    },
+    {
+      "name": "authorized team records cannot be moved to foreign event",
+      "status": "PASS"
+    },
+    {
+      "name": "existing authorized host manager edits team fields",
+      "status": "PASS"
+    },
+    {
+      "name": "local adversarial proof: leaving permissive side CHECK would bypass SELECT",
+      "status": "PASS"
+    },
+    {
+      "name": "group stats aggregate matches unrestricted own-group baseline",
+      "status": "PASS"
+    },
+    {
+      "name": "foreign writes remain denied rather than exposing parent through write conditions",
+      "status": "PASS"
+    },
+    {
+      "name": "service maintenance still sees every target table",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback refuses SELECT policy drift",
+      "status": "PASS"
+    },
+    {
+      "name": "repeat apply refuses atomically",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores policies, effective ACL and helper without modifying rows",
+      "status": "PASS"
+    },
+    {
+      "name": "rollback restores broad anonymous read",
+      "status": "PASS"
+    },
+    {
+      "name": "reapply succeeds after removing column grants",
+      "status": "PASS"
+    }
+  ]
+}

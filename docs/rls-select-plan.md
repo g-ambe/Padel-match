@@ -20,7 +20,7 @@
 
 Next.js本番ビルドも成功。初回はNext.js設定ファイルへの権限制限で停止し、テレメトリー無効・承認された権限制限外の実行で成功した。OpenNextのCloudflare変換は--skipNextBuildで実行したが、Windows非対応警告後120秒以上進捗がなく、実行セッションを停止した。Cloudflare専用変換の成功・実デプロイ・ブラウザ実操作は未確認。
 
-共有ページの3ファイルだけをmainベースのcodex/shared-event-token-readへ分離し、[PR #169](https://github.com/g-ambe/Padel-match/pull/169)を作成した。SQL/権限の変更やRLS履歴全体はPRへ含めていない。未マージ・未デプロイで、本番の閲覧RLSも未変更。反映後に匿名とログイン済みの共有表示を確認してから次のSQLへ進む。
+共有ページの3ファイルだけをmainベースのcodex/shared-event-token-readへ分離し、[PR #169](https://github.com/g-ambe/Padel-match/pull/169)を作成した。2026-11-02、ユーザーの明示承認後にmainへsquash merge済み（e5752bae7805fd1ca7b4e8ec183e0066d27e68ad）。GitHubでもmerged=trueを確認した。SQL/権限の変更やRLS履歴全体はPRへ含めていない。デプロイ完了と実画面の確認は未実施で、本番の閲覧RLSも未変更。反映後に匿名とログイン済みの共有表示を確認してから次のSQLへ進む。
 
 2026-11-02、本番Data APIへOPTIONSだけを送り、Access-Control-Allow-Headersにx-padel-share-tokenが含まれることを確認した。ブラウザのCORS確認であり、ユーザーデータの取得・変更は行っていない。
 

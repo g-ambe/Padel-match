@@ -1,0 +1,39 @@
+name: 本番表示の読み取り確認
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-pages:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.number == 176 && github.event.label.name == '本番表示確認' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: 本番ページを変更せず確認
+        run: |
+          python3 -B - <<'PY'
+          import json, sys, time
+          from urllib.request import Request, urlopen
+          from urllib.parse import urlsplit
+          base = 'https://padel-match.ranbo-ga.workers.dev'
+          results = []
+          for path in ['/', '/login', '/groups']:
+              ok = False
+              for attempt in range(3):
+                  try:
+                      with urlopen(Request(base + path, headers={'User-Agent':'Padel-release-readonly-check'}), timeout=30) as response:
+                          body = response.read(2 * 1024 * 1024).decode('utf-8', errors='replace')
+                          ok = response.status == 200 and urlsplit(response.url).hostname == urlsplit(base).hostname and '__next' in body and 'Application error' not in body
+                      if ok: break
+                  except Exception: pass
+                  time.sleep(5)
+              results.append({'path':path, 'html_ok':ok})
+          print('::notice title=本番表示確認::' + json.dumps(results, ensure_ascii=False))
+          sys.exit(0 if all(r['html_ok'] for r in results) else 1)
+          PY

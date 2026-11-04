@@ -161,7 +161,8 @@ class Snapshot:
 
     def query(self, sql):
         wrapped = "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET TRANSACTION SNAPSHOT " + literal(self.info["snapshot"]) + ";" + SQL_SETTINGS + sql + ";ROLLBACK;"
-        output = run(self.prefix + PSQL, phase="snapshot_query_failed", env=self.env, data=wrapped.encode())
+        # 読み取り専用の定義・ハッシュSQLを一度の通信で送る。認証情報は環境変数だけを使う。
+        output = run(self.prefix + PSQL[:-2] + ["--command", wrapped], phase="snapshot_query_failed", env=self.env)
         try:
             return json.loads(output)
         except ValueError:

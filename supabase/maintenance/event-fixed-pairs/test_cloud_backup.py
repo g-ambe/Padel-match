@@ -34,7 +34,7 @@ class BackupTests(unittest.TestCase):
         snapshot.info = {"snapshot": "00000001-00000002-1"}
         with patch.object(backup, "run", return_value=b'{"ok":true}') as runner:
             self.assertEqual(snapshot.query("SELECT json_build_object('ok',true)"), {"ok": True})
-        sql = runner.call_args.kwargs["data"].decode()
+        sql = runner.call_args.args[0][-1]
         self.assertIn("REPEATABLE READ READ ONLY", sql)
         self.assertIn("SET TRANSACTION SNAPSHOT '00000001-00000002-1'", sql)
         self.assertTrue(sql.endswith("ROLLBACK;"))

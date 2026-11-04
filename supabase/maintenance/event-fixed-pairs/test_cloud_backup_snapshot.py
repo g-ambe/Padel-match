@@ -96,7 +96,8 @@ class SnapshotIntegrationTests(unittest.TestCase):
             docker(["run", "--detach", "--rm", "--network", "none", "--env", "POSTGRES_HOST_AUTH_METHOD=trust", "--name", name, backup.probe.POSTGRES_IMAGE])
             names.append(name)
             for _ in range(60):
-                ready = subprocess.run(backup.DOCKER + ["exec", name, "pg_isready", "-U", "postgres"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                # initdb中の一時サーバー（Unix socketのみ）ではなく本起動を待つ。
+                ready = subprocess.run(backup.DOCKER + ["exec", name, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 if ready.returncode == 0:
                     return name
                 time.sleep(0.2)

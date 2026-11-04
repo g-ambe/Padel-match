@@ -45,7 +45,21 @@ jobs:
       - name: バックアップ処理の回帰・同時更新試験
         env:
           SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
-        run: python3 -B -m unittest discover -s supabase/maintenance/event-fixed-pairs -p 'test_cloud_*.py' -v
+        run: |
+          python3 -B - <<'PY'
+          import re, sys, unittest
+          directory = 'supabase/maintenance/event-fixed-pairs'
+          sys.path.insert(0, directory)
+          suite = unittest.defaultTestLoader.discover(directory, pattern='test_cloud_*.py')
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          # このステップに本番URL・暗号鍵は渡さない。合成DBの失敗だけをAPIから確認する。
+          for test, trace in result.errors + result.failures:
+              message = str(test) + '\n' + trace[-3000:]
+              message = re.sub(r'(?:https?|postgres(?:ql)?)://\S+', '[URL省略]', message)
+              message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              print('::error title=バックアップ合成試験::' + message)
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
       - name: 公式CA証明書を照合
         env:
           PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt

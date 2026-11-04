@@ -2,7 +2,12 @@
 
 import subprocess
 import ssl
+import hashlib
+import os
+import re
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import cloud_connection_probe as target
@@ -12,6 +17,48 @@ URL = "postgresql://postgres.ntczrmvffmpjzilfebyi:example%40test%23pass@aws-1-ap
 
 
 class ConnectionProbeTests(unittest.TestCase):
+    def certificate_fixture(self):
+        bundle = Path(ssl.get_default_verify_paths().cafile).read_text()
+        return (re.search(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", bundle, re.S).group() + "\n").encode()
+
+    def ca_response(self, data, url=target.CA_URL):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.geturl.return_value = url
+        response.read.return_value = data
+        return response
+
+    def test_official_ca_is_verified_and_mounted_readonly(self):
+        data = self.certificate_fixture()
+        fingerprint = hashlib.sha256(data).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "public-ca.crt"
+            with patch.dict(os.environ, {"PADEL_BACKUP_CA_FILE": str(path)}), patch.object(target, "EXPECTED_CA_SHA256", fingerprint), patch.object(target, "urlopen", return_value=self.ca_response(data)) as opener:
+                self.assertEqual(target.prepare_ca()["ca_sha256"], fingerprint)
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+                self.assertEqual(target.custom_ca_file(), path)
+                opener.assert_called_once_with(target.CA_URL, timeout=20)
+                self.assertIn(f"type=bind,src={path},dst=/run/padel-supabase-ca.crt,readonly", target.command(path))
+
+    def test_ca_checksum_mismatch_stops_before_authentication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "public-ca.crt"
+            path.write_bytes(self.certificate_fixture())
+            with patch.dict(os.environ, {"PADEL_BACKUP_CA_FILE": str(path)}), patch.object(target, "EXPECTED_CA_SHA256", "0" * 64):
+                runner = MagicMock()
+                with self.assertRaises(target.ProbeError):
+                    target.probe(URL, runner)
+                runner.assert_not_called()
+
+    def test_ca_redirect_and_invalid_pem_are_not_trusted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "public-ca.crt"
+            for response in [self.ca_response(b"not a certificate"), self.ca_response(self.certificate_fixture(), "http://untrusted.invalid/ca")]:
+                with patch.dict(os.environ, {"PADEL_BACKUP_CA_FILE": str(path)}), patch.object(target, "urlopen", return_value=response):
+                    with self.assertRaises(target.ProbeError):
+                        target.prepare_ca()
+                self.assertFalse(path.exists())
+
     def test_transport_probe_uses_tls_validation_without_credentials(self):
         connection = MagicMock()
         connection.recv.return_value = b"S"

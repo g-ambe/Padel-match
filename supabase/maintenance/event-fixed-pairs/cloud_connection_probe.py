@@ -17,7 +17,7 @@ PROJECT_REF = "ntczrmvffmpjzilfebyi"
 POOLER_HOST = "aws-1-ap-northeast-1.pooler.supabase.com"
 CA_URL = "https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt"
 # URLはSupabase Studioのssl:certificate_urlとSSLConfiguration.tsxのprod設定に照合済み。
-EXPECTED_CA_SHA256 = None
+EXPECTED_CA_SHA256 = "700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7"
 POSTGRES_IMAGE = "postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b"
 READ_ONLY_QUERY = """
 BEGIN READ ONLY;

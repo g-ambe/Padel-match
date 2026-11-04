@@ -33,10 +33,12 @@ Codexの現在の実行環境ではDB用TCPプロキシが接続を受け付け�
 
 1. リポジトリの[Settings → Secrets and variables → Actions](https://github.com/g-ambe/Padel-match/settings/secrets/actions)で、Repository secret **`PADEL_BACKUP_DB_URL`** を登録する。値はCodexの`SUPABASE_DB_URL`と同じ、対象プロジェクトのパスワード入りDB接続URL。既存のアプリ用Secretは変更しない。値をGit、Issue、PR、チャットへ貼らない。現在のGitHub連携はSecrets管理APIが403のため、この登録操作だけは所有者がGitHub画面で行う。
 2. PR #176に **`クラウドDB接続確認`** ラベルを付ける。登録後に再試行する場合はラベルを外して付け直す。この操作は権限を持つCodexからも実行できる。新しいworkflowがmainにない段階では、`workflow_dispatch`での実行を前提にしない。
-3. [Actions](https://github.com/g-ambe/Padel-match/actions)の「クラウドバックアップ接続確認」の結果を確認する。現在のジョブは**接続検証専用**で、TLS証明書を検証し、読み取り専用トランザクションでPostgreSQLのメジャー版を取得する。実行権限はcontents:readのみ、フォークのPRからは実行しない。接続URL・パスワード・生のDBエラー・DB行はログやArtifactへ出さない。
+3. [Actions](https://github.com/g-ambe/Padel-match/actions)の「クラウドバックアップ接続確認」の結果を確認する。現在のジョブは**接続検証専用**。Supabase公式Dashboardと同じHTTPS配布元から公開CA証明書を取得し、確認済みSHA-256を照合する。検証コード19の自己署名チェーンエラーには、このCAをクライアントへ追加して対応する。証明書・ホスト名の検証は無効化しない。本番のSSL設定・RLSは変更しない。認証情報を送らないTCP・TLS確認の後、読み取り専用トランザクションでPostgreSQLのメジャー版を取得する。実行権限はcontents:readのみ、フォークのPRからは実行しない。接続URL・パスワード・生のDBエラー・DB行はログやArtifactへ出さない。
 4. 接続成功はバックアップの完了ではない。実際のサーバー版を確認後、互換の隔離Supabase、バックアップの整合性、暗号化・独立した保管先を確保し、下記の実ファイル復元・照合まで実施する。dump、復元試験、0040、マージ、Cloudflareデプロイは、この接続確認ジョブでは実行しない。
 
 `PADEL_BACKUP_PASSPHRASE`は接続確認には使わない。実バックアップでは十分な長さのランダムな暗号化用秘密値を別途安全に管理し、平文のdumpや鍵をGitHubへ出さない。現在はDB外バックアップの取得・保管・実データの復元確認が未実施であり、0040の適用条件は未充足。
+
+2026年11月4日、[クラウド実行](https://github.com/g-ambe/Padel-match/actions/runs/41794638089)で公式CAの取得とTCP・TLS確認が成功。DB認証の段階はGitHub Secret未登録で停止した。CAの確認済みSHA-256は`700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7`。配布URLは[Supabase Studioの公式設定](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json)とSSLConfigurationのprod設定に照合した。CAが変更された場合は自動更新せず、配布元・証明書・変更理由を再確認する。
 
 ### 取得例（管理端末のBash、手動実行）
 

@@ -68,7 +68,10 @@ def fingerprints(snapshot):
 
 def check_preflight(snapshot):
     expected = json.loads((REPO / 'tests/fixtures/fixed-pair-production-metadata.json').read_text())
-    if snapshot['new_schema_present'] or fingerprints(snapshot) != expected['sha256']:
+    actual = fingerprints(snapshot)
+    summary = {'new_schema_present': snapshot['new_schema_present'], 'changed_sections': [key for key in actual if actual[key] != expected['sha256'][key]], 'counts': {key: len(snapshot[key]) for key in actual}, 'sha256': actual}
+    print('::notice title=最新DB定義照合::' + json.dumps(summary, ensure_ascii=False), flush=True)
+    if snapshot['new_schema_present'] or actual != expected['sha256']:
         raise b.BackupError('latest_production_metadata_differs_from_review')
 
 

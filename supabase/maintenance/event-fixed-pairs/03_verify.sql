@@ -28,7 +28,7 @@ select '重複固定' check_name,count(*) violations from (
  select event_id,participant_id from (select event_id,a participant_id from event_fixed_pairs union all select event_id,b from event_fixed_pairs) p group by event_id,participant_id having count(*)>1
 ) duplicates
 union all select '別イベントの選手参照',count(*) from event_fixed_pairs f left join event_participants a on a.event_id=f.event_id and a.id=f.a left join event_participants b on b.event_id=f.event_id and b.id=f.b where a.id is null or b.id is null
-union all select '実使用の印が未記録',count(*) from event_fixed_pair_rounds r left join event_fixed_pair_state s on s.event_id=r.event_id where jsonb_array_length(r.applied_pairs)>0 and not coalesce(s.used_fixed_pairs,false)
+union all select '実使用の印が未記録',count(*) from event_fixed_pair_rounds r left join event_fixed_pair_state s on s.event_id=r.event_id where jsonb_array_length(r.effective_pairs)>0 and not coalesce(s.used_fixed_pairs,false)
 union all select '終了した利用済みの反映方法未確定',count(*) from event_fixed_pair_state s join events e on e.id=s.event_id where s.used_fixed_pairs and e.status='closed' and e.stats_mode not in('official','record_only');
 select '固定設定' item,count(*) rows from event_fixed_pairs union all select '利用状態',count(*) from event_fixed_pair_state union all select '生成の監査',count(*) from event_fixed_pair_rounds;
 rollback;

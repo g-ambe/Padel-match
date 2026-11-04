@@ -28,6 +28,13 @@ async function fixedPairDatabase(apply=true, providedDb){
  for(const p of snapshot.policies.filter(p=>core.includes(p.tablename)))await db.exec(`create policy ${q(p.policyname)} on public.${q(p.tablename)} as ${p.permissive} for ${p.cmd} to ${p.roles.map(q).join(',')}${p.qual?' using('+p.qual+')':''}${p.with_check?' with check('+p.with_check+')':''}`);
  for(const a of snapshot.acl.filter(a=>core.includes(a.table)))await db.exec(`grant ${a.privilege} on public.${q(a.table)} to ${q(a.grantee)}${a.grantable?' with grant option':''}`);
  for(const a of snapshot.column_acl.filter(a=>core.includes(a.table)))await db.exec(`grant ${a.privilege}(${q(a.column)}) on public.${q(a.table)} to ${q(a.grantee)}`);
+ // 所属・プロフィールは0039、clubsは最新の本番適用記録を使う。古いdev_all_clubsを残さない。
+ for(const p of (await db.query("select policyname from pg_policies where schemaname='public' and tablename='clubs'")).rows)await db.exec(`drop policy ${q(p.policyname)} on public.clubs`);
+ for(const p of json('rls-clubs-select/production-select-snapshots.json').post)await db.exec(`create policy ${q(p.policyname)} on public.clubs for ${p.cmd} to ${p.roles.slice(1,-1).split(',').map(q).join(',')}${p.qual?' using('+p.qual+')':''}${p.with_check?' with check('+p.with_check+')':''}`);
+ await db.exec('revoke all on public.clubs from anon,authenticated;grant select on public.clubs to anon;grant select,insert,update,delete on public.clubs to authenticated;grant maintain,references,trigger on public.clubs to anon,authenticated;grant all on public.app_admins,public.club_members,public.clubs,public.player_profiles,public.profiles to service_role');
+ await db.exec(snapshot.helper);
+ await db.exec('grant execute on function public.is_super_user(),public.can_manage_friendly_team_event_by_sides(uuid,uuid),public.can_view_friendly_team_event_by_sides(uuid,uuid) to anon,authenticated,service_role');
+ await db.exec(read('group-members/03_guard_last_admin.sql').replace(/rollback;/g,'commit;'));
  // 本番適用記録のID保護を再現する。既存の適用用SQLの巨大な事前ガードは再実行しない。
  let sql=read('rls-participants-write/apply.sql');await db.exec(sql.slice(sql.indexOf('CREATE SCHEMA participants_identity_private'),sql.indexOf('CREATE POLICY rls07_participants_select_compat')));
  sql=read('rls-events-identity/apply.sql');await db.exec(sql.slice(sql.indexOf('CREATE SCHEMA events_identity_private')).replace(/COMMIT;/g,''));

@@ -1,0 +1,25 @@
+{
+  "source": "利用者がSQL Editorで手動実行した読み取り専用SELECT。行データや接続情報は含めない。",
+  "captured_at": "2026-11-04T02:13:18.028905+00:00",
+  "new_schema_present": false,
+  "counts": {
+    "tables": 11,
+    "policies": 49,
+    "table_acl": 251,
+    "column_acl": 58,
+    "triggers": 12,
+    "permission_helpers": 3,
+    "constraints": 36,
+    "indexes": 21
+  },
+  "sha256": {
+    "tables": "7ad83d3c5b01f40276d8ba4c551409630280196f5c642959b126c7149dc1f580",
+    "policies": "d5302f0648af91a419d052af52c9f7d4e2ce61e870e1a73e7735a3b16825d7cd",
+    "table_acl": "c5410db8a1a587bb63185b8599fd4441ed742c92ad0d1c69761736970b76b795",
+    "column_acl": "d1868c5cbbdacba8bf34e03b8a65ff59535af75417e197a5aa453a847e148e07",
+    "triggers": "1d8b4624f86481f033b17fd292b20441b2bf1df67aa865b47ccadf9bfaf9c7ab",
+    "permission_helpers": "c82a0914620438a56cdf642b85c637c7b5d63e651dde826cee33d2cdced4ccf3",
+    "constraints": "ec853d024c5956c3893c502d5008a67e430678044b2a1fd1d39bce5c838898a2",
+    "indexes": "f24d5cb49e07e0051f8c56754e74e3df6c5e8eafb3b616a85d50c1b9d1592410"
+  }
+}

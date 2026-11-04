@@ -10,7 +10,7 @@ export class FixedPairRequestError extends Error {
 }
 const pairSignature=(pairs:readonly FixedPair[])=>JSON.stringify(pairs.map(p=>({id:p.id,a:[p.a,p.b].sort()[0],b:[p.a,p.b].sort()[1]})).sort((a,b)=>a.id.localeCompare(b.id)));
 function fail(error:{code?:string;message?:string}|null,fallback:string):never{
- const rejected=!!error?.code&&['40001','42501','P0001','22023','23505','23503','22P02'].includes(error.code);
+ const rejected=!!error?.code&&(/^(22|23|40)[0-9A-Z]{3}$/.test(error.code)||['42501','P0001'].includes(error.code));
  throw new FixedPairRequestError(rejected&&error?.message&&/[\u3000-\u9fff]/.test(error.message)?error.message:fallback,rejected);
 }
 function state(data:unknown,eventId:string):FixedPairState{
@@ -18,7 +18,7 @@ function state(data:unknown,eventId:string):FixedPairState{
  if(!d||d.event_id!==eventId||!Number.isSafeInteger(d.revision)||d.revision<0||typeof d.used_fixed_pairs!=='boolean'||!Array.isArray(d.pairs)||!Array.isArray(d.eligible_rounds))throw new FixedPairRequestError('固定ペア設定の確認応答を取得できませんでした');
  const people=d.pairs.flatMap(p=>[p?.a,p?.b]);
  if(d.pairs.length>10||d.pairs.some(p=>!p||typeof p.id!=='string'||!p.id||typeof p.a!=='string'||!p.a||typeof p.b!=='string'||!p.b||p.a===p.b)||new Set(d.pairs.map(p=>p.id)).size!==d.pairs.length||new Set(people).size!==people.length)throw new FixedPairRequestError('固定ペア設定に不整合があります。再取得してください');
- if(d.eligible_rounds.some(r=>!Number.isInteger(r.round)||r.round<1||!Array.isArray(r.eligible)||!Array.isArray(r.played)||[...r.eligible,...r.played].some(id=>typeof id!=='string')))throw new FixedPairRequestError('参加状況の履歴を確認できませんでした');
+ if(d.eligible_rounds.some(r=>!r||typeof r!=='object'||!Number.isInteger(r.round)||r.round<1||!Array.isArray(r.eligible)||!Array.isArray(r.played)||[...r.eligible,...r.played].some(id=>typeof id!=='string')||(r.split_pairs!==undefined&&(!Array.isArray(r.split_pairs)||r.split_pairs.some(p=>!p||typeof p.id!=='string'||typeof p.a!=='string'||typeof p.b!=='string'||p.a===p.b)))))throw new FixedPairRequestError('参加状況の履歴を確認できませんでした');
  return d;
 }
 export async function readEventFixedPairs(s:SupabaseClient,eventId:string,history=false){

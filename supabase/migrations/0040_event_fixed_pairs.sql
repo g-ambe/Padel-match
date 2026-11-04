@@ -49,6 +49,7 @@ create table public.event_fixed_pair_rounds(
  round_number integer not null check(round_number>0),
  eligible_ids uuid[] not null,
  played_ids uuid[] not null,
+ effective_pairs jsonb not null check(jsonb_typeof(effective_pairs)='array'),
  applied_pairs jsonb not null check(jsonb_typeof(applied_pairs)='array'),
  split_pairs jsonb not null check(jsonb_typeof(split_pairs)='array'),
  created_by uuid not null,
@@ -94,7 +95,7 @@ as $$
  select jsonb_build_object('event_id',p_event_id,'revision',coalesce((select revision from public.event_fixed_pair_state where event_id=p_event_id),0),
  'used_fixed_pairs',coalesce((select used_fixed_pairs from public.event_fixed_pair_state where event_id=p_event_id),false),
  'pairs',coalesce((select jsonb_agg(jsonb_build_object('id',id,'a',a,'b',b) order by id) from public.event_fixed_pairs where event_id=p_event_id),'[]'::jsonb),
- 'eligible_rounds',case when coalesce(p_history,false) then coalesce((select jsonb_agg(jsonb_build_object('round',r.round_number,'eligible',a.eligible_ids,'played',a.played_ids) order by r.round_number)
+ 'eligible_rounds',case when coalesce(p_history,false) then coalesce((select jsonb_agg(jsonb_build_object('round',r.round_number,'eligible',a.eligible_ids,'played',a.played_ids,'split_pairs',a.split_pairs) order by r.round_number)
    from public.event_fixed_pair_rounds a join public.rounds r on r.id=a.round_id and r.event_id=a.event_id where a.event_id=p_event_id),'[]'::jsonb) else '[]'::jsonb end)
 $$;
 create function public.get_event_fixed_pair_state(p_event_id uuid,p_include_history boolean default false) returns jsonb
@@ -155,8 +156,8 @@ create function public.create_fixed_pair_round(p_event_id uuid,p_expected_revisi
 language plpgsql security definer set search_path=''
 as $$
 declare e public.events;s public.event_fixed_pair_state;audit public.event_fixed_pair_rounds;body jsonb;eligible uuid[];played uuid[]:='{}';team_ids uuid[];
- v jsonb;pair public.event_fixed_pairs;v_match_id uuid;v_round_id uuid;round_no integer;n integer;courts integer;f integer;singles integer;rest integer;k_min integer;k_max integer;
- applied jsonb:='[]';splits jsonb:='[]';court_ids integer[]:='{}';team text;row_count integer;
+ v jsonb;pair public.event_fixed_pairs;v_match_id uuid;v_round_id uuid;round_no integer;n integer;courts integer;
+ effective jsonb:='[]';applied jsonb:='[]';splits jsonb:='[]';court_ids integer[]:='{}';team text;row_count integer;
 begin
  e:=fixed_pair_private.lock_event(p_event_id);
  if p_request_id is null or p_expected_revision is null or p_expected_revision<0 then raise exception '生成リクエストを確認してください'; end if;
@@ -183,7 +184,7 @@ begin
  for v in select value from jsonb_array_elements(p_matches) loop
   if jsonb_typeof(v) is distinct from 'object' or jsonb_typeof(v->'teamA') is distinct from 'array' or jsonb_typeof(v->'teamB') is distinct from 'array'
    or jsonb_array_length(v->'teamA')<>2 or jsonb_array_length(v->'teamB')<>2 or exists(select 1 from jsonb_object_keys(v) key where key not in('court','teamA','teamB')) then raise exception '各試合は2名対2名で指定してください'; end if;
-  if (v->>'court')::integer not between 1 and courts or (v->>'court')::integer=any(court_ids) then raise exception 'コート番号を確認してください'; end if;
+  if jsonb_typeof(v->'court') is distinct from 'number' or (v->>'court') !~ '^[1-5]$' or (v->>'court')::integer not between 1 and courts or (v->>'court')::integer=any(court_ids) then raise exception 'コート番号を確認してください'; end if;
   court_ids:=array_append(court_ids,(v->>'court')::integer);
   select array_agg(x::uuid) into team_ids from jsonb_array_elements_text((v->'teamA')||(v->'teamB')) x;
   played:=played||team_ids;
@@ -197,29 +198,14 @@ begin
    and not exists(select 1 from public.match_results a join public.match_results b on b.match_id=a.match_id where a.match_id=m.id and (a.score_a<0 or a.score_b<0 or a.score_a<>b.score_a or a.score_b<>b.score_b));
   if row_count<10 then raise exception '特別モードは当日のスコア登録済み10試合達成後に利用できます'; end if;
  end if;
+ -- 休憩公平性・ペア/対戦の重複は最適化条件。絶対禁止条件にはしない。
+ -- 両名が参加可能なペアだけが有効。片方の明示休み・欠席は設定を残して一時停止する。
  if n>=5 then
-  f:=0;
-  for pair in select * from public.event_fixed_pairs where event_id=p_event_id loop
-   if (pair.a=any(eligible))<>(pair.b=any(eligible)) then raise exception '固定ペアの片方が欠席・休み・生成対象外です'; end if;
-   if not(pair.a=any(eligible)) then continue; end if;
-   f:=f+1;
-   if n<>5 and (pair.a=any(played))<>(pair.b=any(played)) then raise exception '6人以上では固定ペアを2人同時に出場・休憩させてください'; end if;
+  for pair in select * from public.event_fixed_pairs where event_id=p_event_id and a=any(eligible) and b=any(eligible) loop
+   effective:=effective||jsonb_build_array(jsonb_build_object('id',pair.id,'a',pair.a,'b',pair.b));
    if pair.a=any(played) and pair.b=any(played) and not exists(
-    select 1 from jsonb_array_elements(p_matches) m where (m->'teamA') @> to_jsonb(array[pair.a,pair.b]) or (m->'teamB') @> to_jsonb(array[pair.a,pair.b])) then raise exception '固定ペアを同じチームにしてください'; end if;
+    select 1 from jsonb_array_elements(p_matches) m where (m->'teamA') @> to_jsonb(array[pair.a,pair.b]) or (m->'teamB') @> to_jsonb(array[pair.a,pair.b])) then raise exception '両名が出場する固定ペアは同じチームにしてください'; end if;
   end loop;
-  rest:=n-courts*4;singles:=n-2*f;k_min:=greatest(0,ceil((rest-singles)::numeric/2)::integer);k_max:=least(f,rest/2);
-  if n>=6 and rest>0 and (k_min>k_max or f*rest<k_min*n or f*rest>k_max*n) then raise exception 'この固定数・面数ではペア単位の公平な休憩ができません'; end if;
-  -- 固定されていないペアに直前ペアの例外を広げない。
-  if f>0 then
-   for v in select value from jsonb_array_elements(p_matches) loop
-    foreach team in array array['teamA','teamB'] loop
-     select array_agg(x::uuid order by x::uuid) into team_ids from jsonb_array_elements_text(v->team) x;
-     if not exists(select 1 from public.event_fixed_pairs p where p.event_id=p_event_id and p.a=team_ids[1] and p.b=team_ids[2]) and exists(
-      select 1 from public.matches m join public.rounds r on r.id=m.round_id join public.match_players a on a.match_id=m.id join public.match_players b on b.match_id=m.id and b.team=a.team
-      where m.event_id=p_event_id and r.event_id=p_event_id and r.round_number=p_last_round and a.participant_id=team_ids[1] and b.participant_id=team_ids[2]) then raise exception '未固定選手の連続ペアを避けてください'; end if;
-    end loop;
-   end loop;
-  end if;
  end if;
  insert into public.rounds(event_id,round_number) values(p_event_id,round_no+1) returning id into v_round_id;
  for v in select value from jsonb_array_elements(p_matches) loop
@@ -237,10 +223,10 @@ begin
    end if;
   end loop;
  end if;
- insert into public.event_fixed_pair_rounds(event_id,request_id,request_body,round_id,round_number,eligible_ids,played_ids,applied_pairs,split_pairs,created_by)
- values(p_event_id,p_request_id,body,v_round_id,round_no+1,eligible,played,applied,splits,auth.uid());
- update public.event_fixed_pair_state set revision=revision+1,used_fixed_pairs=used_fixed_pairs or jsonb_array_length(applied)>0 where event_id=p_event_id;
- if not s.used_fixed_pairs and jsonb_array_length(applied)>0 then update public.events set stats_mode='undecided' where id=p_event_id; end if;
+ insert into public.event_fixed_pair_rounds(event_id,request_id,request_body,round_id,round_number,eligible_ids,played_ids,effective_pairs,applied_pairs,split_pairs,created_by)
+ values(p_event_id,p_request_id,body,v_round_id,round_no+1,eligible,played,effective,applied,splits,auth.uid());
+ update public.event_fixed_pair_state set revision=revision+1,used_fixed_pairs=used_fixed_pairs or jsonb_array_length(effective)>0 where event_id=p_event_id;
+ if not s.used_fixed_pairs and jsonb_array_length(effective)>0 then update public.events set stats_mode='undecided' where id=p_event_id; end if;
  return jsonb_build_object('event_id',p_event_id,'request_id',p_request_id,'round_id',v_round_id,'round_number',round_no+1);
 end $$;
 

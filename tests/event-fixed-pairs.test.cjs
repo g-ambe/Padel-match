@@ -19,7 +19,9 @@ test('Roundと終了の確認応答を検査し、確定拒否と保存結果不
  const ack={event_id:'event',request_id:'request',round_id:'round',round_number:3};
  for(const data of [null,{...ack,request_id:'other'},{...ack,round_number:4}])await assert.rejects(createEventFixedRound(mock(data),request));
  await assert.rejects(createEventFixedRound(mock(null,{code:'40001',message:'設定が変更されています'}),request),e=>e.definitelyRejected);
+ await assert.rejects(createEventFixedRound(mock(null,{code:'23502',message:'必須項目がありません'}),request),e=>e.definitelyRejected);
  await assert.rejects(createEventFixedRound(mock(null,{message:'Fetch failed'}),request),e=>!e.definitelyRejected);
+ await assert.rejects(createEventFixedRound(mock(null,{code:'400',message:'Gateway response'}),request),e=>!e.definitelyRejected);
  assert.deepEqual(await createEventFixedRound(mock(ack),request),ack);
  await assert.rejects(finishEventWithFixedPairs(mock(null),{...empty,used_fixed_pairs:true},true),/選択/);
  await assert.rejects(finishEventWithFixedPairs(mock({event_id:'event',status:'closed',stats_mode:'official'}),{...empty,used_fixed_pairs:true},true,'record_only'));

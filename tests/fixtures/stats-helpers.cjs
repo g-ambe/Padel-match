@@ -8,6 +8,7 @@ const results = require('../../lib/friendly-match-results.ts');
 const { readProfileRows } = require('../../lib/player-profiles.ts');
 const eventCourts = require('../../lib/event-courts.ts');
 const { fetchBalancePastStats } = require('../../lib/friendly-balance-history.ts');
+const fixedPairs = require('../../lib/event-fixed-pairs.ts');
 
 // Reactを偽装せず、画面が実行する関数そのものをASTから取り出して検証する。
 function expression(source, name) {
@@ -26,7 +27,7 @@ function expression(source, name) {
 }
 function evaluate(source, name, bindings = {}) {
   const code = ts.transpileModule(`module.exports = (${expression(source, name)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const values = { ...results, ...history, ...eventCourts, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
+  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
   const module = { exports: {} };
   new Function('module', ...Object.keys(values), code)(module, ...Object.values(values));
   return module.exports;
@@ -47,6 +48,12 @@ function database(tables, options = {}) {
       calls.push(call);
       const failure = await options.fail?.(call);
       if (failure) return new Response(JSON.stringify({ code: '42501', message: '取得または更新を拒否' }), { status: 403 });
+      if (table === 'get_event_fixed_pair_state') return new Response(JSON.stringify({event_id:call.body.p_event_id,revision:0,used_fixed_pairs:false,pairs:[],eligible_rounds:[]}),{status:200});
+      if (table === 'create_fixed_pair_round') {
+        const b=call.body,round={id:`round-rpc-${calls.length}`,event_id:b.p_event_id,round_number:b.p_last_round+1};tables.rounds.push(round);
+        for(const [i,m] of b.p_matches.entries()) {const match={id:`match-rpc-${calls.length}-${i}`,event_id:b.p_event_id,round_id:round.id,court_number:m.court,completed:false};tables.matches.push(match);for(const [team,ids] of [['A',m.teamA],['B',m.teamB]])for(const participant_id of ids)tables.match_players.push({match_id:match.id,participant_id,team});}
+        return new Response(JSON.stringify({event_id:b.p_event_id,request_id:b.p_request_id,round_id:round.id,round_number:round.round_number}),{status:200});
+      }
       let rows = [...(tables[table] ?? [])];
       for (const [key, value] of url.searchParams) {
         if (['select','order','limit','offset'].includes(key)) continue;

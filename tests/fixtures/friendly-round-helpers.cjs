@@ -1,4 +1,4 @@
-require('node:module').registerHooks({ resolve(specifier, context, next) { return next(specifier === './friendly-match-results' ? specifier + '.ts' : specifier, context); } });
+require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./friendly-match-results','./friendly-rounds'].includes(specifier) ? specifier + '.ts' : specifier, context); } });
 const rounds = require('../../lib/friendly-rounds.ts');
 const seededRandom = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let n = Math.imul(seed ^ seed >>> 15, 1 | seed); n = n + Math.imul(n ^ n >>> 7, 61 | n) ^ n; return ((n ^ n >>> 14) >>> 0) / 4294967296; };
 const idsFor = n => Array.from({ length: n }, (_, i) => `p${String(i + 1).padStart(2, '0')}`);

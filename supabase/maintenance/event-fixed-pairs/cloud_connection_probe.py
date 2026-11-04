@@ -237,6 +237,8 @@ def main():
         "認証前のTCP・TLS接続を確認しました。DB認証は未確認です。" if transport_only
         else "読み取り専用のDB認証を確認しました。"
     )
+    if not transport_only and os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::notice title=読み取り専用DB接続確認::PostgreSQL {result['server_major']} / read_only=on / verify-full")
     print("バックアップ取得・復元試験・本番SQL適用は実施していません。")
     return 0
 

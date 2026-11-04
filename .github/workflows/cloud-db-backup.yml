@@ -1,0 +1,103 @@
+name: クラウドDBバックアップ・隔離復元
+
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: padel-database-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.number == 176 &&
+       github.event.label.name == 'クラウドDBバックアップ検証' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'codex/event-fixed-pairs') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.store.outputs.release_id }}
+      asset_id: ${{ steps.store.outputs.asset_id }}
+      sha256: ${{ steps.store.outputs.sha256 }}
+    steps:
+      - name: 対象コミットを取得
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: 暗号化設定と接続先を事前確認
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py readiness
+      - name: 照合済みSupabase CLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: バックアップ処理の回帰・同時更新試験
+        env:
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B -m unittest discover -s supabase/maintenance/event-fixed-pairs -p 'test_cloud_*.py' -v
+      - name: 公式CA証明書を照合
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 同じスナップショットから取得して暗号化
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-db-backup
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py create
+      - name: 暗号化済みファイルだけを非公開Draft Releaseへ保管
+        id: store
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-db-backup
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py publish
+
+  restore:
+    needs: backup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: 同じコミットを取得
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: 保管先の実ファイルを別ジョブへ取得して照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_RELEASE_ID: ${{ needs.backup.outputs.release_id }}
+          BACKUP_ASSET_ID: ${{ needs.backup.outputs.asset_id }}
+          BACKUP_SHA256: ${{ needs.backup.outputs.sha256 }}
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-db-restore
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 照合済みSupabase CLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 外向き通信を停止した隔離DBへ復元・検証
+        env:
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-db-restore
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py restore
+      - name: 非公開のまま検証状態を記録
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BACKUP_RELEASE_ID: ${{ needs.backup.outputs.release_id }}
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-db-restore
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py mark

@@ -11,7 +11,7 @@ PR #176の2026年11月4日版。Draftでレビューする。本番SQL・マー�
 5. 別保管先の実ファイルを隔離環境へ復元し、エラー・件数・定義・権限・参照・動作を照合する。**この確認が完了するまで0040を適用しない。**
 6. [0040_event_fixed_pairs.sql](../../migrations/0040_event_fixed_pairs.sql) を全体で手動適用する。3表・参照用インデックス・専用RPC・追加ガードを作る。既存行の一括更新や既存RLS・GRANTの置き換えはない。前提違い・タイムアウト・失敗は全体ROLLBACKし、続行しない。
 7. [03_verify.sql](03_verify.sql) を手動実行する。既存定義差分0件、不整合4項目すべて0件、3表の直接書込み不可、専用RPCは認証限定、search_pathは空であることを確認する。適用直後の新3表は0件。既存のstats_mode・プロフィール・スコアは変化しない。
-8. ユーザーが結果を確認し、**別途マージを承認**する。既存Cloudflare自動デプロイを利用し、手動で二重デプロイしない。SQLがCloudflareデプロイで適用されるとは扱わない。
+8. ユーザーがSQL適用結果を確認し、マージの条件を満たすことを確認する。既に得ている条件付きのマージ承認は引き継ぎ、未完了のDB作業をマージで代用しない。既存Cloudflare自動デプロイを利用し、手動で二重デプロイしない。SQLがCloudflareデプロイで適用されるとは扱わない。
 9. 安全なテスト用アカウント・イベントで、5人の分割、6人1面3組、8人2面3組、9人2面、設定保存・別端末・終了未選択・記録用・通算・再開を確認する。本番の実試合に対する試験変更は禁止。リリース前のmain SHA／Worker版を記録し、重大エラー・切り戻し先を確認する。
 
 0040の末尾はCOMMIT。本番でのリハーサルとして途中だけ実行しない。リハーサルは複製DBで行う。複製DBで末尾をROLLBACKに置き換えればDDL・前後ガードを確認できるが、別接続の同時実行試験はCOMMITした使い捨てDBで行う。
@@ -29,16 +29,19 @@ Freeプランでは自動日次バックアップを前提にしない。[02_bac
 
 ### Windowsを使わずGitHub Actionsで進める場合
 
-Codexの現在の実行環境ではDB用TCPプロキシが接続を受け付けないため、GitHub Actionsのクラウドランナーで接続確認を行う経路を追加した。既存PR #176・既存ブランチで実施し、接続確認のためにmainへマージしない。
+Codexの現在の実行環境にはDB用TCPの利用許可がないため、GitHub Actionsのクラウドランナーを使用する。既存PR #176・既存ブランチで進め、バックアップのためにmainへマージしない。2026年11月4日の[接続確認](https://github.com/g-ambe/Padel-match/actions/runs/41800427302)で、修正後のURLによる**PostgreSQL 17・読み取り専用・TLS verify-full**の接続に成功した。
 
-1. リポジトリの[Settings → Secrets and variables → Actions](https://github.com/g-ambe/Padel-match/settings/secrets/actions)で、Repository secret **`PADEL_BACKUP_DB_URL`** を登録する。値はCodexの`SUPABASE_DB_URL`と同じ、対象プロジェクトのパスワード入りDB接続URL。既存のアプリ用Secretは変更しない。値をGit、Issue、PR、チャットへ貼らない。現在のGitHub連携はSecrets管理APIが403のため、この登録操作だけは所有者がGitHub画面で行う。
-2. PR #176に **`クラウドDB接続確認`** ラベルを付ける。登録後に再試行する場合はラベルを外して付け直す。この操作は権限を持つCodexからも実行できる。新しいworkflowがmainにない段階では、`workflow_dispatch`での実行を前提にしない。
-3. [Actions](https://github.com/g-ambe/Padel-match/actions)の「クラウドバックアップ接続確認」の結果を確認する。現在のジョブは**接続検証専用**。Supabase公式Dashboardと同じHTTPS配布元から公開CA証明書を取得し、確認済みSHA-256を照合する。検証コード19の自己署名チェーンエラーには、このCAをクライアントへ追加して対応する。証明書・ホスト名の検証は無効化しない。本番のSSL設定・RLSは変更しない。認証情報を送らないTCP・TLS確認の後、読み取り専用トランザクションでPostgreSQLのメジャー版を取得する。実行権限はcontents:readのみ、フォークのPRからは実行しない。接続URL・パスワード・生のDBエラー・DB行はログやArtifactへ出さない。
-4. 接続成功はバックアップの完了ではない。実際のサーバー版を確認後、互換の隔離Supabase、バックアップの整合性、暗号化・独立した保管先を確保し、下記の実ファイル復元・照合まで実施する。dump、復元試験、0040、マージ、Cloudflareデプロイは、この接続確認ジョブでは実行しない。
+1. リポジトリの[Settings → Secrets and variables → Actions](https://github.com/g-ambe/Padel-match/settings/secrets/actions)に、Repository secretsを用意する。`PADEL_BACKUP_DB_URL`は確認済みのDB接続URL。**`PADEL_BACKUP_PASSPHRASE`** は別の暗号化用秘密値で、パスワードマネージャー等で生成した**ランダムな32文字以上**（異なる文字12種類以上、改行なし）とする。暗号鍵はバックアップと別の安全な保管先にも保存する。GitHub Secretsは後から値を読み戻せない。Codexの環境変数とは別設定。現在のGitHub連携はSecrets管理APIが403のため、Secretの登録だけは所有者がGitHub画面で行う。既存のアプリ用Secretは変更せず、値をGit・PR・チャットへ貼らない。
+2. 接続だけ再確認する場合は、PR #176へ **`クラウドDB接続確認`** ラベルを付ける。実バックアップと復元確認は **`クラウドDBバックアップ検証`** ラベルで開始する。再試行はラベルを外して付け直す。権限を持つCodexからも操作できる。workflowがmainにない段階では`workflow_dispatch`を前提にしない。同一リポジトリ・対象PR・ブランチを限定し、フォークからは実行しない。
+3. [cloud-db-backup.yml](../../../.github/workflows/cloud-db-backup.yml)は、暗号鍵・接続先の事前検査を行う。不足や弱い鍵では**本番の行データを取得する前に停止**する。CLI 3.0.0・PostgreSQL 17クライアント・公式CAを照合し、合成データでの回帰・同時更新・復元試験を通してから取得する。公式CAのSHA-256は`700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7`。配布元は[Supabase Studioの公式設定](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json)に照合済み。変更時は自動更新せず再確認する。SSL・ホスト名検証を無効にしない。
+4. 本番では読み取り専用のREPEATABLE READトランザクションからスナップショットをexportし、各dump・行照合へ同じスナップショットを指定する。通常DMLが並行しても取得時点を混在させない。取得中のDDL・ロール・権限変更は停止する。ロールは標準CLI、行はCOPY形式、スキーマは標準CLIと管理スキーマを含む依存順付き`schema.dump`の両方を保存する。authの認証行、旧修復用スキーマ、独自の権限関数・ACL・RLS・参照・マイグレーション履歴を含める。large object／外部表があれば別計画が必要として停止する。
+5. 件数・全行の値のSHA-256・カタログ・ロール・取得日時と内部チェックサムを収録し、**GPG AES-256で暗号化したファイルだけ**をDB外に保管する。保管先はこのリポジトリの**未公開Draft Release**。公開リポジトリでもDraftは書込み権限者のみが参照でき、GitのコミットやPR添付には含めない。保管処理だけcontents:writeを使い、Releaseは必ず`draft: true`に固定する。**このDraftをPublishしない。** アプリのリリース・デプロイではない。Artifactの保存期限や一時ランナーのディスクを長期保管先とみなさず、バックアップの自動削除はしない。
+6. **別の新規ジョブ**がDraft Releaseから実ファイルを取得し、外側SHA-256 → 復号 → 内側SHA-256を確認する。復元ジョブには本番DB URLを渡さない。空のSupabase互換DBを用意し、サービス停止・DBのDockerネットワーク切断を確認してから、コンテナ内Unix socketだけで復元する。ローカル初期化・`--clean`・トリガー抑制はこの使い捨てDBだけで行い、本番や既存DBを復元先に取る引数は用意しない。元のdumpは変更しない。
+7. 全対象表の件数・値、列・FK・インデックス・RLS・表／列ACL・トリガー・スキーマ／関数・アプリロールを照合し、全FKの孤立参照がなくトリガーが通常状態であることを確認する。失敗時はバックアップを消さず、Draftの状態を「要確認」にする。成功した場合もDraftを公開しない。Actionsの結果と保管先・SHA-256・取得日時を非公開台帳へ記録する。バックアップには認証データが含まれるため、ダウンロード後も暗号鍵と分けて厳重管理する。
 
-`PADEL_BACKUP_PASSPHRASE`は接続確認には使わない。実バックアップでは十分な長さのランダムな暗号化用秘密値を別途安全に管理し、平文のdumpや鍵をGitHubへ出さない。現在はDB外バックアップの取得・保管・実データの復元確認が未実施であり、0040の適用条件は未充足。
+接続確認の成功はバックアップ完了ではない。合成データでの復元成功も、本番実ファイルの復元成功と区別する。クラウドジョブは02・0040・03を本番へ実行せず、マージ・Cloudflareデプロイも行わない。クラウドでの事前リハーサルを02より先に行った場合も、実際の適用時は上記の順序で書込み停止・02・新しい外部バックアップ・復元確認を揃える。運営再開後の古い復元点で代用しない。
 
-2026年11月4日、[クラウド実行](https://github.com/g-ambe/Padel-match/actions/runs/41794638089)で公式CAの取得とTCP・TLS確認が成功。DB認証の段階はGitHub Secret未登録で停止した。CAの確認済みSHA-256は`700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7`。配布URLは[Supabase Studioの公式設定](https://github.com/supabase/supabase/blob/master/apps/studio/hooks/custom-content/custom-content.json)とSSLConfigurationのprod設定に照合した。CAが変更された場合は自動更新せず、配布元・証明書・変更理由を再確認する。
+このDB検証ではアプリを起動せず、実アカウントのログイン・メール送信・Storage実オブジェクトは試験しない。プロジェクト全体の復旧完了とは扱わない。下記の対象外情報も別に管理する。暗号鍵の紛失やGitHubアカウント自体の喪失に備え、所有者は必要に応じて暗号化済みファイルを別の管理ストレージにも複製し、保持期限・復旧担当者を決める。
 
 ### 取得例（管理端末のBash、手動実行）
 

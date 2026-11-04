@@ -35,10 +35,18 @@ jobs:
       - name: 接続確認ツールの回帰試験
         run: python3 -B -m unittest discover -s supabase/maintenance/event-fixed-pairs -p 'test_cloud_connection_probe.py' -v
 
+      - name: Supabase公式CA証明書をHTTPSで取得
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+
       - name: 認証情報を送らずTCP・TLSを確認
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --transport-only
 
       - name: DBへの読み取り専用接続を確認
         env:
           SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py

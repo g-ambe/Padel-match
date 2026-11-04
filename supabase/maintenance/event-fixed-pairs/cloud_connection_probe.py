@@ -1,17 +1,23 @@
 """クラウドランナーから、認証情報を表示せずDB接続だけを確認する。"""
 
 import json
+import hashlib
 import os
 import re
 import socket
 import ssl
 import subprocess
 import sys
+from pathlib import Path
 from urllib.parse import unquote, urlsplit
+from urllib.request import urlopen
 
 
 PROJECT_REF = "ntczrmvffmpjzilfebyi"
 POOLER_HOST = "aws-1-ap-northeast-1.pooler.supabase.com"
+CA_URL = "https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt"
+# URLはSupabase Studioのssl:certificate_urlとSSLConfiguration.tsxのprod設定に照合済み。
+EXPECTED_CA_SHA256 = None
 POSTGRES_IMAGE = "postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b"
 READ_ONLY_QUERY = """
 BEGIN READ ONLY;
@@ -32,10 +38,52 @@ class ProbeError(Exception):
     """秘密値を含まない固定メッセージだけを利用する。"""
 
 
+def custom_ca_file():
+    value = os.environ.get("PADEL_BACKUP_CA_FILE", "")
+    if not value:
+        return None
+    path = Path(value)
+    if not path.is_absolute() or "," in value or not path.is_file():
+        raise ProbeError("CA証明書の保存先を確認してください。")
+    data = path.read_bytes()
+    if EXPECTED_CA_SHA256 and hashlib.sha256(data).hexdigest() != EXPECTED_CA_SHA256:
+        raise ProbeError("公式CA証明書のSHA-256が確認済みの値と一致しません。")
+    return path
+
+
+def prepare_ca():
+    """公式Dashboardが案内するHTTPS配布元から公開CA証明書だけを取得する。"""
+    value = os.environ.get("PADEL_BACKUP_CA_FILE", "")
+    path = Path(value)
+    if not value or not path.is_absolute() or "," in value or not path.parent.is_dir():
+        raise ProbeError("CA証明書の保存先を確認してください。")
+    try:
+        with urlopen(CA_URL, timeout=20) as response:
+            if response.geturl() != CA_URL:
+                raise ProbeError("CA証明書の配布元が想定外です。")
+            data = response.read(65537)
+        if len(data) > 65536:
+            raise ProbeError("CA証明書のサイズが想定外です。")
+        ssl.PEM_cert_to_DER_cert(data.decode("ascii"))
+        context = ssl.create_default_context()
+        context.load_verify_locations(cadata=data.decode("ascii"))
+        fingerprint = hashlib.sha256(data).hexdigest()
+        if EXPECTED_CA_SHA256 and fingerprint != EXPECTED_CA_SHA256:
+            raise ProbeError("公式CA証明書のSHA-256が確認済みの値と一致しません。")
+        with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as output:
+            output.write(data)
+    except (OSError, ValueError, UnicodeError):
+        raise ProbeError("公式CA証明書を安全に取得・検証できませんでした。") from None
+    return {"ca_sha256": fingerprint, "official_ca_prepared": True}
+
+
 def transport_probe():
     """認証前のPostgreSQL SSLRequestとTLS証明書だけを確認する。"""
     try:
         context = ssl.create_default_context()
+        ca = custom_ca_file()
+        if ca:
+            context.load_verify_locations(cafile=str(ca))
         with socket.create_connection((POOLER_HOST, 5432), timeout=15) as connection:
             connection.settimeout(15)
             connection.sendall(bytes.fromhex("0000000804d2162f"))
@@ -102,8 +150,10 @@ def connection_environment(value):
     }
 
 
-def command():
+def command(ca=None):
     args = ["docker", "run", "--rm", "--interactive"]
+    if ca:
+        args.extend(["--mount", f"type=bind,src={ca},dst=/run/padel-supabase-ca.crt,readonly"])
     for name in PG_VARIABLES:
         args.extend(["--env", name])
     return args + [
@@ -119,9 +169,12 @@ def probe(value, runner=subprocess.run):
         and key not in ("SUPABASE_DB_URL", "PADEL_BACKUP_PASSPHRASE")
     }
     environment.update(connection_environment(value))
+    ca = custom_ca_file()
+    if ca:
+        environment["PGSSLROOTCERT"] = "/run/padel-supabase-ca.crt"
     try:
         result = runner(
-            command(), input=READ_ONLY_QUERY, text=True, env=environment,
+            command(ca), input=READ_ONLY_QUERY, text=True, env=environment,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=180,
             check=False,
         )
@@ -162,9 +215,11 @@ def probe(value, runner=subprocess.run):
 
 def main():
     transport_only = sys.argv[1:] == ["--transport-only"]
+    prepare_only = sys.argv[1:] == ["--prepare-ca"]
     try:
         result = (
-            transport_probe() if transport_only
+            prepare_ca() if prepare_only
+            else transport_probe() if transport_only
             else probe(os.environ.get("SUPABASE_DB_URL", ""))
         )
     except ProbeError as exc:
@@ -174,6 +229,10 @@ def main():
             print(f"::error title=クラウドDB接続確認::{exc}")
         return 1
     print(json.dumps(result, ensure_ascii=False))
+    if prepare_only:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::notice title=Supabase公式CA証明書のSHA-256::{result['ca_sha256']}")
+        return 0
     print(
         "認証前のTCP・TLS接続を確認しました。DB認証は未確認です。" if transport_only
         else "読み取り専用のDB認証を確認しました。"

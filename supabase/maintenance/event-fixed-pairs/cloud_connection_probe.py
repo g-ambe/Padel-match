@@ -46,7 +46,16 @@ def transport_probe():
                     "transport_connected": True, "tls_verified": True,
                     "database_credentials_sent": False, "backup_created": False,
                 }
-    except (OSError, ssl.SSLError):
+    except ssl.SSLCertVerificationError as exc:
+        code = getattr(exc, "verify_code", None)
+        raise ProbeError(f"DB接続先のTLS証明書を検証できませんでした。検証コード: {code}") from None
+    except socket.gaierror:
+        raise ProbeError("DB接続先のDNS名を解決できませんでした。SupabaseのConnectに表示されたホスト名を確認してください。") from None
+    except ConnectionRefusedError:
+        raise ProbeError("クラウドからDB接続先の5432番ポートへの接続が拒否されました。") from None
+    except TimeoutError:
+        raise ProbeError("クラウドからDB接続先へのTCP・TLS接続がタイムアウトしました。") from None
+    except OSError:
         raise ProbeError("クラウドからDBへのTCP・TLS接続を確認できませんでした。") from None
 
 
@@ -160,6 +169,9 @@ def main():
         )
     except ProbeError as exc:
         print(str(exc), file=sys.stderr)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            # 固定・非機密の理由だけをGitHub APIから確認できるようにする。
+            print(f"::error title=クラウドDB接続確認::{exc}")
         return 1
     print(json.dumps(result, ensure_ascii=False))
     print(

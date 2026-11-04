@@ -76,7 +76,8 @@ def check_preflight(snapshot):
 
 
 def preflight_query():
-    return body(SQL_ROOT / '01_preflight.sql')
+    # regprocedure・制約・トリガーの表示を既存検証環境と同じ探索パスへ揃える。
+    return 'SET LOCAL search_path=public;' + body(SQL_ROOT / '01_preflight.sql')
 
 
 def row_expression(relation):
@@ -161,7 +162,7 @@ def prepare():
     check_preflight(before)
     backup_schema = schema_name()
     backup = body(SQL_ROOT / '02_backup.sql').replace('event_fixed_pair_backup_20261102', backup_schema)
-    source_sql('BEGIN ISOLATION LEVEL REPEATABLE READ;' + backup + 'COMMIT;', readonly=False, phase='approved_internal_backup_failed')
+    source_sql('BEGIN ISOLATION LEVEL REPEATABLE READ; SET LOCAL search_path=public;' + backup + 'COMMIT;', readonly=False, phase='approved_internal_backup_failed')
     prefix, env = source()
     with b.Snapshot(prefix, env) as snapshot:
         check_preflight(snapshot.query(preflight_query()))
@@ -230,7 +231,7 @@ def apply():
     objects = [json.loads(line) for line in output.decode().splitlines() if line.strip().startswith('{')]
     if not objects or not objects[-1].get('migration_applied'):
         raise b.BackupError('migration_commit_result_unknown_do_not_retry_blindly')
-    source_sql((SQL_ROOT / '03_verify.sql').read_text().replace('event_fixed_pair_backup_20261102', manifest['release']['backup_schema']), phase='production_post_verify_failed')
+    source_sql('BEGIN READ ONLY; SET LOCAL search_path=public;' + body(SQL_ROOT / '03_verify.sql').replace('event_fixed_pair_backup_20261102', manifest['release']['backup_schema']) + 'ROLLBACK;', phase='production_post_verify_failed')
     result = dict(objects[-1], backup_schema=manifest['release']['backup_schema'], migration_sha256=MIGRATION_SHA)
     b.json_file(root / 'production-applied.json', result)
     b.api('/releases/' + str(release['id']), 'PATCH', {'draft': True, 'body': release['body'] + '\n\n本番0040・03：成功（既存全対象表の行データ・既存権限を保持）'})

@@ -27,7 +27,7 @@ function expression(source, name) {
 }
 function evaluate(source, name, bindings = {}) {
   const code = ts.transpileModule(`module.exports = (${expression(source, name)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
+  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, setEventTab:()=>{}, initializeEventTab:()=>{}, participantStatusRevision:{current:0}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
   const module = { exports: {} };
   new Function('module', ...Object.keys(values), code)(module, ...Object.values(values));
   return module.exports;

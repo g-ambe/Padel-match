@@ -39,6 +39,6 @@ export function MatchHistoryList({ children, title = "全試合履歴", heading,
   </>;
 }
 
-export function YoutubeDisclosure({ registered = false, children }: { registered?: boolean; children: ReactNode }) {
-  return <details className="mt-2 rounded-xl border border-zinc-700"><summary className="min-h-11 cursor-pointer px-3 py-3 text-xs font-semibold">{registered ? "YouTube登録済み" : "＋ YouTubeを追加"}</summary><div className="space-y-2 px-3 pb-3">{children}</div></details>;
+export function YoutubeDisclosure({ registered = false, compact = false, children }: { registered?: boolean; compact?: boolean; children: ReactNode }) {
+  return <details className={`${compact ? "friendly-scoreboard-video" : "mt-2"} rounded-xl border border-zinc-700`}><summary className={compact ? "flex min-h-11 cursor-pointer items-center px-2 text-[11px] font-semibold" : "min-h-11 cursor-pointer px-3 py-3 text-xs font-semibold"}>{compact ? registered ? "動画・編集" : "動画を登録" : registered ? "YouTube登録済み" : "＋ YouTubeを追加"}</summary><div className="space-y-2 px-3 pb-3">{children}</div></details>;
 }

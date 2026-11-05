@@ -5,6 +5,16 @@
 :root { --app-navigation-height: 4rem; }
 .app-navigation-active { padding-bottom: calc(var(--app-navigation-height) + env(safe-area-inset-bottom, 0px) + 1rem); }
 .app-bottom-navigation { padding-bottom: env(safe-area-inset-bottom, 0px); }
+/* 通常フレンドリーのコンパクト表示だけに適用する。 */
+:root, [data-theme="dark"] { --friendly-pair-a-bg:#10352d; --friendly-pair-a-text:#d1fae5; --friendly-pair-b-bg:#172e49; --friendly-pair-b-text:#dbeafe; }
+[data-theme="light"] { --friendly-pair-a-bg:#ecfdf5; --friendly-pair-a-text:#064e3b; --friendly-pair-b-bg:#eff6ff; --friendly-pair-b-text:#1e3a8a; }
+[data-friendly-scoreboard] .friendly-scoreboard-input .friendly-scoreboard-pair { background:var(--friendly-pair-a-bg) !important; color:var(--friendly-pair-a-text) !important; border-color:#25806a !important; padding:0.25rem 0.5rem; }
+[data-friendly-scoreboard] .friendly-scoreboard-input .friendly-scoreboard-pair.pair-b { background:var(--friendly-pair-b-bg) !important; color:var(--friendly-pair-b-text) !important; border-color:#426a9a !important; }
+.friendly-scoreboard-video { flex-shrink:0; }
+.friendly-scoreboard-video[open] { flex-basis:100%; order:10; }
+.friendly-scoreboard-settings { display:flex; flex-wrap:wrap; align-items:stretch; gap:0.5rem; }
+.friendly-scoreboard-settings > details { flex:1 1 11rem; min-width:0; }
+.friendly-scoreboard-settings > details[open] { flex-basis:100%; }
 /* ScoreSaveProviderの既存警告を下部バーより上へ配置する。保存処理は変更しない。 */
 body.app-navigation-active > aside[role="status"] { bottom: calc(var(--app-navigation-height) + env(safe-area-inset-bottom, 0px) + 1rem); }
 

@@ -9,6 +9,7 @@ import { clearGuestEvents, isGuestModeEnabled, listGuestEvents, resetGuestModeDa
 import { loadFriendlyEventAccess } from "@/lib/friendly-event-access";
 import { getOfficialAccess } from "@/lib/official-matches";
 import { loadOrdinaryMatches, loadFriendlyTeamMatches, loadOfficialTeamMatches, matchTopEntries, type MatchTopEntry } from "@/lib/match-top";
+import { readMatchGroupFilter, saveMatchGroupFilter, discardGuestCreationDraft } from "@/lib/match-group-drafts";
 
 export default function HomePage() {
   const router = useRouter();
@@ -21,6 +22,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const version = useRef(0);
+  const filterOwner = useRef("");
+  const [ownerId, setOwnerId] = useState<string | null>(null);
 
   const load = async () => {
     const request = ++version.current;
@@ -30,6 +33,7 @@ export default function HomePage() {
       const session = s ? (await s.auth.getSession()).data.session : null;
       if (request !== version.current) return;
       if (!session && isGuestModeEnabled()) {
+        setOwnerId(null);
         setGuest(true); setGroups([]);
         setEntries(listGuestEvents().map(event => ({ id: event.id, kind: "guest", title: event.name, status: event.status,
           createdAt: event.created_at, href: `/events/${event.id}`, groupIds: [], groupLabel: "ゲストモード・一時保存",
@@ -39,6 +43,8 @@ export default function HomePage() {
       if (!session) { router.replace("/"); return; }
       if (!s) throw new Error("設定を確認できません");
       resetGuestModeData(); setGuest(false);
+      setOwnerId(session.user.id);
+      try { discardGuestCreationDraft(sessionStorage); } catch { /* 既存のログイン後消去に合わせる。 */ }
       // 形式ごとの既存の所属・権限判定を維持し、部分的な取得失敗も明示する。
       const [ordinaryAccess, officialAccess] = await Promise.allSettled([loadFriendlyEventAccess(s), getOfficialAccess(s)]);
       const ordinary = ordinaryAccess.status === "fulfilled" ? ordinaryAccess.value : null;
@@ -46,7 +52,10 @@ export default function HomePage() {
       if (request !== version.current) return;
       const availableGroups = [...new Map([...(ordinary?.groups ?? []), ...(official?.groups ?? [])].map(item => [item.id, item])).values()];
       setGroups(availableGroups);
-      setGroup(current => current === "all" || current === "none" || availableGroups.some(item => item.id === current) ? current : "all");
+      if (filterOwner.current !== session.user.id) {
+        filterOwner.current = session.user.id;
+        try { setGroup(readMatchGroupFilter(sessionStorage, session.user.id, availableGroups.map(item => item.id))); } catch { setGroup("all"); }
+      } else setGroup(current => current === "all" || current === "none" || availableGroups.some(item => item.id === current) ? current : "all");
       const lists = await Promise.allSettled([
         ordinary ? loadOrdinaryMatches(s, ordinary) : Promise.reject(new Error("通常フレンドリーの所属を確認できません")),
         official ? loadFriendlyTeamMatches(s, official) : Promise.reject(new Error("チーム戦の所属を確認できません")),
@@ -66,9 +75,9 @@ export default function HomePage() {
 
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 p-4">
     <header className="min-h-11 pr-14"><p className="text-xs font-semibold tracking-wider text-accent">PADEL MATCH</p><h1 className="text-2xl font-bold">試合</h1></header>
-    <label className="space-y-2 text-sm"><span className="font-semibold">表示対象グループ</span><select aria-label="表示対象グループ" className="min-h-12 w-full rounded-xl border border-zinc-700 bg-card p-3" value={group} onChange={event => { setGroup(event.target.value); setExpanded(false); }}>
+    <div className="space-y-2 text-sm"><div className="flex items-center justify-between gap-3"><label htmlFor="match-group-filter" className="font-semibold">表示対象グループ</label>{!guest && ownerId && <Link href="/groups" className="flex min-h-11 items-center text-accent underline">グループ管理</Link>}</div><select id="match-group-filter" aria-label="表示対象グループ" className="min-h-12 w-full rounded-xl border border-zinc-700 bg-card p-3" value={group} onChange={event => { setGroup(event.target.value); setExpanded(false); if (ownerId) { try { saveMatchGroupFilter(sessionStorage, ownerId, event.target.value); } catch { /* 表示は維持する。 */ } } }}>
       <option value="all">すべての閲覧可能な試合</option><option value="none">グループなし</option>{groups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
-    </select></label>
+    </select></div>
     {guest && <p className="rounded-xl border border-amber-500/50 p-3 text-sm text-amber-300">ゲストの試合はこのブラウザに一時保存されます。通常の画面移動では削除されません。</p>}
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     <section aria-labelledby="active-matches-title" className="space-y-3"><div className="flex items-center justify-between"><h2 id="active-matches-title" className="text-lg font-bold">開催中の試合{!loading && `（${active.length}）`}</h2><button type="button" disabled={loading} className="min-h-11 px-2 text-sm underline disabled:opacity-50" onClick={() => void load()}>再読み込み</button></div>
@@ -83,6 +92,6 @@ export default function HomePage() {
       {!loading && !past.length && <p className="text-sm text-zinc-400">過去の試合はありません。</p>}
       {past.map(entry => <Link key={`${entry.kind}:${entry.id}`} href={entry.href} className="block rounded-xl border border-zinc-700 px-3 py-3" data-past-match><p className="break-words font-semibold">{entry.title}</p><p className="mt-1 text-xs text-zinc-400">{entry.formatLabel}</p><p className="mt-1 break-words text-xs text-zinc-400">{entry.groupLabel} / {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString("ja-JP") : "日付未設定"}</p></Link>)}
     </div></Card>
-    {guest && <Card title="ゲスト利用を終了"><p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます。</p><button type="button" className="mt-3 min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-sm" onClick={() => { clearGuestEvents(); router.push("/"); }}>TOPへ戻る</button></Card>}
+    {guest && <Card title="ゲスト利用を終了"><p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます。</p><button type="button" className="mt-3 min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-sm" onClick={() => { clearGuestEvents(); try { discardGuestCreationDraft(sessionStorage); } catch { /* 保存設定によらず終了できる。 */ } router.push("/"); }}>TOPへ戻る</button></Card>}
   </main>;
 }

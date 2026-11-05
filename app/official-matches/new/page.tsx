@@ -6,6 +6,7 @@ import { OfficialMatchList } from "@/components/official-match-list";
 import { ActionButton, Card } from "@/components/ui";
 import { getOfficialAccess, type OfficialGroup } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
+import { useMatchGroupReturn } from "@/components/use-match-group-return";
 
 export default function NewOfficialMatchPage() {
   const router = useRouter();
@@ -17,6 +18,13 @@ export default function NewOfficialMatchPage() {
   const [memo, setMemo] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const groupReturn = useMatchGroupReturn({
+    kind: "official_team", ownerId, ready, values: { title, eventDate, description, memo, clubId }, selectableIds: groups.map(group => group.id),
+    restore: value => { setTitle(String(value.title)); setEventDate(String(value.eventDate)); setDescription(String(value.description)); setMemo(String(value.memo)); setClubId(groups.some(group => group.id === value.clubId) ? String(value.clubId) : ""); },
+    selectGroup: id => setClubId(id)
+  });
 
   useEffect(() => {
     void (async () => {
@@ -26,6 +34,7 @@ export default function NewOfficialMatchPage() {
       const editableGroups = access.groups.filter((group) => access.superUser || group.role !== "member");
       setGroups(editableGroups);
       setClubId("");
+      setOwnerId(access.uid || null); setReady(true);
     })();
   }, []);
 
@@ -48,6 +57,7 @@ export default function NewOfficialMatchPage() {
     }).select("id").single();
     setLoading(false);
     if (insertError || !data) return setError("オフィシャルチームマッチの作成に失敗しました");
+    groupReturn.clear();
     router.push(`/official-matches/${data.id}`);
   };
 
@@ -58,11 +68,14 @@ export default function NewOfficialMatchPage() {
         <form className="space-y-3" onSubmit={createOfficialMatch}>
           <label className="block text-sm text-zinc-300">大会/リーグ名<input className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label className="block text-sm text-zinc-300">所属グループ<select className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={clubId} onChange={(e) => setClubId(e.target.value)}><option value="">選択してください</option>{groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+          {groupReturn.canCreate && <button type="button" disabled={loading || groupReturn.opening} className="min-h-11 text-sm text-accent underline" onClick={() => void groupReturn.begin()}>＋ 新しいグループを作成</button>}
           <label className="block text-sm text-zinc-300">開催日<input type="date" className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={eventDate} onChange={(e) => setEventDate(e.target.value)} /></label>
           <label className="block text-sm text-zinc-300">説明<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={description} onChange={(e) => setDescription(e.target.value)} /></label>
           <label className="block text-sm text-zinc-300">メモ<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={memo} onChange={(e) => setMemo(e.target.value)} /></label>
           {error && <p className="text-sm text-red-400">{error}</p>}
-          <ActionButton disabled={loading}>{loading ? "作成中..." : "作成"}</ActionButton>
+          {groupReturn.message && <p role="status" className="text-sm text-accent">{groupReturn.message}</p>}
+          {groupReturn.error && <p role="alert" className="text-sm text-red-400">{groupReturn.error}</p>}
+          <ActionButton disabled={loading || groupReturn.opening}>{loading ? "作成中..." : "作成"}</ActionButton>
         </form>
       </Card>
       <OfficialMatchList />

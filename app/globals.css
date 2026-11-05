@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root { --app-navigation-height: 4rem; }
+.app-navigation-active { padding-bottom: calc(var(--app-navigation-height) + env(safe-area-inset-bottom, 0px) + 1rem); }
+.app-bottom-navigation { padding-bottom: env(safe-area-inset-bottom, 0px); }
+/* ScoreSaveProviderの既存警告を下部バーより上へ配置する。保存処理は変更しない。 */
+body.app-navigation-active > aside[role="status"] { bottom: calc(var(--app-navigation-height) + env(safe-area-inset-bottom, 0px) + 1rem); }
+
 body {
   @apply bg-bg text-white;
 }

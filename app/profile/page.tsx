@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
+import Link from "next/link";
+import { GroupDestinations } from "@/components/group-destinations";
 import { ProfileLinkRequests } from "@/components/profile-link-requests";
 import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { fetchCountedFriendlyEvents, readStatsRows } from "@/lib/stats-history";
@@ -195,6 +197,7 @@ export default function ProfilePage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
+      <h1 className="pr-14 text-xl font-bold">マイ</h1>
       <Card title="プロフィール">
         {profileId && <p className="mb-3 text-xs text-emerald-300">本人の連携プロフィールです。連携申請の承認後、他グループの所属・戦績もこの選手IDへ引き継ぎます。</p>}
         {profiles.length > 1 && !loading && <div className="mb-4 space-y-2 text-sm">
@@ -242,6 +245,9 @@ export default function ProfilePage() {
       </Card>
 
       <Card title="連携申請"><ProfileLinkRequests /></Card>
+
+      <GroupDestinations />
+      <Card title="アカウント・お知らせ"><div className="grid gap-2 text-sm"><Link className="min-h-11 p-2 underline" href="/notifications">通知・申請を確認する</Link><Link className="min-h-11 p-2 underline" href="/settings">アカウント・アプリ設定</Link><p className="p-2 text-zinc-400">フォロー・フォロワー：準備中</p></div></Card>
 
       <Card title="総合戦績">
         {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (

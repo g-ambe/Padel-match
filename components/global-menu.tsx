@@ -3,21 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase";
-import { useTheme } from "@/components/theme-provider";
 
-const connectionItems = [{ id: "following", label: "フォロー" }, { id: "followers", label: "フォロワー" }] as const;
 
 export function GlobalMenu() {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const [friendlyOpen, setFriendlyOpen] = useState(false);
-  const [groupOpen, setGroupOpen] = useState(false);
-  const [officialOpen, setOfficialOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [hasSession, setHasSession] = useState<boolean | null>(null);
   const [isSuperUser, setIsSuperUser] = useState(false);
-  const { theme, saving: themeSaving, message: themeMessage, setTheme } = useTheme();
 
   const panelRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -130,7 +124,7 @@ export function GlobalMenu() {
         className="fixed right-3 top-3 z-50 min-h-11 min-w-11 rounded-lg sm:min-h-0 sm:min-w-0 bg-zinc-900/90 p-2 text-zinc-100 shadow-lg"
         onClick={() => setOpen((v) => !v)}
       >
-        ☰
+        ☰{unreadCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-accent px-1 text-[10px] font-bold text-black">{unreadCount}</span>}
       </button>
 
       {open && <button className="fixed inset-0 z-40 touch-none bg-black/60" aria-label="閉じる" onClick={closeMenu} />}
@@ -150,76 +144,11 @@ export function GlobalMenu() {
           <button ref={closeRef} aria-label="閉じる" className="rounded-lg bg-zinc-800 px-3 py-2 text-lg leading-none" onClick={closeMenu}>×</button>
         </div>
         <nav aria-label="メインメニュー" className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]" style={{ WebkitOverflowScrolling: "touch" }}>
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/profile")}>プロフィール</button>
-          <div className="rounded-lg bg-zinc-800" role="group" aria-labelledby="connections-title">
-            <p id="connections-title" className="px-3 py-3 font-medium">つながり</p>
-            {connectionItems.map(item => <button key={item.id} type="button" disabled aria-disabled="true" className="flex w-full cursor-not-allowed items-center justify-between border-t border-zinc-700 px-6 py-3 text-left text-sm opacity-60"><span>{item.label}</span><span className="text-xs">準備中</span></button>)}
-          </div>
-          <div className="rounded-lg bg-zinc-800">
-            <div className="px-3 py-3 font-medium">イベント作成・閲覧</div>
-            <div className="border-t border-zinc-700">
-              <button className="flex w-full items-center justify-between px-6 py-3 text-left text-sm" aria-expanded={friendlyOpen} onClick={() => setFriendlyOpen((v) => !v)}>
-                <span>フレンドリーマッチ</span>
-                <span aria-hidden="true">{friendlyOpen ? "−" : "+"}</span>
-              </button>
-              {friendlyOpen && (
-                <div className="border-t border-zinc-700 bg-zinc-900/60">
-                  <button className="w-full px-9 py-3 text-left text-sm" onClick={() => moveTo("/home")}>フレンドリーマッチ</button>
-                  <button className="w-full border-t border-zinc-700 px-9 py-3 text-left text-sm" onClick={() => moveTo("/team-matches/new")}>フレンドリーチームマッチ</button>
-                </div>
-              )}
-              <button className="flex w-full items-center justify-between border-t border-zinc-700 px-6 py-3 text-left text-sm" aria-expanded={officialOpen} onClick={() => setOfficialOpen((v) => !v)}>
-                <span>オフィシャルマッチ</span>
-                <span aria-hidden="true">{officialOpen ? "−" : "+"}</span>
-              </button>
-              {officialOpen && (
-                <div className="border-t border-zinc-700 bg-zinc-900/60">
-                  <button className="w-full px-9 py-3 text-left text-sm" onClick={() => moveTo("/official-matches/new")}>オフィシャルチームマッチ</button>
-                  <button className="w-full border-t border-zinc-700 px-9 py-3 text-left text-sm" onClick={() => moveTo("/official-matches/individual")}>オフィシャルマッチ</button>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="rounded-lg bg-zinc-800">
-            <button className="flex w-full items-center justify-between px-3 py-3 text-left" aria-expanded={groupOpen} onClick={() => setGroupOpen((v) => !v)}>
-              <span>グループ</span>
-              <span aria-hidden="true">{groupOpen ? "−" : "+"}</span>
-            </button>
-            {groupOpen && (
-              <div className="border-t border-zinc-700">
-                <button className="w-full px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups")}>所属グループ閲覧・設定</button>
-                <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups/discover")}>グループを探す</button>
-                <button className="w-full border-t border-zinc-700 px-6 py-3 text-left text-sm" onClick={() => moveTo("/groups/new")}>グループを作成する</button>
-              </div>
-            )}
-          </div>
-          {isSuperUser && <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/super-admin")}>スーパーユーザー管理</button>}
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/notifications")}>通知{unreadCount > 0 ? ` (${unreadCount})` : ""}</button>
-          <div className="rounded-lg bg-zinc-800 p-3">
-            <p className="mb-2 text-sm font-bold">表示設定</p>
-            <p className="mb-2 text-xs text-zinc-300">テーマ</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={`rounded-lg border px-2 py-2 text-sm ${theme === "dark" ? "border-accent bg-accent text-black" : "border-zinc-600 bg-zinc-900/60"}`}
-                disabled={themeSaving}
-                onClick={() => void setTheme("dark")}
-              >
-                ダークモード
-              </button>
-              <button
-                className={`rounded-lg border px-2 py-2 text-sm ${theme === "light" ? "border-blue-500 bg-blue-600 text-white" : "border-zinc-600 bg-zinc-900/60"}`}
-                disabled={themeSaving}
-                onClick={() => void setTheme("light")}
-              >
-                ホワイトモード
-              </button>
-            </div>
-            {themeMessage && <p className="mt-2 text-xs text-accent">{themeMessage}</p>}
-          </div>
-          {/* 一時的に非表示: 将来再表示予定 */}
-          {/* <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/ranking")}>戦績ランキング</button> */}
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/terms")}>利用規約</button>
-          <button className="w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/privacy")}>プライバシーポリシー</button>
+          <button className="min-h-12 w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/settings")}>アカウント・アプリ設定</button>
+          <button className="min-h-12 w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/help")}>使い方・ヘルプ</button>
+          <button className="min-h-12 w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/about")}>アプリについて</button>
+          <button className="min-h-12 w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/notifications")}>通知{unreadCount > 0 ? ` (${unreadCount})` : ""}</button>
+          {isSuperUser && <button className="min-h-12 w-full rounded-lg bg-zinc-800 px-3 py-3 text-left" onClick={() => moveTo("/super-admin")}>スーパーユーザー管理</button>}
           <button data-menu-action="logout" className="w-full rounded-lg bg-red-600/80 px-3 py-3 text-left" onClick={() => void logout()}>ログアウト</button>
           {pathname === "/" && <p className="pt-2 text-xs text-zinc-400">ログイン画面です</p>}
         </nav>

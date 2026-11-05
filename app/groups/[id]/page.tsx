@@ -271,6 +271,9 @@ export default function GroupDetailPage() {
 
   useEffect(() => { void load(); }, [id]);
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("tab") === "stats") setTab("グループ戦績");
+  }, [id]);
+  useEffect(() => {
     let active = true;
     setJoinPreview(null); setJoinConsent(false); setPreviewLoading(false);
     const s = getSupabaseClient();

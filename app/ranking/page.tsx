@@ -1,14 +1,5 @@
-import { Card } from "@/components/ui";
+import { GroupDestinations } from "@/components/group-destinations";
 
 export default function RankingPage() {
-  return (
-    <main className="mx-auto min-h-screen w-full max-w-md p-4">
-      <Card title="勝率ランキング（10試合以上）">
-        <ol className="space-y-2">
-          <li>1位 田中 72%（21試合）</li>
-          <li>2位 佐藤 69%（16試合）</li>
-        </ol>
-      </Card>
-    </main>
-  );
+  return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4"><h1 className="pr-14 text-xl font-bold">ランキング</h1><GroupDestinations ranking /></main>;
 }

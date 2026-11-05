@@ -12,7 +12,7 @@ import { AppDialog } from "./app-dialog";
 const items = [
   { section: "matches", href: "/home", label: "試合", icon: "court" },
   { section: "ranking", href: "/ranking", label: "ランキング", icon: "ranking" },
-  { section: "my", href: "/profile", label: "マイ", icon: "person" }
+  { section: "my", href: "/profile", label: "マイページ", icon: "person" }
 ] as const;
 
 function NavIcon({ kind }: { kind: typeof items[number]["icon"] }) {
@@ -83,8 +83,8 @@ export function AppNavigation() {
   return <>
     <nav ref={navRef} aria-label="下部ナビゲーション" data-app-navigation className="app-bottom-navigation fixed inset-x-0 bottom-0 z-30 mx-auto max-w-md border-t border-zinc-700 bg-card shadow-lg" style={{ display: focused ? "none" : undefined }}>
       {notice && <p role="alert" className="border-b border-amber-500 p-3 text-sm text-amber-300">{notice}</p>}
-      <div className="grid grid-cols-3">{items.map(item => <Link key={item.section} href={item.href} aria-current={selected === item.section ? "page" : undefined} className={`flex min-h-16 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] ${selected === item.section ? "font-bold text-accent" : "text-zinc-400"}`} onClick={event => navigate(event, item.section)}><NavIcon kind={item.icon} /><span>{item.label}</span></Link>)}</div>
+      <div className="grid grid-cols-3">{items.map(item => <Link key={item.section} href={item.href} aria-current={selected === item.section ? "page" : undefined} className={`flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 px-1 py-2 text-[11px] ${selected === item.section ? "font-bold text-accent" : "text-zinc-400"}`} onClick={event => navigate(event, item.section)}><NavIcon kind={item.icon} /><span className="whitespace-nowrap">{item.label}</span></Link>)}</div>
     </nav>
-    <AppDialog open={loginOpen} title="ログイン・アカウント登録" onClose={() => setLoginOpen(false)}><div className="space-y-3 p-4"><p className="text-sm">ランキング・マイを利用するにはログインしてください。ゲストの一時データは、ここを閉じても残ります。</p><Link href="/login" className="block min-h-12 rounded-xl bg-accent p-3 text-center font-bold text-black">ログイン画面へ</Link><Link href="/login?mode=signup" className="block min-h-12 rounded-xl border border-zinc-600 p-3 text-center">アカウント登録</Link><button type="button" className="min-h-11 w-full text-sm underline" onClick={() => setLoginOpen(false)}>閉じる</button></div></AppDialog>
+    <AppDialog open={loginOpen} title="ログイン・アカウント登録" onClose={() => setLoginOpen(false)}><div className="space-y-3 p-4"><p className="text-sm">ランキング・マイページを利用するにはログインしてください。ゲストの一時データは、ここを閉じても残ります。</p><Link href="/login" className="block min-h-12 rounded-xl bg-accent p-3 text-center font-bold text-black">ログイン画面へ</Link><Link href="/login?mode=signup" className="block min-h-12 rounded-xl border border-zinc-600 p-3 text-center">アカウント登録</Link><button type="button" className="min-h-11 w-full text-sm underline" onClick={() => setLoginOpen(false)}>閉じる</button></div></AppDialog>
   </>;
 }

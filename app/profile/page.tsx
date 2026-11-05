@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import Link from "next/link";
@@ -51,10 +51,8 @@ export default function ProfilePage() {
   const [profileId, setProfileId] = useState<string | null>(null);
   const [form, setForm] = useState<ProfileForm>(emptyForm);
   const [draft, setDraft] = useState<ProfileForm>(emptyForm);
-  const [groupNames, setGroupNames] = useState<string[]>([]);
   const [stats, setStats] = useState<ProfileStats | null>(null);
 
-  const hasGroup = useMemo(() => groupNames.length > 0, [groupNames]);
 
   const [profiles, setProfiles] = useState<PlayerProfile[]>([]);
   const [usage, setUsage] = useState<Map<string, ProfileUsage>>(new Map());
@@ -104,7 +102,6 @@ export default function ProfilePage() {
       setOwnerId(uid);
       setProfiles(rows);
       setUsage(references);
-      setGroupNames([...new Set([...references.values()].flatMap((entry) => entry.groups))]);
       setStats(profileStats);
       if (relatedError) setError(relatedError);
       if (selected) {
@@ -120,7 +117,6 @@ export default function ProfilePage() {
       if (version !== loadVersion.current) return;
       console.error("プロフィール読み込みに失敗しました", cause);
       setProfiles([]);
-      setGroupNames([]);
       setStats(null);
       setError(profileErrorMessage(cause));
     } finally {
@@ -197,8 +193,8 @@ export default function ProfilePage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
-      <h1 className="pr-14 text-xl font-bold">マイ</h1>
-      <Card title="プロフィール">
+      <div className="flex items-center justify-between gap-3 pr-14"><h1 className="whitespace-nowrap text-xl font-bold">マイページ</h1><a href="#profile-groups" className="flex min-h-11 items-center whitespace-nowrap text-xs text-accent underline">所属グループへ</a></div>
+      <Card title="プレイヤープロフィール">
         {profileId && <p className="mb-3 text-xs text-emerald-300">本人の連携プロフィールです。連携申請の承認後、他グループの所属・戦績もこの選手IDへ引き継ぎます。</p>}
         {profiles.length > 1 && !loading && <div className="mb-4 space-y-2 text-sm">
           <p className="text-amber-300">複数の有効な連携プロフィールがあります。表示する選手は選べますが、正規プロフィールの特定と新しい連携・統合は、本人の選択を管理者が確認するまで停止します。</p>
@@ -223,7 +219,6 @@ export default function ProfilePage() {
             <ProfileField label="利き手" value={editing ? <select aria-label="利き手" className="w-full rounded-xl bg-zinc-800 p-3" value={draft.dominant_hand} onChange={(e) => updateDraft("dominant_hand", e.target.value)}><option value="">未設定</option>{DOMINANT_HAND_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}</select> : <p>{form.dominant_hand || "未設定"}</p>} />
             <ProfileField label="ポジション" value={editing ? <select aria-label="ポジション" className="w-full rounded-xl bg-zinc-800 p-3" value={draft.preferred_position} onChange={(e) => updateDraft("preferred_position", e.target.value)}><option value="">未設定</option>{PREFERRED_POSITION_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}</select> : <p>{form.preferred_position || "未設定"}</p>} />
             <ProfileField label="主な活動地域" value={editing ? <input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="例: 東京都" value={draft.activity_area} onChange={(e) => updateDraft("activity_area", e.target.value)} /> : <p>{form.activity_area || "未設定"}</p>} />
-            <ProfileField label="所属グループ" value={usage.size === 0 ? <p>所属を確認できていません</p> : hasGroup ? <div className="space-y-1">{groupNames.map((g) => <p key={g}>{g}</p>)}</div> : <p>未所属</p>} />
 
             {editing ? (
               <div className="flex gap-2">
@@ -244,9 +239,8 @@ export default function ProfilePage() {
         {!loading && <button disabled={saving} className="mt-3 text-sm text-zinc-300 underline" onClick={() => void loadProfile()}>再読み込み</button>}
       </Card>
 
+      <div id="profile-groups" className="scroll-mt-4"><GroupDestinations /></div>
       <Card title="連携申請"><ProfileLinkRequests /></Card>
-
-      <GroupDestinations />
       <Card title="アカウント・お知らせ"><div className="grid gap-2 text-sm"><Link className="min-h-11 p-2 underline" href="/notifications">通知・申請を確認する</Link><Link className="min-h-11 p-2 underline" href="/settings">アカウント・アプリ設定</Link><p className="p-2 text-zinc-400">フォロー・フォロワー：準備中</p></div></Card>
 
       <Card title="総合戦績">

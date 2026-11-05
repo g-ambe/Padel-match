@@ -34,7 +34,7 @@ function navigationFixture(){
    }else if(!key.includes('.'))rows=rows.filter(row=>filter(row,key,value));
   }
   if(method==='POST'){
-   rows=(Array.isArray(body)?body:[body]).map(row=>({id:id(seq++),status:'active',is_active:true,is_deleted:false,created_at:'2026-11-05T00:00:00Z',participant_type:'guest',...row}));
+   rows=(Array.isArray(body)?body:[body]).filter(row=>!headers.get('Prefer')?.includes('resolution=ignore-duplicates')||!(tables[table]??[]).some(old=>old.id===row.id)).map(row=>({id:id(seq++),status:'active',is_active:true,is_deleted:false,created_at:'2026-11-05T00:00:00Z',participant_type:'guest',...row}));
    tables[table]??=[];tables[table].push(...rows);
   }else if(method==='PATCH')for(const row of rows)Object.assign(row,body);
   else if(method==='DELETE')tables[table]=tables[table].filter(row=>!rows.includes(row));

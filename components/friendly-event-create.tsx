@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import { loadFriendlyEventAccess } from "@/lib/friendly-event-access";
+import { useMatchGroupReturn } from "./use-match-group-return";
 import { isGuestModeEnabled, resetGuestModeData, upsertGuestEvent, type EventMode, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
@@ -19,6 +20,16 @@ export function FriendlyEventCreate() {
   const [error, setError] = useState("");
   const [guestMode, setGuestModeState] = useState(false);
   const [ready, setReady] = useState(false);
+  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const groupReturn = useMatchGroupReturn({
+    kind: "ordinary", ownerId, ready, guest: guestMode,
+    values: { name, courtCount, eventMode, selectedGroupId }, selectableIds: groups.map(group => group.id),
+    restore: value => {
+      setName(String(value.name)); setCourtCount(Number(value.courtCount)); setEventMode(value.eventMode as EventMode);
+      setSelectedGroupId(groups.some(group => group.id === value.selectedGroupId) ? String(value.selectedGroupId) : "");
+    },
+    selectGroup: id => setSelectedGroupId(id)
+  });
 
   const selectedGroupName = useMemo(() => groups.find((g) => g.id === selectedGroupId)?.name ?? "", [groups, selectedGroupId]);
 
@@ -51,8 +62,9 @@ export function FriendlyEventCreate() {
     }
 
     try {
-      const { groups: groupRows } = await loadFriendlyEventAccess(supabase);
+      const { groups: groupRows, uid } = await loadFriendlyEventAccess(supabase);
       setGroups(groupRows);
+      setOwnerId(uid);
       const query = new URLSearchParams(window.location.search);
       const candidate = query.get("group");
       setSelectedGroupId(candidate && groupRows.some(group => group.id === candidate) ? candidate : "");
@@ -106,6 +118,7 @@ export function FriendlyEventCreate() {
         created_at: new Date().toISOString()
       };
       upsertGuestEvent(event);
+      groupReturn.clear();
       setLoading(false);
       setName("");
       setCourtCount(2);
@@ -179,6 +192,7 @@ export function FriendlyEventCreate() {
     setName("");
     setCourtCount(2);
     setEventMode("auto");
+    groupReturn.clear();
     router.push(`/events/${data.id}`);
   };
 
@@ -189,7 +203,7 @@ export function FriendlyEventCreate() {
       {guestMode && <p className="text-sm text-amber-300">ゲストの試合はこのブラウザに一時保存されます。</p>}
       <div id="random-events"><Card title="フレンドリーマッチを作成">
         <form className="space-y-3" onSubmit={event => { if (ready) void createEvent(event); else event.preventDefault(); }}>
-          {!guestMode && (
+          {!guestMode && ownerId && (
             <>
               <select aria-label="作成先グループ" disabled={!ready || loading} className="w-full rounded-xl bg-zinc-800 p-3" value={selectedGroupId} onChange={(e) => setSelectedGroupId(e.target.value)}>
                 <option value="">グループなし</option>
@@ -198,6 +212,7 @@ export function FriendlyEventCreate() {
                 ))}
               </select>
               <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
+              {groupReturn.canCreate && <button type="button" disabled={loading || groupReturn.opening} className="min-h-11 text-sm text-accent underline" onClick={() => void groupReturn.begin()}>＋ 新しいグループを作成</button>}
             </>
           )}
           <input
@@ -218,8 +233,10 @@ export function FriendlyEventCreate() {
             </select>
           </label>
           {error && <p className="text-sm text-red-400">{error}</p>}
+          {groupReturn.message && <p role="status" className="text-sm text-accent">{groupReturn.message}</p>}
+          {groupReturn.error && <p role="alert" className="text-sm text-red-400">{groupReturn.error}</p>}
           {!ready && error && <button type="button" className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-sm" onClick={() => { setError(""); void loadHomeData(); }}>作成先を再読み込み</button>}
-          <button type="submit" className="w-full rounded-xl bg-accent py-3 font-semibold text-black" disabled={loading || !ready}>
+          <button type="submit" className="w-full rounded-xl bg-accent py-3 font-semibold text-black" disabled={loading || !ready || groupReturn.opening}>
             {loading ? "作成中..." : !ready ? "作成先を確認中..." : "作成"}
           </button>
         </form>

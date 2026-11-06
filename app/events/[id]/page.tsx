@@ -53,7 +53,7 @@ function SummaryRankingSection({ title, isOpen, onToggle, children }: { title: s
   return (
     <section className="space-y-2">
       <button type="button" className={summaryRankingButtonClass} onClick={onToggle} aria-expanded={isOpen}>
-        <span className="mr-2 text-accent">{isOpen ? "▼" : "◀"}</span>
+        <span aria-hidden="true" className="event-disclosure-icon mr-2">{isOpen ? "▼" : "▶"}</span>
         <span>{title}</span>
       </button>
       {isOpen && <div>{children}</div>}
@@ -158,6 +158,8 @@ export default function EventDetailPage() {
   const [eventVideoForm, setEventVideoForm] = useState<EventVideoForm>({ title: "全試合動画", video_url: "", memo: "", display_order: "1" });
   const [editingEventVideoId, setEditingEventVideoId] = useState<string | null>(null);
   const [deleteEventVideoId, setDeleteEventVideoId] = useState<string | null>(null);
+  const youtubeActions = useRef(new Set<string>());
+  const [youtubeBusy, setYoutubeBusy] = useState<Record<string, boolean>>({});
 
   const nameMap = useMemo(() => Object.fromEntries(participants.map((p) => [p.id, p.display_name ?? (p.participant_type === "guest" ? (p.guest_name ?? "ゲスト（名称未設定）") : "メンバー名未設定") ])), [participants]);
 
@@ -1097,6 +1099,14 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
+  // 動画の書込み処理はそのまま使い、通信中のUI操作だけを制御する。
+  const runYoutubeAction = async (matchId: string, action: () => Promise<void>) => {
+    if (youtubeActions.current.has(matchId)) return;
+    youtubeActions.current.add(matchId); setYoutubeBusy(previous => ({ ...previous, [matchId]: true }));
+    try { await action(); }
+    finally { youtubeActions.current.delete(matchId); setYoutubeBusy(previous => ({ ...previous, [matchId]: false })); }
+  };
+
   const deleteYoutubeUrl = async (matchId: string) => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
@@ -1519,11 +1529,13 @@ export default function EventDetailPage() {
                   }}
                 >
                 <div className="mb-1 flex flex-wrap items-center gap-1"><p className="mr-auto text-[11px] font-bold">{m.round_number === latestRoundNumber && !allHistoryOpen ? "" : `R${m.round_number} · `}コート{m.court_number}</p>
-                  <YoutubeDisclosure compact registered={!!m.youtube_url}>
+                  <YoutubeDisclosure compact closable registered={!!m.youtube_url} busy={!!youtubeBusy[m.id]}>
+                  <fieldset disabled={!!youtubeBusy[m.id]} className="min-w-0 space-y-2">
                   {m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="inline-block rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a>}
                   <input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={e => setYoutubeInputs(previous => ({ ...previous, [m.id]: e.target.value }))} />
-                  <div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={() => void saveYoutubeUrl(m.id)}>URLを保存</button>{m.youtube_url && <button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>URLを削除</button>}</div>
+                  <div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={() => void runYoutubeAction(m.id, () => saveYoutubeUrl(m.id))}>URLを保存</button>{m.youtube_url && <button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={() => void runYoutubeAction(m.id, () => deleteYoutubeUrl(m.id))}>URLを削除</button>}</div>
                   {canViewVideoClickCounts && m.youtube_url && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}
+                  </fieldset>
                 </YoutubeDisclosure>
                 {eventMode === "auto" && eventStatus === "active" && !m.completed && !m.result && (guestMode || (canManageEventName && lineupVersions?.eventId===eventId && lineupVersions.userId===roundUserId && lineupVersions.data.editing_enabled)) && <button type="button" className="min-h-11 shrink-0 rounded-xl border border-zinc-600 px-2 text-[11px]" disabled={lineupLoading||!!lineupEditor||isGeneratingRound||isClosingEvent||unsavedScoreCount>0||busyParticipants.size>0} onClick={()=>void openLineupEditor(m)}>メンバー変更</button>}
                   {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="min-h-11 min-w-11 rounded-xl border border-zinc-600 px-2 text-[11px] text-zinc-400" disabled={scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={() => requestMatchDelete(m)}>削除</button>}
@@ -1617,8 +1629,8 @@ export default function EventDetailPage() {
           {showCourtWarning && <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>}
         <div className="friendly-scoreboard-settings">
       {!guestMode && !eventId.startsWith("guest_") && !!roundUserId && eventMode === "auto" && eventStatus !== "closed" && (
-        <details className="rounded-xl border border-zinc-700" data-round-mode>
-          <summary className="min-h-11 cursor-pointer px-3 py-3 text-sm font-bold">組み合わせ：{friendlyRoundModes.find(mode => mode.value === selectedRoundMode)!.label}{specialModesUnlocked && <span className="ml-2 text-xs text-accent">解放済み</span>}</summary>
+        <details className="group/mode rounded-xl border border-zinc-700" data-round-mode>
+          <summary className="flex min-h-11 list-none cursor-pointer items-center gap-2 px-3 py-3 text-sm font-bold [&::-webkit-details-marker]:hidden"><span aria-hidden="true" className="event-disclosure-icon"><span className="group-open/mode:hidden">▶</span><span className="hidden group-open/mode:inline">▼</span></span>組み合わせ：{friendlyRoundModes.find(mode => mode.value === selectedRoundMode)!.label}{specialModesUnlocked && <span className="ml-2 text-xs text-accent">解放済み</span>}</summary>
         <fieldset className="space-y-2 p-3 pt-0" disabled={isGeneratingRound || isClosingEvent}>
           <legend className="sr-only">組み合わせモード</legend>
           <div className="grid grid-cols-2 gap-2">
@@ -1643,17 +1655,17 @@ export default function EventDetailPage() {
             <span className="block text-xs text-zinc-300">利用コート数</span><span className="text-sm font-bold">{courtCount}面</span>
           </button> : <p className="flex min-h-12 shrink-0 flex-col justify-center rounded-xl border border-zinc-700 px-2 text-center"><span className="text-xs text-zinc-400">利用コート数</span><span className="text-sm font-bold">{courtCount}面</span></p>)}
         </div>
-        {fixedFeature && <details data-fixed-settings className="group/fixed rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none cursor-pointer items-center gap-2 px-3 text-sm font-bold [&::-webkit-details-marker]:hidden"><span aria-hidden="true" className="shrink-0"><span className="group-open/fixed:hidden">▶</span><span className="hidden group-open/fixed:inline">▼</span></span>固定ペア{scopedFixedState ? ` · ${scopedFixedState.pairs.length}組` : ""}</summary>
+        {fixedFeature && <details data-fixed-settings className="group/fixed rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none cursor-pointer items-center gap-2 px-3 text-sm font-bold [&::-webkit-details-marker]:hidden"><span aria-hidden="true" className="event-disclosure-icon"><span className="group-open/fixed:hidden">▶</span><span className="hidden group-open/fixed:inline">▼</span></span>固定ペア{scopedFixedState ? ` · ${scopedFixedState.pairs.length}組` : ""}</summary>
         {fixedFeature && <EventFixedPairs key={`${roundUserId}:${eventId}`} people={participants.map(p => ({ id: p.id, name: participantLabel(p), guest: p.participant_type === "guest", status: p.status }))} activeIds={candidateParticipants.map(p => p.id)} snapshot={scopedFixedState} error={fixedError} busy={busyParticipants.size > 0 || fixedSaving || isGeneratingRound || isClosingEvent || courtSaving || isDeletingMatch} closed={eventStatus === "closed"} onSave={saveFixedPairs} onReload={reloadFixedPairs} />}
         </details>}
-        <details data-round-history className="group/history rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none cursor-pointer items-center gap-2 px-3 text-sm font-bold [&::-webkit-details-marker]:hidden"><span aria-hidden="true" className="shrink-0"><span className="group-open/history:hidden">▶</span><span className="hidden group-open/history:inline">▼</span></span>過去Round · {matches.filter(m => m.round_number !== latestRoundNumber).length}試合{unsavedScoreCount > 0 && " · 未保存あり"}</summary><div className="space-y-2 p-2">
+        <details data-round-history className="group/history rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none cursor-pointer items-center gap-2 px-3 text-sm font-bold [&::-webkit-details-marker]:hidden"><span aria-hidden="true" className="event-disclosure-icon"><span className="group-open/history:hidden">▶</span><span className="hidden group-open/history:inline">▼</span></span>過去Round · {matches.filter(m => m.round_number !== latestRoundNumber).length}試合{unsavedScoreCount > 0 && " · 未保存あり"}</summary><div className="space-y-2 p-2">
           <div className="flex justify-end"><button type="button" aria-label="全試合履歴を拡大" title="全試合履歴を拡大" className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-600" onClick={() => { if (!document.querySelector('dialog[open]')) setAllHistoryOpen(true); }}><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" /></svg></button></div>
           {!matches.some(m => m.round_number !== latestRoundNumber) && <p className="text-xs text-zinc-400">過去Roundはまだありません。拡大すると最新Roundを含む全試合を確認できます。</p>}
           <div ref={pastCardsHost} data-match-list="normal" className="max-h-[min(25rem,50dvh)] space-y-3 overflow-y-auto overscroll-contain pr-1" />
         </div></details>
       </section>
 
-      <details data-event-videos className="rounded-xl border border-zinc-700"><summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm font-bold">YouTube動画一覧・管理</summary>
+      <details data-event-videos className="group/event-videos rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none cursor-pointer items-center gap-2 px-3 text-sm font-bold [&::-webkit-details-marker]:hidden"><span aria-hidden="true" className="event-disclosure-icon"><span className="group-open/event-videos:hidden">▶</span><span className="hidden group-open/event-videos:inline">▼</span></span>YouTube動画一覧・管理</summary>
       <Card title="動画視聴">
         <div className="space-y-3 text-sm">
           {eventVideoLinks.map((video) => (

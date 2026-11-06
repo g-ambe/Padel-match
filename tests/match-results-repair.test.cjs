@@ -15,7 +15,7 @@ test('重複修復・監査・復旧・一意制約を隔離SQLで検証する',
  async function card(e,court=1){await owner();let rid=(await db.query('select id from rounds where event_id=$1',[e.eid])).rows[0]?.id;if(!rid)rid=(await db.query('insert into rounds(event_id,round_number) values($1,1) returning id',[e.eid])).rows[0].id;const mid=(await db.query('insert into matches(event_id,round_id,court_number,completed) values($1,$2,$3,false) returning id',[e.eid,rid,court])).rows[0].id;for(let i=0;i<4;i++)await db.query('insert into match_players(match_id,participant_id,team) values($1,$2,$3)',[mid,e.participants[i],i<2?'A':'B']);return mid;}
  try{
   const e=await f.event(2200,6),m1=await card(e),m2=await card(e,2),batch=uuid();
-  for(const [mid,count]of [[m1,3],[m2,2]])for(let j=0;j<count;j++)await db.query("insert into match_results(id,match_id,score_a,score_b,winner_team,created_at) values($1,$2,4,0,'A',$3)",[uuid(),mid,j===0?'2026-01-01':j===1?'2026-01-02':null]);
+  for(const [mid,count]of [[m1,3],[m2,2]])for(let j=0;j<count;j++)await db.query("insert into match_results(id,match_id,score_a,score_b,winner_team,created_at) values($1,$2,4,0,'A',$3)",[uuid(),mid,mid===m2?'2026-01-01':j===0?'2026-01-01':j===1?'2026-01-02':null]);
   const p=await planned(),before=await fingerprint(),beforeMatches=JSON.stringify((await db.query('select * from matches order by id')).rows),beforePlayers=JSON.stringify((await db.query('select * from match_players order by id')).rows);
   const fail=async(sql,pattern)=>{await assert.rejects(db.exec(sql),pattern);await db.exec('rollback');assert.equal(await fingerprint(),before);};
   await t.test('承認未設定・食い違う得点・期待値変更では全体停止',async()=>{
@@ -64,8 +64,21 @@ test('重複修復・監査・復旧・一意制約を隔離SQLで検証する',
    for(const order of ['legacy/legacy','rpc/legacy','legacy/rpc'])await t.test('PostgreSQL複数接続・一意制約: '+order,async()=>{
     const ev=await f.event(sequence++,4,{mode:order==='legacy/legacy'?'manual':'auto'}),mid=await card(ev),players=(await db.query('select participant_id,team from match_players where match_id=$1 order by team,participant_id',[mid])).rows;
     const c1=await connection(),c2=await connection();const call=(c,kind)=>kind==='legacy'?c.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,0,0,'draw')",[mid]):c.query('select save_friendly_match_score($1,$2,0,$3,$4,0,0,$5)',[ev.eid,mid,JSON.stringify(players),JSON.stringify({completed:false,results:[]}),uuid()]);
-    try{const[a,b]=order.split('/');await c1.query('begin');await call(c1,a);let done=false;const pending=call(c2,b).then(()=>({ok:true}),err=>({error:err})).finally(()=>done=true);const deadline=Date.now()+5000;while((await monitor.query('select wait_event_type from pg_stat_activity where pid=$1',[c2.pid])).rows[0]?.wait_event_type!=='Lock'){if(done||Date.now()>deadline)throw Error('2接続目がロック待機しません');await new Promise(r=>setTimeout(r,10));}assert.equal(done,false);await c1.query('commit');const result=await pending;assert(result.error);assert.equal(Number((await db.query('select count(*) n from match_results where match_id=$1',[mid])).rows[0].n),1);}finally{await c1.query('rollback');await c1.end();await c2.end();}
+    try{const[a,b]=order.split('/');await c1.query('begin');await call(c1,a);let done=false;const pending=call(c2,b).then(()=>({ok:true}),err=>({error:err})).finally(()=>done=true);const deadline=Date.now()+5000;while((await monitor.query('select wait_event_type from pg_stat_activity where pid=$1',[c2.pid])).rows[0]?.wait_event_type!=='Lock'){if(done||Date.now()>deadline)throw Error('2接続目がロック待機しません');await new Promise(r=>setTimeout(r,10));}assert.equal(done,false);await c1.query('commit');const result=await pending;assert(result.error);assert.equal(result.error.code,order==='legacy/rpc'?'40001':'23505');assert.equal(Number((await db.query('select count(*) n from match_results where match_id=$1',[mid])).rows[0].n),1);}finally{await c1.query('rollback');await c1.end();await c2.end();}
    });
   }
  }finally{if(monitor)await monitor.end();if(client)await client.end();else await db.close();}
+});
+
+test('修復と0041/42/43を同じトランザクションにし、後続Migration失敗でも全て戻す',async()=>{
+ const {spawnSync}=require('node:child_process'),f=await fixedPairDatabase(),{db}=f;
+ try{
+  const e=await f.event(2300,4),rid=(await db.query('insert into rounds(event_id,round_number) values($1,1) returning id',[e.eid])).rows[0].id,mid=(await db.query('insert into matches(event_id,round_id,court_number) values($1,$2,1) returning id',[e.eid,rid])).rows[0].id;
+  for(let i=0;i<2;i++)await db.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,0,0,'draw')",[mid]);
+  const p=(await db.query(planQuery())).rows[0].value,before=JSON.stringify((await db.query('select * from match_results order by id')).rows);
+  const code="import importlib.util,json,sys;from pathlib import Path;p=Path('supabase/maintenance/match-result-repair/rehearse.py');s=importlib.util.spec_from_file_location('repair',p);r=importlib.util.module_from_spec(s);s.loader.exec_module(r);print(r.atomic_release_sql('30000000-0000-4000-8000-000000002301',json.load(sys.stdin)))";
+  const generated=spawnSync('python3',['-B','-c',code],{input:JSON.stringify(p),encoding:'utf8',env:{PATH:process.env.PATH}});assert.equal(generated.status,0,generated.stderr);const sql=generated.stdout;
+  await assert.rejects(db.exec(sql.replace('alter table public.match_results add constraint',()=>"DO $$BEGIN RAISE EXCEPTION '後続失敗';END$$;alter table public.match_results add constraint")),/後続失敗/);await db.exec('rollback');assert.equal(JSON.stringify((await db.query('select * from match_results order by id')).rows),before);assert.equal((await db.query("select to_regnamespace('lineup_private') n")).rows[0].n,null);
+  await db.exec(sql);assert.equal((await db.query('select * from match_results')).rows.length,1);assert.equal((await db.query("select editing_enabled from lineup_private.release_control")).rows[0].editing_enabled,false);assert.equal(Number((await db.query("select count(*) n from pg_constraint where conname='match_results_one_per_match'")).rows[0].n),1);
+ }finally{await db.close();}
 });

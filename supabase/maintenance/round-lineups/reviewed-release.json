@@ -11,7 +11,8 @@
   },
   "migrations": {
     "0041_atomic_round_lineups.sql": "0b202e54ff4ce491ca7157789e854739cdc35f571aa29c2cf53a5d9343032ac3",
-    "0042_round_lineup_safety.sql": "5e03c11215fb3d6a8fbc0654536c2dc5b3e621ec64eb0bb0363cce3d69e763c1"
+    "0042_round_lineup_safety.sql": "5e03c11215fb3d6a8fbc0654536c2dc5b3e621ec64eb0bb0363cce3d69e763c1",
+    "0043_match_results_one_per_match.sql": "fd130c0cfdf892d50ad4757aa74446ba2f7523ae6b953dc489490b6862cb4056"
   },
   "triggers": [
     {

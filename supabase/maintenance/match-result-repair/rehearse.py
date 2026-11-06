@@ -35,6 +35,15 @@ def render(name,batch,plan):
     return text.replace('-- REVIEWED_INPUT',inject)
 
 
+def atomic_release_sql(batch,plan):
+    repair=render('02_repair_reviewed.sql',batch,plan)
+    # 全SQL文を保持し、外側のトランザクションだけを一つにまとめる。
+    repair=re.sub(r'(?im)^begin;\s*','',repair,count=1)
+    repair=re.sub(r'(?im)^commit;\s*$','',repair,count=1)
+    migrations=''.join(common.body(ROOT/'supabase/migrations'/name) for name in ('0041_atomic_round_lineups.sql','0042_round_lineup_safety.sql','0043_match_results_one_per_match.sql'))
+    return 'BEGIN;'+repair+migrations+'COMMIT;'
+
+
 def authority():
     if os.environ.get('PADEL_REPAIR_REVIEW')!='PR182-APPROVAL-PENDING' or os.environ.get('BACKUP_RELEASE_ID')!=str(BACKUP_RELEASE) or os.environ.get('BACKUP_ASSET_ID')!=str(BACKUP_ASSET) or os.environ.get('BACKUP_SHA256')!=BACKUP_SHA:
         raise b.BackupError('repair_review_backup_identity_invalid')
@@ -111,23 +120,32 @@ def rehearse():
     if audit_local(target)['totals']['matches']!=0:raise b.BackupError('duplicates_remain')
     target.sql('SET ROLE postgres;'+render('02_repair_reviewed.sql',batch,plan))
     if result_hash(target)!=repaired:raise b.BackupError('repeat_repair_changed_data')
-    # 0041/42/43は隔離DBにだけ適用。既存Migrationは変更しない。
-    for name in ('0041_atomic_round_lineups.sql','0042_round_lineup_safety.sql','0043_match_results_one_per_match.sql'):
-        target.sql('SET ROLE postgres;'+(ROOT/'supabase/migrations'/name).read_text())
+    # まず修復だけを完全復旧。後続は別の承認バッチで原子的なリリース全体も検証する。
+    recover=render('03_recover_reviewed.sql',batch,plan)
+    target.sql('SET ROLE postgres;'+recover)
+    if result_hash(target)!=repaired:raise b.BackupError('recovery_preview_changed_data')
+    target.sql('SET ROLE postgres;'+re.sub(r'rollback;\s*$','commit;',recover,flags=re.I))
+    if result_hash(target)!=before:raise b.BackupError('repair_only_recovery_failed')
+    batch=str(uuid.uuid4());atomic=atomic_release_sql(batch,plan)
+    fail_atomic=atomic.replace('alter table public.match_results add constraint',"DO $$BEGIN RAISE EXCEPTION '隔離試験の後続Migration失敗';END$$;alter table public.match_results add constraint")
+    expect_failure(target,fail_atomic,'atomic_release_failure_not_detected')
+    if result_hash(target)!=before or target.query("select to_json(to_regnamespace('lineup_private') is not null)"):raise b.BackupError('atomic_release_did_not_rollback')
+    target.sql('SET ROLE postgres;'+atomic)
     if dump_stats(target,root/'statistics-migrated.json')!=before_stats:raise b.BackupError('migration_changed_visible_statistics')
     if result_hash(target)!=repaired:raise b.BackupError('migration_changed_existing_results')
-    target.sql('SET ROLE postgres;'+render('03_recover_reviewed.sql',batch,plan))
-    if result_hash(target)!=repaired:raise b.BackupError('recovery_preview_changed_data')
+    b.verify_foreign_keys(target,manifest['tables']+[{'schema':'score_repair_182','name':'rows'},{'schema':'score_repair_182','name':'batches'},{'schema':'public','name':'friendly_match_operations'},{'schema':'public','name':'friendly_round_lineup_state'}])
     recover=render('03_recover_reviewed.sql',batch,plan)
-    recover=re.sub(r'rollback;\s*$', 'commit;',recover,flags=re.I)
+    target.sql('SET ROLE postgres;'+recover)
+    if result_hash(target)!=repaired:raise b.BackupError('recovery_preview_changed_data')
+    recover=re.sub(r'rollback;\s*$','commit;',recover,flags=re.I)
     target.sql('SET ROLE postgres;'+recover)
     if result_hash(target)!=before or dump_stats(target,root/'statistics-restored.json')!=before_stats:raise b.BackupError('original_results_not_recovered')
     target.sql('SET ROLE postgres;'+recover)
     if result_hash(target)!=before:raise b.BackupError('repeat_recovery_changed_data')
-    report={'backup_release_id':BACKUP_RELEASE,'restore':restored,'audit':audit,'plan_sha256':plan['sha256'],'batch_id':batch,
+    report={'raw_result_rows_before':next(x['rows'] for x in original_rows if x['schema']=='public' and x['name']=='match_results'),'raw_result_rows_after':next(x['rows'] for x in after_rows if x['schema']=='public' and x['name']=='match_results'),'backup_release_id':BACKUP_RELEASE,'restore':restored,'audit':audit,'plan_sha256':plan['sha256'],'batch_id':batch,
             'application_references':refs,'statistics':before_stats,'visible_statistics_unchanged':True,'unrelated_rows_unchanged':True,'original_rls_acl_schema_unchanged':True,
             'failure_rollback_verified':True,'repair_repeat_verified':True,'recovery_verified':True,'recovery_repeat_verified':True,
-            'unique_migration_rehearsed':True,'production_mutations':False,'approval_pending':True}
+            'unique_migration_rehearsed':True,'atomic_repair_and_migrations_verified':True,'late_migration_failure_rollback_verified':True,'production_mutations':False,'approval_pending':True}
     b.json_file(root/'repair-plan.json',{'batch_id':batch,**plan})
     b.json_file(root/'repair-report.json',report)
     # 個別ID・実スコア入りの承認対象は暗号化保管だけに使用し、Git・公開ログへ出さない。

@@ -28,7 +28,7 @@ test('Round入替・スコアCAS・旧経路拒否を実SQLで検証する',asyn
   const deleted=await db.query('delete from '+table+' where '+q[0]+'=$1 returning id',[q[1]]);assert(deleted.rows.length>0,'0041単体の直接DELETEを再現: '+table);await db.exec('rollback');
  }
  await owner();await db.query('delete from friendly_round_lineup_state where round_id=$1',[legacyRound]);
- await db.exec(fs.readFileSync('supabase/migrations/0042_round_lineup_safety.sql','utf8'));await db.exec(maintenance('03_verify.sql'));
+ await db.exec(fs.readFileSync('supabase/migrations/0042_round_lineup_safety.sql','utf8'));await db.exec(fs.readFileSync('supabase/migrations/0043_match_results_one_per_match.sql','utf8'));await db.exec(maintenance('03_verify.sql'));
  assert.equal(await metadata(),before,'既存RLS・固定・IDガードの定義を維持');assert.equal(await data(),beforeData,'既存履歴・プロフィールを変更しない');
  const versions=e=>rpc('get_friendly_lineup_versions',[e.eid]);
  const snap=e=>rpc('get_friendly_round_lineup',[e.eid,e.rid]);

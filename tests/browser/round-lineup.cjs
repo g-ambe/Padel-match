@@ -5,7 +5,7 @@ const base='http://127.0.0.1:3002',remote='http://127.0.0.1:54321';
 const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','access-control-expose-headers':'Content-Range','content-type':'application/json'};
 const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now()>end)throw Error('条件待ちタイムアウト');await new Promise(r=>setTimeout(r,20));}};
 (async()=>{
- const f=await fixedPairDatabase(),{db,as,rpc}=f;await db.exec(fs.readFileSync('supabase/migrations/0041_atomic_round_lineups.sql','utf8'));await db.exec(fs.readFileSync('supabase/migrations/0042_round_lineup_safety.sql','utf8'));await db.exec('update lineup_private.release_control set editing_enabled=true');
+ const f=await fixedPairDatabase(),{db,as,rpc}=f;await db.exec(fs.readFileSync('supabase/migrations/0041_atomic_round_lineups.sql','utf8'));await db.exec(fs.readFileSync('supabase/migrations/0042_round_lineup_safety.sql','utf8'));await db.exec(require('node:fs').readFileSync('supabase/migrations/0043_match_results_one_per_match.sql','utf8'));await db.exec('update lineup_private.release_control set editing_enabled=true');
  const e=await f.event(1800,9,{courts:2}),solo=await f.event(1801,5,{noGroup:true});
  for(let i=0;i<3;i++)await db.query("update event_participants set participant_type='member',player_profile_id=$2,profile_id=$3,guest_name=null where id=$1",[e.participants[i],id(101+i),id(1+i)]);
  await db.query('update events set created_by_auth_user_id=$1 where id=$2',[id(3),solo.eid]);

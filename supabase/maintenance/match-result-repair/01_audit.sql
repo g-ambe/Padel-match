@@ -1,6 +1,7 @@
 -- 読み取り専用。個人情報・試合ID・結果ID・実スコアは返さない。
 begin read only;
 set local statement_timeout='60s';
+set local timezone='UTC';
 with d as (
  select r.match_id,count(*) n,count(distinct jsonb_build_array(r.score_a,r.score_b,r.winner_team)) variants,
  min(r.created_at) first_at,max(r.created_at) last_at,count(*) filter(where r.created_at is null) undated
@@ -8,9 +9,13 @@ with d as (
 ), details as (
  select d.*,m.event_id,e.event_mode,e.status,e.is_deleted,e.stats_mode,e.club_id from d
  join public.matches m on m.id=d.match_id join public.events e on e.id=m.event_id
-), rows_d as (select r.* from public.match_results r join d on d.match_id=r.match_id)
+), rows_d as (select r.* from public.match_results r join d on d.match_id=r.match_id),
+ planned as(select r.id,first_value(r.id) over(partition by r.match_id order by r.created_at asc nulls last,r.id) keeper_id from public.match_results r join d on d.match_id=r.match_id)
 select jsonb_build_object(
  'captured_at',now(),
+ 'all_result_rows',(select count(*) from public.match_results),
+ 'logical_result_matches',(select count(distinct match_id) from public.match_results),
+ 'repair_plan_sha256',(select encode(sha256(convert_to(coalesce(jsonb_agg(jsonb_build_object('row',to_jsonb(r),'keeper_id',p.keeper_id,'match',to_jsonb(m),'event',to_jsonb(e)) order by r.id),'[]')::text,'UTF8')),'hex') from planned p join public.match_results r on r.id=p.id join public.matches m on m.id=r.match_id join public.events e on e.id=m.event_id),
  'totals',(select jsonb_build_object('matches',count(*),'events',count(distinct event_id),'groups',count(distinct club_id),'rows',coalesce(sum(n),0),'extra_rows',coalesce(sum(n-1),0),'conflicting',count(*) filter(where variants<>1),'null_dates',coalesce(sum(undated),0)) from details),
  'modes',(select coalesce(jsonb_agg(to_jsonb(x)),'[]') from(select event_mode,status,is_deleted,stats_mode,count(*) matches,count(distinct event_id) events,sum(n-1) extra_rows from details group by event_mode,status,is_deleted,stats_mode order by event_mode,status,is_deleted,stats_mode)x),
  'multiplicity',(select coalesce(jsonb_agg(to_jsonb(x)),'[]') from(select n result_rows,count(*) matches from d group by n order by n)x),

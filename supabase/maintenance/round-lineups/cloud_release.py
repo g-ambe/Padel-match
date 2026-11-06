@@ -15,7 +15,7 @@ _spec = importlib.util.spec_from_file_location('fixed_pair_release_common', HERE
 common = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(common)
 
-FILES = ('0041_atomic_round_lineups.sql', '0042_round_lineup_safety.sql')
+FILES = ('0041_atomic_round_lineups.sql', '0042_round_lineup_safety.sql', '0043_match_results_one_per_match.sql')
 CORE = common.APP + ('event_fixed_pair_state', 'event_fixed_pairs', 'event_fixed_pair_rounds')
 SECTIONS = ('tables', 'columns', 'column_acl', 'policies', 'triggers', 'rpc_functions', 'constraints')
 INVALID = ('duplicate_courts', 'duplicate_results', 'invalid_cards', 'duplicate_round_players')

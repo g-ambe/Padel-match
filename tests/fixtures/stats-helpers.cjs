@@ -50,6 +50,16 @@ function database(tables, options = {}) {
       const failure = await options.fail?.(call);
       if (failure) return new Response(JSON.stringify({ code: '42501', message: '取得または更新を拒否' }), { status: 403 });
       if (table === 'get_friendly_lineup_versions') return new Response(JSON.stringify({version:1,editing_enabled:false,event_revision:0,rounds:[]}),{status:200});
+      if (table === 'get_friendly_round_lineup') {
+        const b=call.body,cards=tables.matches.filter(m=>m.event_id===b.p_event_id&&m.round_id===b.p_round_id).map(m=>({id:m.id,completed:m.completed,players:roundLineup.canonicalPlayers(tables.match_players.filter(p=>p.match_id===m.id)),result:tables.match_results.filter(r=>r.match_id===m.id).map(({id,score_a,score_b,winner_team})=>({id,score_a,score_b,winner_team}))}));
+        return new Response(JSON.stringify({event_id:b.p_event_id,round_id:b.p_round_id,revision:0,cards,people:[],eligible:[]}),{status:200});
+      }
+      if (table === 'delete_friendly_match') {
+        const b=call.body;if(operations.has(b.p_request_id))return new Response(JSON.stringify(operations.get(b.p_request_id)),{status:200});
+        for(const t of ['match_results','match_players'])tables[t]=tables[t].filter(r=>r.match_id!==b.p_match_id);
+        tables.matches=tables.matches.filter(m=>m.id!==b.p_match_id);
+        const data={request_id:b.p_request_id,match_id:b.p_match_id,deleted:true};operations.set(b.p_request_id,data);return new Response(JSON.stringify(data),{status:200});
+      }
       if (table === 'save_friendly_match_score') {
         if(operations.has(call.body.p_request_id))return new Response(JSON.stringify(operations.get(call.body.p_request_id)),{status:200});
         const b=call.body,m=tables.matches.find(m=>m.id===b.p_match_id),prior=tables.match_results.find(r=>r.match_id===m?.id);

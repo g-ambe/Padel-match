@@ -6,6 +6,15 @@ export const roundCards = (event: GuestEvent, round: number): RoundCard[] => eve
 export const sameLineups = (a: RoundCard[], b: RoundCard[]) => JSON.stringify(a.map(m => [m.id,[...m.players].sort((x,y)=>x.team.localeCompare(y.team)||x.participant_id.localeCompare(y.participant_id))]).sort()) === JSON.stringify(b.map(m => [m.id,[...m.players].sort((x,y)=>x.team.localeCompare(y.team)||x.participant_id.localeCompare(y.participant_id))]).sort());
 const editable = (card: RoundCard) => !card.completed && card.result == null;
 
+export function guestRoundEligibility(event: GuestEvent, round: number) {
+  const cards = event.matches.filter(m => m.round_number === round);
+  const known = cards[0]?.eligible_ids;
+  if (!known || !cards.length || new Set(known).size !== known.length || cards.some(m => !m.eligible_ids || JSON.stringify([...m.eligible_ids].sort()) !== JSON.stringify([...known].sort()))) {
+    return { eligible: [] as string[], blocked_reason: "生成時の参加可能者の記録がないため、このRoundはメンバー変更できません。過去の参加状態は推測しません。" };
+  }
+  return { eligible: event.participants.filter(p => p.status === "active" && known.includes(p.id)).map(p => p.id), blocked_reason: null };
+}
+
 export function swapRoundPlayers(cards: RoundCard[], matchId: string, outgoing: string, incoming: string): RoundCard[] {
   const source = cards.find(m => m.id === matchId && m.players.some(p => p.participant_id === outgoing));
   const destination = cards.find(m => m.players.some(p => p.participant_id === incoming));
@@ -19,7 +28,9 @@ export function revisedGuestRound(current: GuestEvent, expected: string, round: 
   if (guestLineupSnapshot(current) !== expected) throw new Error("開催・スコア・参加状態が変更されています。閉じて最新のカードを確認してください。");
   const before = roundCards(current, round), ids = new Set(before.map(m => m.id));
   if (!before.length || cards.length !== before.length || new Set(cards.map(m => m.id)).size !== cards.length || cards.some(m => !ids.has(m.id))) throw new Error("Roundのカードが一致しません。");
-  const active = new Set(current.participants.filter(p => p.status === "active").map(p => p.id)), seen = new Set<string>();
+  const eligibility = guestRoundEligibility(current, round);
+  if (eligibility.blocked_reason) throw new Error(eligibility.blocked_reason);
+  const active = new Set(eligibility.eligible), seen = new Set<string>();
   for (const card of cards) {
     const original = before.find(m => m.id === card.id)!;
     const changed = !sameLineups([original], [card]);

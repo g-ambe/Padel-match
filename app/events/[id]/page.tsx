@@ -10,8 +10,8 @@ import { ScoreInput } from "@/components/score-input";
 import { useScoreSaves } from "@/components/score-save-provider";
 import { AppDialog } from "@/components/app-dialog";
 import { RoundLineupEditor, type LineupEditorData } from "@/components/round-lineup-editor";
-import { readLineupVersions, readRoundLineup, createLineupCommit, createFriendlyScoreCommit, canonicalPlayers, type LineupVersions } from "@/lib/round-lineup";
-import { guestLineupSnapshot, roundCards, saveGuestRoundLineup, type RoundCard } from "@/lib/guest-round-lineup";
+import { readLineupVersions, readRoundLineup, createLineupCommit, createFriendlyScoreCommit, createFriendlyDeleteCommit, canonicalPlayers, type LineupVersions } from "@/lib/round-lineup";
+import { guestLineupSnapshot, guestRoundEligibility, roundCards, saveGuestRoundLineup, type RoundCard } from "@/lib/guest-round-lineup";
 import { FriendlyMatchCards } from "@/components/friendly-match-cards";
 import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
 import { MatchShareButtons } from "@/components/match-share-buttons";
@@ -153,6 +153,7 @@ export default function EventDetailPage() {
   const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
   const [swipeStartX, setSwipeStartX] = useState<Record<string, number>>({});
   const [matchDeleteTarget, setMatchDeleteTarget] = useState<MatchDeleteTarget>(null);
+  const pendingMatchDelete = useRef<(() => Promise<void>) | null>(null);
   const [eventVideoLinks, setEventVideoLinks] = useState<EventVideoLink[]>([]);
   const [eventVideoForm, setEventVideoForm] = useState<EventVideoForm>({ title: "全試合動画", video_url: "", memo: "", display_order: "1" });
   const [editingEventVideoId, setEditingEventVideoId] = useState<string | null>(null);
@@ -991,7 +992,7 @@ export default function EventDetailPage() {
       if (guestMode) {
         const event=getGuestEvent(eventId);if(!event)throw new Error("ゲストイベントが見つかりません。");
         const expected=guestLineupSnapshot(event), cards=roundCards(event,match.round_number);
-        setLineupEditor({target:match.id,data:{round:match.round_number,cards:cards.map(c=>({...c,court_number:event.matches.find(m=>m.id===c.id)!.court_number})),people:event.participants.map(p=>({id:p.id,name:p.guest_name})),eligible:event.participants.filter(p=>p.status==="active").map(p=>p.id)},save:async cards=>saveGuestRoundLineup(eventId,expected,match.round_number,cards,{read:getGuestEvent,write:upsertGuestEvent})});
+        setLineupEditor({target:match.id,data:{round:match.round_number,cards:cards.map(c=>({...c,court_number:event.matches.find(m=>m.id===c.id)!.court_number})),people:event.participants.map(p=>({id:p.id,name:p.guest_name})),...guestRoundEligibility(event,match.round_number)},save:async cards=>saveGuestRoundLineup(eventId,expected,match.round_number,cards,{read:getGuestEvent,write:upsertGuestEvent})});
       } else {
         const db=getSupabaseClient();if(!db||!match.round_id)throw new Error("Roundの情報を確認できません。");
         const snapshot=await readRoundLineup(db,eventId,match.round_id);
@@ -1018,6 +1019,8 @@ export default function EventDetailPage() {
     if (scoreQueue.has(`${scoreScope}${match.id}`)) return setError("この試合のスコアを保存完了・再試行してから操作してください");
     if (eventMode !== "auto" || eventStatus === "closed") return;
     setError("");
+    const db = getSupabaseClient();
+    pendingMatchDelete.current = !guestMode && db ? createFriendlyDeleteCommit(db,eventId,match) : null;
     setMatchDeleteTarget({ id: match.id, hasScore: matchHasSavedScore(match) });
     // 確認を独立したdialogへ出すため、復帰先のボタンを画面外へ動かさない。
     setSwipeOffsets((prev) => ({ ...prev, [match.id]: 0 }));
@@ -1026,6 +1029,7 @@ export default function EventDetailPage() {
   const cancelMatchDelete = () => {
     const id = matchDeleteTarget?.id;
     setMatchDeleteTarget(null);
+    pendingMatchDelete.current = null;
     if (id) setSwipeOffsets((prev) => ({ ...prev, [id]: 0 }));
   };
 
@@ -1033,70 +1037,6 @@ export default function EventDetailPage() {
     if (!isSupabaseErrorLike(error)) return console.error(label, error);
     console.error(label, { message: error.message, code: error.code, details: error.details, hint: error.hint });
   };
-
-  const renumberRoundsAfterDeletedRound = async (deletedRoundNumber: number) => {
-    const supabase = getSupabaseClient();
-    if (!supabase || !eventId) return false;
-    const { data: laterRounds, error: fetchError } = await supabase
-      .from("rounds")
-      .select("id,round_number")
-      .eq("event_id", eventId)
-      .gt("round_number", deletedRoundNumber)
-      .order("round_number", { ascending: true });
-    if (fetchError) {
-      logSupabaseError("rounds renumber fetch failed", fetchError);
-      setError("Round番号の更新に失敗しました");
-      return false;
-    }
-    const rounds = (laterRounds ?? []) as { id: string; round_number: number }[];
-    for (const round of rounds) {
-      const { error: tempError } = await supabase
-        .from("rounds")
-        .update({ round_number: -100000 - round.round_number })
-        .eq("id", round.id);
-      if (tempError) {
-        logSupabaseError("rounds renumber temp update failed", tempError);
-        setError("Round番号の更新に失敗しました");
-        return false;
-      }
-    }
-    for (const round of rounds) {
-      const { error: finalError } = await supabase
-        .from("rounds")
-        .update({ round_number: round.round_number - 1 })
-        .eq("id", round.id);
-      if (finalError) {
-        logSupabaseError("rounds renumber final update failed", finalError);
-        setError("Round番号の更新に失敗しました");
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const deleteEmptyRoundAndRenumber = async (roundId: string | null | undefined, deletedRoundNumber: number) => {
-    if (!roundId) return true;
-    const supabase = getSupabaseClient();
-    if (!supabase) return false;
-    const { count, error: countError } = await supabase
-      .from("matches")
-      .select("id", { count: "exact", head: true })
-      .eq("round_id", roundId);
-    if (countError) {
-      logSupabaseError("round matches count failed", countError);
-      setError("Roundの削除に失敗しました");
-      return false;
-    }
-    if ((count ?? 0) > 0) return true;
-    const { error: roundDeleteError } = await supabase.from("rounds").delete().eq("id", roundId);
-    if (roundDeleteError) {
-      logSupabaseError("round delete failed", roundDeleteError);
-      setError("Roundの削除に失敗しました");
-      return false;
-    }
-    return renumberRoundsAfterDeletedRound(deletedRoundNumber);
-  };
-
 
   const deleteMatch = async () => {
     if (!matchDeleteTarget) return;
@@ -1120,14 +1060,9 @@ export default function EventDetailPage() {
     }
     const supabase = getSupabaseClient();
     if (!supabase) return;
-    const resultDelete = await supabase.from("match_results").delete().eq("match_id", matchId);
-    if (resultDelete.error) { logSupabaseError("match_results delete failed", resultDelete.error); setError("試合の削除に失敗しました"); return; }
-    const playersDelete = await supabase.from("match_players").delete().eq("match_id", matchId);
-    if (playersDelete.error) { logSupabaseError("match_players delete failed", playersDelete.error); setError("試合の削除に失敗しました"); return; }
-    const matchDelete = await supabase.from("matches").delete().eq("id", matchId);
-    if (matchDelete.error) { logSupabaseError("matches delete failed", matchDelete.error); setError("試合の削除に失敗しました"); return; }
-    const roundUpdated = await deleteEmptyRoundAndRenumber(match.round_id, match.round_number);
-    if (!roundUpdated) return;
+    if (!pendingMatchDelete.current) throw new Error("削除対象を確認し直してください");
+    try { await pendingMatchDelete.current(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "削除に失敗しました。同じ操作で再試行してください"); return; }
     setError("");
     setScoreInputs((prev) => { const next = { ...prev }; delete next[matchId]; return next; });
     await loadAll();
@@ -1238,7 +1173,7 @@ export default function EventDetailPage() {
       const nextRound = (Math.max(0, ...ge.matches.map((m) => m.round_number)) + 1);
       const created = Array.from({ length: maxMatches }).map((_, i) => {
         const g = shuffled.slice(i * 4, i * 4 + 4);
-        return { id: `gm_${Date.now()}_${i}`, court_number: i + 1, round_number: nextRound, created_at: new Date().toISOString(), completed: false, youtube_url: null, players: [{ participant_id: g[0].id, team: "A" as const }, { participant_id: g[1].id, team: "A" as const }, { participant_id: g[2].id, team: "B" as const }, { participant_id: g[3].id, team: "B" as const }], result: null };
+        return { id: `gm_${Date.now()}_${i}`, court_number: i + 1, round_number: nextRound, eligible_ids: active.map(p=>p.id), created_at: new Date().toISOString(), completed: false, youtube_url: null, players: [{ participant_id: g[0].id, team: "A" as const }, { participant_id: g[1].id, team: "A" as const }, { participant_id: g[2].id, team: "B" as const }, { participant_id: g[3].id, team: "B" as const }], result: null };
       });
       ge.matches = [...created, ...ge.matches];
       upsertGuestEvent(ge);

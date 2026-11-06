@@ -33,7 +33,7 @@ PR #180の `4eb48d1` のゲスト試作を再利用し、最新mainへ必要部�
 - 対象Roundのeffective/applied/split固定履歴があれば編集不可。解除後も履歴と理由を保持する。
 - 固定0組の生成監査やグループなしの新生成要求に当時の参加可能者がある場合、当時のeligible_idsと現在の参加可能者の共通部分だけを交代候補とする。後から加入した選手を過去の既知の参加機会へ補わない。
 - 出場変更に合わせてその監査のplayed_idsだけを更新する。eligible_ids・元の生成要求・固定設定・有効／適用／分割履歴・used_fixed_pairsは保持し、変更前後も別監査へ残す。
-- 監査がない過去Roundには参加機会を推測して作らない。現在の参加状態を検証し、変更後の通常の対戦履歴を保存する。
+- 監査がない過去Roundは、そのRoundだけ理由を表示して編集不可とする。現在のactiveを過去の参加資格として使わない。ゲストも新生成カードにeligible_idsを記録し、旧カードの履歴を補完しない。
 - 入替時に固定状態の版数も進め、古い生成要求を拒否する。固定設定・利用済み印は変えない。
 
 ## 生成・終了・旧クライアント
@@ -42,7 +42,7 @@ PR #180の `4eb48d1` のゲスト試作を再利用し、最新mainへ必要部�
 
 旧 `create_fixed_pair_round` の実装本体は非公開スキーマへ移し、公開名は未編集イベント限定の互換ラッパーにする。入替後に固定版数だけを取り直して古い履歴で生成する経路も拒否する。既存RLS・IDガード・固定保護の定義は緩和しない。
 
-旧直接スコアは編集済みRoundで拒否する。終了・生成はイベント行、参加状態は参加者行で直列化する。先行する操作を保存し、後続の古い期待値は安全に拒否する。旧複数リクエスト削除との競合では一方がデッドロック等で失敗する場合があり、再取得が必要。自動で削除を継続しない。
+旧直接スコアは編集済みRoundで拒否する。終了・生成はイベント行、参加状態は参加者行で直列化する。先行する操作を保存し、後続の古い期待値は安全に拒否する。追加0042により通常乱数イベントの直接DELETEを拒否する。正規の試合削除は期待値・操作ID付きの `delete_friendly_match` へ移し、スコア・出場者・試合・空Round・番号詰めを原子的に処理する。固定使用履歴と監査は保持する。削除応答喪失も同じ要求で再試行する。
 
 ## 検証
 
@@ -68,14 +68,14 @@ docker stop padel-lineup-pg
 
 ## 検証結果
 
-- 全単体テスト341件成功。既存の取得エラー・重複増殖防止・手動保存の安全性・戦績再計算の検査を維持した。
-- 隔離PostgreSQL 17は28件成功。11通りの競合順序と、同じ入替／スコア要求の同時再送を含む。
+- 全単体テスト350件成功（安全性修正後）。既存の取得エラー・重複増殖防止・手動保存の安全性・戦績再計算の検査を維持した。
+- 隔離PostgreSQL 17は安全性修正後44件成功。20通りの競合順序、入替／スコア／削除の同時再送を含む。リリースSQLも別の隔離PostgreSQLで1件成功し、0042途中失敗時に0041もROLLBACKすることを確認した。
 - 個別復旧テンプレートは未承認停止、ROLLBACKによるプレビュー、合成データでの承認COMMITを検証した。
 - TypeScript、Next.js本番ビルド、OpenNext Cloudflare Worker生成に成功。本番SQL・デプロイは実施していない。
 
-## リリース前の保留
+## 本番反映の条件
 
-[手動適用・バックアップ・復旧の手順](../supabase/maintenance/round-lineups/README.md)をレビューする。0041は初期状態でログインイベントの入替無効。ゲストはDBを使わず、新アプリ反映時から利用できるため、SQLによる停止の対象外。SQL適用 → 検証 → 別途マージ承認・新アプリ反映 → 検証 → 手動有効化の順序を守る。本番の最新カタログ、DB外バックアップ実ファイルの復元、本番JWT／実iPhone・Safariは未確認。本PRでは本番SQL・マージ・デプロイを行わない。
+[手動適用・バックアップ・復旧の手順](../supabase/maintenance/round-lineups/README.md)をレビューする。0041は初期状態でログインイベントの入替無効。ゲストはDBを使わず、新アプリ反映時から利用できるため、SQLによる停止の対象外。バックアップ・隔離復元 → 0041/0042適用 → 検証 → 新アプリ反映 → 本番専用イベント試験 → 有効化の順序を守る。本番の最新カタログ、DB外バックアップ実ファイルの復元、本番JWT／実iPhone・Safariは未確認。最新依頼では安全条件を満たした場合の本番SQL・Squash merge・自動デプロイ・有効化が承認済み。失敗時は後続を停止する。
 
 [375pxライト](assets/round-lineup/light.png) / [375pxダーク](assets/round-lineup/dark.png)。合成データのローカルChromium表示。実機の画像ではない。
 
@@ -117,3 +117,18 @@ tests/round-lineup-db.test.cjs
 tests/score-input.test.cjs
 tests/stats-history.test.cjs
 ```
+
+## 追加ファイル
+
+- `.github/workflows/round-lineup-release.yml`
+- `supabase/migrations/0042_round_lineup_safety.sql`
+- `supabase/maintenance/round-lineups/cloud_release.py`
+- `supabase/maintenance/round-lineups/reviewed-release.json`
+- `supabase/maintenance/round-lineups/test_cloud_release.py`
+- `tests/round-lineup-release.test.cjs`
+
+## 安全性追加修正（2026-11-06）
+
+- 0041単体の直接DELETEをauthenticatedロールで実際に再現してから、追加0042の拒否を4表とも検証した。既存Migrationは変更しない。
+- スコアは既存integer型を維持する。0・引き分け・負の整数・修正を維持し、小数・空欄・NULL・integer範囲外はエラーとなり入力を保持する。PostgREST相当のJSON変換でも小数が丸められないことを確認した。新しい得点上限やランキング条件は加えていない。
+- [クラウドのバックアップ・隔離復元・適用手順](../supabase/maintenance/round-lineups/README.md)を追加した。Migration 0041と0042のSHA、PRの最新コミット、main復旧点、カタログ・行ハッシュを照合し、不一致なら本番適用しない。

@@ -18,6 +18,8 @@ export type GuestMatch = {
   completed: boolean;
   youtube_url: string | null;
   players: { participant_id: string; team: "A" | "B" }[];
+  // 新しい乱数Roundだけに生成時点の参加可能者を記録する。旧履歴は補完しない。
+  eligible_ids?: string[];
   result: { score_a: number; score_b: number; winner_team: "A" | "B" | "draw" } | null;
 };
 

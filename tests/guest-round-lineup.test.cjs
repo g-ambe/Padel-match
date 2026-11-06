@@ -2,7 +2,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {guestLineupSnapshot,roundCards,swapRoundPlayers,revisedGuestRound,saveGuestRoundLineup}=require('../lib/guest-round-lineup.ts');
 
-function fixture(){return {id:'guest_test',name:'架空イベント',status:'active',event_mode:'auto',stats_mode:'official',court_count:2,created_at:'2026-11-05',participants:Array.from({length:10},(_,i)=>({id:'p'+i,guest_name:'選手'+i,status:'active',participant_type:'guest'})),matches:Array.from({length:2},(_,i)=>({id:'m'+i,court_number:i+1,round_number:1,created_at:'2026-11-05',completed:false,youtube_url:'https://youtu.be/abcdefghijk',result:null,players:Array.from({length:4},(_,j)=>({participant_id:'p'+(i*4+j),team:j<2?'A':'B'}))}))};}
+function fixture(){return {id:'guest_test',name:'架空イベント',status:'active',event_mode:'auto',stats_mode:'official',court_count:2,created_at:'2026-11-05',participants:Array.from({length:10},(_,i)=>({id:'p'+i,guest_name:'選手'+i,status:'active',participant_type:'guest'})),matches:Array.from({length:2},(_,i)=>({id:'m'+i,court_number:i+1,round_number:1,eligible_ids:Array.from({length:10},(_,i)=>'p'+i),created_at:'2026-11-05',completed:false,youtube_url:'https://youtu.be/abcdefghijk',result:null,players:Array.from({length:4},(_,j)=>({participant_id:'p'+(i*4+j),team:j<2?'A':'B'}))}))};}
 
 test('同コート・別コート・休憩者の入替を保存前のコピーで編成し、各ペア2名とRound全体の重複なしを保つ',()=>{
  for(const target of ['p1','p4','p8']){
@@ -58,4 +58,13 @@ test('ログインイベントにはゲスト保存を使用せず、表示上�
  let calls=0;
  assert.throws(()=>saveGuestRoundLineup('authenticated-event','',1,[],{read:()=>{calls++;},write:()=>calls++}),/専用/);assert.equal(calls,0);
 
+});
+
+test('生成時の参加者が不明な旧Roundだけ拒否し、途中参加者を過去の休憩者にしない',()=>{
+ const e=fixture(),draft=swapRoundPlayers(roundCards(e,1),'m0','p0','p8');
+ for(const m of e.matches)delete m.eligible_ids;
+ assert.throws(()=>revisedGuestRound(e,guestLineupSnapshot(e),1,draft),/生成時/);
+ const known=fixture();known.participants.push({id:'late',guest_name:'途中参加',status:'active',participant_type:'guest'});
+ assert.throws(()=>revisedGuestRound(known,guestLineupSnapshot(known),1,swapRoundPlayers(roundCards(known,1),'m0','p0','late')),/参加中/);
+ assert.equal(revisedGuestRound(known,guestLineupSnapshot(known),1,swapRoundPlayers(roundCards(known,1),'m0','p0','p8')).matches[0].players[0].participant_id,'p8');
 });

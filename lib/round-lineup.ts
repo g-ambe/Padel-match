@@ -33,6 +33,23 @@ export function createLineupCommit(s: SupabaseClient, snapshot: LineupSnapshot) 
 }
 export const canonicalPlayers = (players: RoundCard['players']) => players.map(p=>({participant_id:p.participant_id,team:p.team})).sort((a,b)=>a.team.localeCompare(b.team)||a.participant_id.localeCompare(b.participant_id));
 type ScoredCard = RoundCard & { round_id?: string|null; lineup_revision?: number; result?: {id?: string; score_a:number;score_b:number;winner_team:string}|null };
+// 削除確認で見ていた構成・結果を固定し、応答喪失時も同一要求を再送する。
+export function createFriendlyDeleteCommit(s: SupabaseClient, eventId: string, match: ScoredCard) {
+ const displayed = structuredClone(match), requestId = crypto.randomUUID();
+ let expected: LineupSnapshot | null = null;
+ return async () => {
+  if (!displayed.round_id) throw new Error('Roundを確認できません。再読み込みしてください。');
+  if (!expected) {
+   const snapshot = await readRoundLineup(s,eventId,displayed.round_id), card = snapshot.cards.find(c=>c.id===displayed.id);
+   const scoreKey = (r: {id?:string;score_a:number;score_b:number;winner_team:string}) => [r.id,r.score_a,r.score_b,r.winner_team];
+   const result = displayed.result ? [scoreKey(displayed.result)] : [];
+   if (!card || snapshot.revision !== (displayed.lineup_revision??0) || JSON.stringify(canonicalPlayers(card.players)) !== JSON.stringify(canonicalPlayers(displayed.players)) || card.completed !== displayed.completed || JSON.stringify(card.result.map(scoreKey)) !== JSON.stringify(result)) throw new Error('構成またはスコアが変更されています。最新データで削除を確認し直してください。');
+   expected = snapshot;
+  }
+  const {data,error} = await s.rpc('delete_friendly_match',{p_event_id:eventId,p_match_id:displayed.id,p_expected:expected,p_request_id:requestId});
+  if (error || data?.request_id!==requestId || data.match_id!==displayed.id || data.deleted!==true) throw new Error(message(error,'削除結果を確認できません。同じ操作で再試行してください。'));
+ };
+}
 // この関数が返す送信操作をキューに保持する。再試行で新しい構成へ期待値を置き換えない。
 export function createFriendlyScoreCommit(s: SupabaseClient, eventId: string, match: ScoredCard) {
  const expectedRevision=match.lineup_revision??0,matchId=match.id;

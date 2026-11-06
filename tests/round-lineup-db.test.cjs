@@ -19,7 +19,16 @@ test('Round入替・スコアCAS・旧経路拒否を実SQLで検証する',asyn
  for(let i=0;i<4;i++)await db.query('insert into match_players(match_id,participant_id,team) values($1,$2,$3)',[legacyMatch,legacy.participants[i],i<2?'A':'B']);await db.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,4,2,'A')",[legacyMatch]);
  const data=async()=>JSON.stringify((await db.query("select (select jsonb_agg(to_jsonb(m) order by id) from matches m) matches,(select jsonb_agg(to_jsonb(m) order by id) from match_players m) players,(select jsonb_agg(to_jsonb(m) order by id) from match_results m) results,(select jsonb_agg(to_jsonb(m) order by id) from event_participants m) participants,(select jsonb_agg(to_jsonb(m) order by id) from player_profiles m) profiles")).rows);
  const beforeData=await data();const maintenance=name=>fs.readFileSync('supabase/maintenance/round-lineups/'+name,'utf8');
- await db.exec(maintenance('01_preflight.sql'));await db.exec(maintenance('02_backup.sql'));await db.exec(migration);await db.exec(maintenance('03_verify.sql'));
+ await db.exec(maintenance('01_preflight.sql'));await db.exec(maintenance('02_backup.sql'));await db.exec(migration);
+ // 0041単体の穴を実際のauthenticated権限で再現し、各試験をROLLBACKする。
+ await db.query('insert into friendly_round_lineup_state values($1,$2,1)',[legacyRound,legacy.eid]);
+ for (const table of ['match_players','match_results','matches','rounds']) {
+  await as();await db.exec('begin');
+  const q=table==='rounds'?['id',legacyRound]:table==='matches'?['id',legacyMatch]:['match_id',legacyMatch];
+  const deleted=await db.query('delete from '+table+' where '+q[0]+'=$1 returning id',[q[1]]);assert(deleted.rows.length>0,'0041単体の直接DELETEを再現: '+table);await db.exec('rollback');
+ }
+ await owner();await db.query('delete from friendly_round_lineup_state where round_id=$1',[legacyRound]);
+ await db.exec(fs.readFileSync('supabase/migrations/0042_round_lineup_safety.sql','utf8'));await db.exec(maintenance('03_verify.sql'));
  assert.equal(await metadata(),before,'既存RLS・固定・IDガードの定義を維持');assert.equal(await data(),beforeData,'既存履歴・プロフィールを変更しない');
  const versions=e=>rpc('get_friendly_lineup_versions',[e.eid]);
  const snap=e=>rpc('get_friendly_round_lineup',[e.eid,e.rid]);
@@ -57,6 +66,38 @@ test('Round入替・スコアCAS・旧経路拒否を実SQLで検証する',asyn
  await t.test('グループなしでも新生成の既知の参加機会を使い、後から追加された人を過去の休憩者にしない',async()=>{
   const e=await seed(5,1,{noGroup:true}),late=requestId();await owner();await db.query("insert into event_participants(id,event_id,guest_name,status,participant_type) values($1,$2,'途中参加','active','guest')",[late,e.eid]);await as(1);const s=await snap(e);assert(!s.eligible.includes(late));await assert.rejects(edit(e,s,changed(s,late)),/参加可能/);assert.equal((await snap(e)).revision,0);
  });
+ await t.test('未知の過去Roundは現在activeでも入替不可、スコア保存・正規削除は維持',async()=>{
+  await as();const e={...legacy,rid:legacyRound},s=await snap(e);assert.match(s.blocked_reason,/生成時/);assert.deepEqual(s.eligible,[]);await assert.rejects(edit(e,s,changed(s,legacy.participants[4])),/生成時/);
+  await score(e,s);assert.equal((await snap(e)).cards[0].completed,true);
+ });
+ await t.test('authenticatedの直接DELETEを4表とも拒否し、構成・結果・履歴を保持',async()=>{
+  const e=await seed(),s=await snap(e);await edit(e,s);await score(e,await snap(e));const before=await snap(e);
+  for(const table of ['match_players','match_results','matches','rounds']){
+   const q=table==='rounds'?['id',e.rid]:table==='matches'?['id',s.cards[0].id]:['match_id',s.cards[0].id];
+   await assert.rejects(db.query('delete from '+table+' where '+q[0]+'=$1',[q[1]]),/専用削除/);assert.deepEqual(await snap(e),before);
+  }
+ });
+ const remove=(e,s,mid=s.cards[0].id,req=requestId())=>rpc('delete_friendly_match',[e.eid,mid,JSON.stringify(s),req]);
+ await t.test('正規削除はスコア・子行・空Round・番号詰めを原子的に確定し、再送・固定使用履歴を維持',async()=>{
+  const e=await seed(),s=await snap(e);await score(e,s);const current=await snap(e),req=requestId(),mid=current.cards[0].id;const r=await remove(e,current,mid,req);assert.equal(r.removed_round,false);assert.deepEqual(await remove(e,current,mid,req),r);await assert.rejects(remove(e,current,current.cards[1].id,req),/再利用/);
+  assert.equal((await snap(e)).revision,1);assert.equal((await versions(e)).event_revision,1);assert.equal((await db.query('select * from match_results where match_id=$1',[mid])).rows.length,0);
+  await gen(e);const later=e.rid;const earlier={...e,rid:s.round_id};const last=await snap(earlier);await remove(earlier,last);assert.equal((await db.query('select round_number from rounds where id=$1',[later])).rows[0].round_number,1);
+  await owner();assert.equal((await db.query('select * from event_fixed_pair_rounds where round_id is null and event_id=$1',[e.eid])).rows.length,1);await as();assert.equal((await versions(e)).event_revision,2);
+ });
+ await t.test('固定利用済みカードの正規削除でも固定設定・利用済み印・当時の参加履歴は保持',async()=>{
+  const e={...await event(ev++,9,{courts:2}),courts:2};await as();await rpc('replace_event_fixed_pairs',[e.eid,0,JSON.stringify([{id:requestId(),a:e.participants[0],b:e.participants[1]}]),requestId()]);await gen(e);const s=await snap(e);assert.match(s.blocked_reason,/固定ペア/);await remove(e,s);const after=await snap(e);assert.deepEqual(after.audit,s.audit);assert.deepEqual(after.fixed.pairs,s.fixed.pairs);assert.equal(after.fixed.used_fixed_pairs,true);
+ });
+ await t.test('削除中の途中失敗は子行を含め全てROLLBACKし、期待値違い・他人の削除も拒否',async()=>{
+  const e=await seed(),s=await snap(e);await owner();await db.exec(`create function public.lineup_delete_fail() returns trigger language plpgsql as $$begin raise exception '削除注入失敗';end$$;create trigger zz_delete_fail before delete on matches for each row execute function public.lineup_delete_fail()`);
+  await as();await assert.rejects(remove(e,s),/削除注入失敗/);assert.deepEqual(await snap(e),s);await owner();await db.exec('drop trigger zz_delete_fail on matches;drop function public.lineup_delete_fail()');await as();await score(e,s);await assert.rejects(remove(e,s),/変更されています/);await as(4);await assert.rejects(remove(e,s),/権限/);await as(null,'anon');await assert.rejects(remove(e,s),/permission denied/);
+ });
+ await t.test('得点は既存integer仕様で0・引分・負数・修正を維持し、小数・未入力・範囲外は保存しない',async()=>{
+  const e=await seed(),s=await snap(e);for(const [a,b] of [['1.5',0],['',0],[null,0],['2147483648',0],['NaN',0]]){const args=scoreArgs(e,s);args[5]=a;args[6]=b;await assert.rejects(rpc('save_friendly_match_score',args));assert.deepEqual(await snap(e),s);}
+  // PostgRESTと同じJSONからintegerへの変換でも小数・範囲外は丸めて通らない。
+  for(const a of [1.5,2147483648])await assert.rejects(db.query('select * from json_to_record($1::json) as x(a integer)',[JSON.stringify({a})]));
+  await score(e,s);let now=await snap(e);assert.equal(now.cards[0].result[0].winner_team,'draw');const rid=now.cards[0].result[0].id;
+  const args=scoreArgs(e,now);args[5]=-1;args[6]=0;await rpc('save_friendly_match_score',args);now=await snap(e);assert.equal(now.cards[0].result[0].score_a,-1);assert.equal(now.cards[0].result[0].winner_team,'B');assert.equal(now.cards[0].result[0].id,rid);
+ });
  await t.test('2コート目の更新失敗は構成・版数・監査・参加履歴を全てROLLBACK',async()=>{const e=await seed(),s=await snap(e);await owner();await db.exec(`create function public.lineup_test_fail() returns trigger language plpgsql as $$begin if old.match_id='${s.cards[1].id}'::uuid then raise exception '注入失敗';end if;return new;end$$;create trigger zz_lineup_test_fail before update on match_players for each row execute function public.lineup_test_fail()`);await as();await assert.rejects(edit(e,s),/注入失敗/);assert.deepEqual(await snap(e),s);await owner();await db.exec('drop trigger zz_lineup_test_fail on match_players;drop function public.lineup_test_fail()');});
  await t.test('結果INSERT後の確定失敗も全体ROLLBACKし、再試行で1件だけ確定',async()=>{const e=await seed(),s=await snap(e),req=requestId();await owner();await db.exec(`create function public.lineup_test_fail() returns trigger language plpgsql as $$begin if new.id='${s.cards[0].id}'::uuid then raise exception '確定注入失敗';end if;return new;end$$;create trigger zz_lineup_test_fail before update on matches for each row execute function public.lineup_test_fail()`);await as();await assert.rejects(score(e,s,undefined,req),/確定注入失敗/);assert.deepEqual(await snap(e),s);await owner();await db.exec('drop trigger zz_lineup_test_fail on matches;drop function public.lineup_test_fail()');await as();await score(e,s,undefined,req);});
  await t.test('停止・再開SQLと復旧テンプレートの未承認ガードを検証する',async()=>{
@@ -77,10 +118,12 @@ test('Round入替・スコアCAS・旧経路拒否を実SQLで検証する',asyn
   const editSql='select replace_friendly_round_lineup($1,$2,$3,$4,$5) result',scoreSql='select save_friendly_match_score($1,$2,$3,$4,$5,$6,$7,$8) result';
   const editArgs=(e,s)=>[e.eid,e.rid,JSON.stringify(s),JSON.stringify(changed(s)),requestId()];
   const outcome=p=>p.then(value=>({value}),error=>({error}));
-  for(const order of ['edit/edit','edit/score','score/edit','edit/legacy-score','legacy-score/edit','participant/edit','edit/participant','generate/edit','edit/generate','finish/edit','edit/finish'])await t.test('PostgreSQL 17複数接続: '+order,async()=>{
-   const e=await seed(),s=await snap(e),b=await connection();
+  for(const order of ['edit/edit','edit/score','score/edit','edit/legacy-score','legacy-score/edit','participant/edit','edit/participant','generate/edit','edit/generate','finish/edit','edit/finish','delete/edit','edit/delete','delete/score','score/delete','delete/generate','generate/delete','delete/finish','finish/delete','reopen/edit'])await t.test('PostgreSQL 17複数接続: '+order,async()=>{
+   const e=await seed();if(order==='reopen/edit'){await owner();await db.query("update events set status='closed' where id=$1",[e.eid]);await as();}const s=await snap(e),b=await connection();
    const generateArgs={eventId:e.eid,lineupRevision:0,revision:1,lastRound:1,courtCount:2,mode:'normal',activeIds:e.participants,matches:[{court:1,teamA:e.participants.slice(0,2),teamB:e.participants.slice(2,4)},{court:2,teamA:e.participants.slice(4,6),teamB:e.participants.slice(6,8)}],requestId:requestId()};
    const call=async(c,kind)=>{
+    if(kind==='delete')return c.query('select delete_friendly_match($1,$2,$3,$4)',[e.eid,s.cards[0].id,JSON.stringify(s),requestId()]);
+    if(kind==='reopen')return c.query("select finish_fixed_pair_event($1,1,false,null)",[e.eid]);
     if(kind==='edit')return c.query(editSql,editArgs(e,s));if(kind==='score')return c.query(scoreSql,scoreArgs(e,s));
     if(kind==='legacy-score')return c.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,0,0,'draw')",[s.cards[0].id]);
     if(kind==='participant')return c.query("update event_participants set status='resting' where id=$1",[e.participants[8]]);
@@ -90,12 +133,12 @@ test('Round入替・スコアCAS・旧経路拒否を実SQLで検証する',asyn
    try{
     const [first,second]=order.split('/');await db.exec('begin');await call(client,first);const pending=outcome(call(b,second));await waiting(b);await db.exec('commit');const result=await pending;
     if(order==='edit/participant'){assert(!result.error);assert.equal((await snap(e)).revision,1);}else assert(result.error,'競合する2番目の更新は拒否');
-    const after=await snap(e);if(first==='edit')assert.equal(after.revision,1);else assert.equal(after.revision,0);
+    const after=await snap(e);if(first==='edit')assert.equal(after.revision,1);else assert.equal(after.revision,first==='delete'?1:0);
     if(second==='score'||second==='legacy-score')assert(after.cards.every(c=>c.result.length===0));
    }finally{await db.exec('rollback');await b.end();}
   });
-  for(const kind of ['lineup','score'])await t.test('PostgreSQL 17同一要求の同時再送: '+kind,async()=>{
-   const e=await seed(),s=await snap(e),b=await connection();const args=kind==='lineup'?editArgs(e,s):scoreArgs(e,s),sql=kind==='lineup'?editSql:scoreSql;
+  for(const kind of ['lineup','score','delete'])await t.test('PostgreSQL 17同一要求の同時再送: '+kind,async()=>{
+   const e=await seed(),s=await snap(e),b=await connection();const args=kind==='lineup'?editArgs(e,s):kind==='delete'?[e.eid,s.cards[0].id,JSON.stringify(s),requestId()]:scoreArgs(e,s),sql=kind==='lineup'?editSql:kind==='delete'?'select delete_friendly_match($1,$2,$3,$4) result':scoreSql;
    try{await db.exec('begin');const first=(await client.query(sql,args)).rows[0].result;const pending=outcome(b.query(sql,args));await waiting(b);await db.exec('commit');const second=await pending;assert(!second.error);assert.deepEqual(second.value.rows[0].result,first);assert.equal(Number((await db.query('select count(*) n from friendly_match_operations where request_id=$1',[args.at(-1)])).rows[0].n),1);}finally{await db.exec('rollback');await b.end();}
   });
  }

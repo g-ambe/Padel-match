@@ -1,0 +1,16 @@
+{
+  "basis": "最新のリポジトリ内本番RLS適用記録を再現した隔離DB + 0040。本番との一致は別途検査し、不一致なら停止する。",
+  "catalog": {
+    "tables": "21130378ca8f6aa92bb5810fe837ab5a9ac7e5f05ba66b831df0e2ea049ebb8c",
+    "columns": "048ed5144fe1025d09e54f7da1a334cffbb1b82b08cc6cd30e3f14c4243d4f46",
+    "column_acl": "21d7640c4925bb71b9f478a723d1a9eafca8adaea692dff8440acf28c99be8d6",
+    "policies": "732edd0a7fbf2fa328ec5255d655927d5816b3812efc693cd3666074e4552940",
+    "triggers": "0eeb51b7f3a4035cca91c020a2ee814c72b7d235dc6706b9c5dcf2254b4b57b5",
+    "rpc_functions": "7b39b5ef2e522446bea8fea4c6b5b4e645156f5bcc91fbcdd58cb96ec571dce2",
+    "constraints": "bed6a43a1af97ed32c6006a57be0f2e77b4dd5c28088ac89a370c918996c2eee"
+  },
+  "migrations": {
+    "0041_atomic_round_lineups.sql": "0b202e54ff4ce491ca7157789e854739cdc35f571aa29c2cf53a5d9343032ac3",
+    "0042_round_lineup_safety.sql": "5e03c11215fb3d6a8fbc0654536c2dc5b3e621ec64eb0bb0363cce3d69e763c1"
+  }
+}

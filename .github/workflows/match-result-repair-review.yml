@@ -8,6 +8,7 @@ concurrency:
 permissions:
   contents: read
 env:
+  NODE_PATH: ${{ github.workspace }}/.score-review-tools/node_modules
   PADEL_REPAIR_REVIEW: PR182-APPROVAL-PENDING
   BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
   BACKUP_RELEASE_ID: '436144065'
@@ -37,7 +38,7 @@ jobs:
         with:
           node-version: '24'
       - name: 比較・合成SQL試験用の依存を準備
-        run: npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+        run: npm install --prefix .score-review-tools --ignore-scripts --no-package-lock --no-audit --no-fund typescript@5.9.3 @electric-sql/pglite@0.3.14 @supabase/supabase-js@2.119.0
       - name: 合成DBで修復・復旧・再実行・権限を確認
         run: node --test tests/match-results-repair.test.cjs
       - name: クラウド実行ガードを確認

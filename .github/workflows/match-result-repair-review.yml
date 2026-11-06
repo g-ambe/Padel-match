@@ -1,0 +1,52 @@
+name: PR182の重複結果調査・隔離修復試験（本番変更なし）
+on:
+  pull_request:
+    types: [labeled]
+concurrency:
+  group: padel-score-repair-review
+  cancel-in-progress: false
+permissions:
+  contents: read
+env:
+  PADEL_REPAIR_REVIEW: PR182-APPROVAL-PENDING
+  BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+  BACKUP_RELEASE_ID: '436144065'
+  BACKUP_ASSET_ID: '716073621'
+  BACKUP_SHA256: 531a1c2bbcaec1ce3ce1c802b25adab9ab0e48b40b3deb0337565d4e617dfc22
+  PADEL_BACKUP_WORKDIR: /tmp/padel-score-repair-${{ github.run_id }}-${{ github.run_attempt }}
+jobs:
+  rehearse:
+    if: >-
+      github.event.pull_request.number == 182 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.draft &&
+      github.event.label.name == '182重複修復リハーサル' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/atomic-round-lineup'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: 比較・合成SQL試験用の依存を準備
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: 合成DBで修復・復旧・再実行・権限を確認
+        run: node --test tests/match-results-repair.test.cjs
+      - name: クラウド実行ガードを確認
+        run: python3 -B -m unittest discover -s supabase/maintenance/match-result-repair -p 'test_*.py' -v
+      - name: 暗号化済みの既存バックアップを取得・照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 検証済みSupabase CLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: ネットワーク隔離DBへ実復元・修復・復旧・戦績比較
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/match-result-repair/rehearse.py rehearse

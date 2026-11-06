@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
+import { firstMatchResult, getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { fetchGroupStatsHistory } from "@/lib/stats-history";
 import { canDeleteGroup, canEditGroupProfile, canManageMembers, canManageTargetMember, toAppRole } from "@/lib/permissions";
 import { profileErrorMessage, PlayerProfileError, saveClubMemberRole, saveUnlinkedClubMemberName, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
@@ -134,8 +134,8 @@ export default function GroupDetailPage() {
     const pairStats: Record<string, any> = {};
 
     for (const m of matches ?? []) {
-      const res = m.match_results?.[0];
-      if (!hasEnteredFriendlyMatchScore({ completed: m.completed, result: res })) continue;
+      const res = firstMatchResult(m.match_results);
+      if (!res || !hasEnteredFriendlyMatchScore({ completed: m.completed, result: res })) continue;
       const historicalTeams = getHistoricalGroupMatchTeams(m.match_players ?? [], memberParticipantIds);
       if (!historicalTeams) continue;
       const { teamA, teamB } = historicalTeams;

@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const {fixedPairDatabase,id}=require('../fixtures/fixed-pair-db.cjs');
 const {database}=require('../fixtures/stats-helpers.cjs');
-const base='http://127.0.0.1:3002',remote='http://127.0.0.1:54321';
+const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3002',remote='http://127.0.0.1:54321';
 const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','access-control-expose-headers':'Content-Range','content-type':'application/json'};
 const poll=async(fn)=>{const until=Date.now()+15000;while(!await fn()){if(Date.now()>until)throw Error('条件待ちがタイムアウトしました');await new Promise(r=>setTimeout(r,30));}};
 (async()=>{

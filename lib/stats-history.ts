@@ -1,3 +1,4 @@
+import type { EmbeddedMatchResults } from "./friendly-match-results";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readFriendlyRoundRows } from "./friendly-round-history";
 
@@ -22,7 +23,7 @@ type StatsEvent = { id: string; name: string; created_at: string; status: string
 type StatsMember = { player_profile_id: string | null; is_active: boolean };
 type StatsParticipant = { id: string; event_id: string; player_profile_id: string | null; participant_type: string };
 type StatsPlayer = { id: string; display_name: string };
-type StatsMatch = { id: string; event_id: string; completed: boolean; match_players: { participant_id: string; team: string }[]; match_results: { score_a: number; score_b: number; winner_team: string }[] };
+type StatsMatch = { id: string; event_id: string; completed: boolean; match_players: { participant_id: string; team: string }[]; match_results: EmbeddedMatchResults<{ score_a: number; score_b: number; winner_team: string }> };
 
 // 個人・グループ共通の正式戦績対象。参加者の所属判定や計算式は各画面に残す。
 // チーム戦の試合は別テーブルのため、ここで通常戦績へ読み込まない。

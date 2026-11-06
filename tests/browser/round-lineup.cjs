@@ -1,7 +1,7 @@
 // 架空データ・ローカル本番ビルドと隔離PostgreSQL互換DBだけを使用する。
 const assert=require('node:assert/strict'),fs=require('node:fs'),{chromium}=require('playwright');
 const {fixedPairDatabase,id}=require('../fixtures/fixed-pair-db.cjs'),{database}=require('../fixtures/stats-helpers.cjs');
-const base='http://127.0.0.1:3002',remote='http://127.0.0.1:54321';
+const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3002',remote='http://127.0.0.1:54321';
 const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','access-control-expose-headers':'Content-Range','content-type':'application/json'};
 const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now()>end)throw Error('条件待ちタイムアウト');await new Promise(r=>setTimeout(r,20));}};
 (async()=>{
@@ -20,7 +20,7 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
  const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
  async function context(auth=true){
   const c=await browser.newContext({viewport:{width:375,height:667},hasTouch:true});c.setDefaultTimeout(12000);
-  if(auth)await c.addInitScript(user=>{if(location.origin!=='http://127.0.0.1:3002')return;const enc=x=>btoa(JSON.stringify(x)).replaceAll('=','').replaceAll('+','-').replaceAll('/','_');localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:`${enc({alg:'HS256'})}.${enc({sub:user.id,exp:Math.floor(Date.now()/1000)+7200,role:'authenticated'})}.test`,refresh_token:'test',expires_at:Math.floor(Date.now()/1000)+7200,user}));},user);
+  if(auth)await c.addInitScript(({user,base})=>{if(location.origin!==base)return;const enc=x=>btoa(JSON.stringify(x)).replaceAll('=','').replaceAll('+','-').replaceAll('/','_');localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:`${enc({alg:'HS256'})}.${enc({sub:user.id,exp:Math.floor(Date.now()/1000)+7200,role:'authenticated'})}.test`,refresh_token:'test',expires_at:Math.floor(Date.now()/1000)+7200,user}));},{user,base});
   await c.route('**/*',async route=>{
    const req=route.request(),url=new URL(req.url()),table=url.pathname.split('/').at(-1);if(url.origin===base)return route.continue();if(url.origin!==remote){external.push(url.origin);return route.abort();}
    const answer=(status,data)=>route.fulfill({status,headers:cors,body:JSON.stringify(data)});if(req.method()==='OPTIONS')return answer(200,{});if(url.pathname.startsWith('/auth/'))return answer(200,auth?user:null);

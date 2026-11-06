@@ -5,12 +5,17 @@ on:
   pull_request:
     types: [labeled]
   workflow_dispatch:
+    inputs:
+      score_diagnostic:
+        description: スコア障害の読み取り専用確認
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   public-pages:
     if: >-
-      github.event_name != 'pull_request' ||
+      (github.event_name != 'pull_request' && !inputs.score_diagnostic) ||
       (github.event.pull_request.number == 176 && github.event.label.name == '本番表示確認' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -37,3 +42,20 @@ jobs:
           print('::notice title=本番表示確認::' + json.dumps(results, ensure_ascii=False))
           sys.exit(0 if all(r['html_ok'] for r in results) else 1)
           PY
+  score-diagnostic:
+    if: github.event_name == 'workflow_dispatch' && inputs.score_diagnostic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: 公式CAを照合
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 件数と返却関係だけ確認（書込み禁止）
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/match-result-repair/score_diagnostic.py

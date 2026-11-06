@@ -40,6 +40,10 @@ const legacySource = () => fs.readFileSync(path.join(__dirname, 'legacy-stats.ts
 // 実Supabase SDKでURL・ページング・書込み対象まで検証。外部通信は行わない。
 function database(tables, options = {}) {
   const calls = [], operations = new Map();
+  const embeddedResults = matchId => {
+    const rows = tables.match_results.filter(result => result.match_id === matchId);
+    return (options.oneToOneResults ?? process.env.TEST_MATCH_RESULTS_ONE_TO_ONE === '1') ? rows[0] ?? null : rows;
+  };
   const s = createClient('https://stats-test.invalid', 'public-test-key', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { fetch: async (input, init = {}) => {
@@ -112,8 +116,8 @@ function database(tables, options = {}) {
       const limit = Number(url.searchParams.get('limit') ?? options.cap ?? 1000);
       rows = rows.slice(start, start + Math.min(limit, options.cap ?? 1000));
       const data = table === 'match_players' && url.searchParams.get('select')?.includes('matches!inner')
-        ? rows.map(row => { const match = tables.matches.find(match => match.id === row.match_id); return { ...row, matches: match ? { ...match, match_results: tables.match_results.filter(result => result.match_id === match.id) } : null }; })
-        : table === 'matches' ? rows.map(row => ({ ...row, match_players: tables.match_players.filter(player => player.match_id === row.id), match_results: tables.match_results.filter(result => result.match_id === row.id) })) : rows;
+        ? rows.map(row => { const match = tables.matches.find(match => match.id === row.match_id); return { ...row, matches: match ? { ...match, match_results: embeddedResults(match.id) } : null }; })
+        : table === 'matches' ? rows.map(row => ({ ...row, match_players: tables.match_players.filter(player => player.match_id === row.id), match_results: embeddedResults(row.id) })) : rows;
       const single = new Headers(init.headers).get('accept')?.includes('application/vnd.pgrst.object+json');
       if (single && data.length !== 1) return new Response(JSON.stringify({ code:'PGRST116', message:'対象は1行ではありません' }),{ status:406 });
       return new Response(JSON.stringify(single ? data[0] : data), { status: 200, headers: { 'Content-Type':'application/json', ...(new Headers(init.headers).get('prefer')?.includes('count=exact') ? {'Content-Range':`*/${affected}`} : {}) } });

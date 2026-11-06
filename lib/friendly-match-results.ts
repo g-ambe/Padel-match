@@ -3,6 +3,16 @@ export type FriendlyMatchResult = {
   score_b: unknown;
 };
 
+// UNIQUE(match_id) の有無によりPostgRESTの埋め込みは単一オブジェクト/配列に変わる。
+// 保存データや集計式は変えず、移行前後のレスポンスを同じ読み取り規則で扱う。
+export type EmbeddedMatchResults<T> = T | T[] | null | undefined;
+export function matchResultRows<T>(value: EmbeddedMatchResults<T>): T[] {
+  return value == null ? [] : Array.isArray(value) ? value : [value];
+}
+export function firstMatchResult<T>(value: EmbeddedMatchResults<T>): T | null {
+  return matchResultRows(value)[0] ?? null;
+}
+
 type EnteredFriendlyMatchScore = {
   completed: true;
   result: {

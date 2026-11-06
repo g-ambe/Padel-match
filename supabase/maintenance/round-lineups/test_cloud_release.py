@@ -52,6 +52,13 @@ class ReleaseGuards(unittest.TestCase):
         self.assertNotIn('synthetic altered definition', json.dumps(result))
         self.assertIn('function_sha256', json.dumps(result))
 
+    def test_definition_diagnostic_hides_unknown_literals_and_comments(self):
+        text = "AS $function$begin -- confidential comment\nif current_setting('role')='credential-value' then perform $$dollar-secret$$;end if;end $function$"
+        value = r.redacted_definition(text)
+        self.assertIn("current_setting('role')", value)
+        for secret in ('confidential comment', 'credential-value', 'dollar-secret'):
+            self.assertNotIn(secret, value)
+
     def test_backup_context_does_not_accept_another_commit(self):
         manifest = {'release': {'backup_schema': 'round_lineup_backup_0041_r123_a1', 'source_sha': 'a' * 40, 'migrations': r.reviewed()['migrations']}}
         with patch.dict(os.environ, {'PADEL_RELEASE_AUTHORIZED': r.AUTHORITY, 'BACKUP_SOURCE_SHA': 'a' * 40}):

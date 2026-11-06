@@ -79,6 +79,28 @@ def trigger_differences(value):
     return differences
 
 
+def redacted_definition(text):
+    # 固定した参照ガードだけを調査する。未知の文字列・コメントはログへ出さない。
+    known = {'', 'UPDATE', 'INSERT', 'role', 'anon', 'authenticated', 'club_members', 'event_participants', 'profile_id',
+             '無効化・統合済みの選手には新しい所属・参加・試合を追加できません', '旧profile_idと選手の連携アカウントが一致しません'}
+    body = re.search(r'AS (\$[a-zA-Z_]*\$)([\s\S]*)\1', text)
+    if not body:
+        raise b.BackupError('reference_guard_definition_format_unknown')
+    tokens = re.findall(r"'(?:''|[^'])*'|\$[a-zA-Z_]*\$[\s\S]*?\$[a-zA-Z_]*\$|\"(?:\"\"|[^\"])*\"|--[^\n]*|/\*[\s\S]*?\*/|[^'\"$/-]+|.", body.group(2))
+    output = []
+    for token in tokens:
+        if token.startswith(('--', '/*')):
+            output.append(' /* コメント省略 */ ')
+        elif token.startswith("'"):
+            literal = token[1:-1].replace("''", "'")
+            output.append(token if literal in known else "'[文字列省略]'")
+        elif token.startswith(('"', '$')):
+            output.append('[引用値省略]')
+        else:
+            output.append(token)
+    return ''.join(output)
+
+
 def diagnose():
     authority()
     identity()
@@ -86,6 +108,10 @@ def diagnose():
     stats = (HERE / '07_readonly_diagnostics.sql').read_text()
     result = json.loads(common.source_sql(stats))
     result['trigger_differences'] = trigger_differences(value)
+    guard = json.loads(common.source_sql("BEGIN READ ONLY;SELECT jsonb_build_object('owner',pg_get_userbyid(proowner),'security_definer',prosecdef,'config',proconfig,'definition',pg_get_functiondef(oid)) FROM pg_proc WHERE oid='profile_link_private.guard_reference()'::regprocedure;ROLLBACK;"))
+    definition = guard.pop('definition')
+    guard['redacted_body'] = redacted_definition(definition)
+    result['reference_guard'] = guard
     result['production_mutations'] = False
     return result
 

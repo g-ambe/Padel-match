@@ -1,8 +1,8 @@
-// 架空イベントとローカルビルドだけを使用する。比較元は同じデータで起動したmain。
+// 架空イベントとローカルビルドだけを使用する。比較元URLを指定した場合のみ変更前も計測する。
 const assert=require('node:assert/strict'),fs=require('node:fs');
 const {chromium}=require('playwright');
-const {navigationFixture,user,id,noGroup}=require('../fixtures/navigation-app.cjs');
-const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3002',before=process.env.SCOREBOARD_BEFORE_URL||'http://127.0.0.1:3003',remote='http://127.0.0.1:54321';
+const {navigationFixture,user,id,noGroup,ordinary,manual}=require('../fixtures/navigation-app.cjs');
+const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3002',before=process.env.SCOREBOARD_BEFORE_URL,remote='http://127.0.0.1:54321';
 const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','access-control-expose-headers':'Content-Range','content-type':'application/json'};
 const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now()>end)throw Error('条件待ちタイムアウト');await new Promise(r=>setTimeout(r,30));}};
 (async()=>{
@@ -30,12 +30,12 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
  const output='/tmp/padel-scoreboard-evidence';fs.mkdirSync(output,{recursive:true});
  try{
   seed(2);
-  for(const [label,url]of [['before',before],['after',base]]){
+  for(const [label,url]of [...(before?[['before',before]]:[]),['after',base]]){
    const c=await context(),page=await c.newPage();await page.goto(url+'/events/'+noGroup);await page.getByRole('tab',{name:'対戦',exact:true}).waitFor();await page.locator('[data-score-key]').first().waitFor();
    for(const width of [320,375,390])for(const height of [568,667,844])for(const theme of ['dark','light']){
     await page.setViewportSize({width,height});await page.evaluate(t=>{document.documentElement.dataset.theme=t;document.body.dataset.theme=t;scrollTo(0,0);},theme);
     await page.screenshot({path:`${output}/${label}-${width}x${height}-${theme}.png`,animations:'disabled'});
-    const score=page.locator(label==='after'?'[data-scoreboard-latest] [data-score-key]':'[data-match-list="normal"] [data-score-key]'),generate=page.getByRole('button',{name:'次Round生成',exact:true}),nav=page.getByRole('navigation',{name:'下部ナビゲーション'});
+    const score=page.locator(await page.locator('[data-scoreboard-latest]').count()?'[data-scoreboard-latest] [data-score-key]':'[data-match-list="normal"] [data-score-key]'),generate=page.getByRole('button',{name:'次Round生成',exact:true}),nav=page.getByRole('navigation',{name:'下部ナビゲーション'});
     const [first,second,g,n]=await Promise.all([score.nth(0).boundingBox(),score.nth(1).boundingBox(),generate.boundingBox(),nav.boundingBox()]);
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert(await score.first().getByRole('button').first().evaluate(el=>el.getBoundingClientRect().height>=44));
     if(label==='after'){const colors=await score.first().getByRole('button').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).backgroundColor.match(/[0-9.]+/g).slice(0,3).map(Number)));assert(colors[0][1]>colors[0][0]&&colors[0][1]>colors[0][2],'ペアAは緑系');assert(colors[1][2]>colors[1][0]&&colors[1][2]>colors[1][1],'ペアBは青系');}
@@ -81,8 +81,32 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
    const [gb,nb]=await Promise.all([generate.boundingBox(),nav.boundingBox()]);evidence.push({label:'after-safe-area',width,height,theme,inset:34,scrollY:await page.evaluate(()=>scrollY),generateBottom:Math.ceil(gb.y+gb.height),navigationTop:Math.floor(nb.y),fits:gb.y+gb.height<=nb.y});await page.screenshot({path:`${output}/after-safe-area-${width}x${height}-${theme}.png`,animations:'disabled'});
    await latest().locator('[data-score-key]').first().getByRole('button').first().click();await poll(async()=>!await nav.isVisible());await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();await nav.waitFor();
   }
+  // 表示の微調整。固定・履歴の矢印、標準マーカー抑止、開閉状態の保持。
+  await page.goto(base+'/events/'+ordinary);await page.getByText('開催中 · 乱数',{exact:true}).waitFor();
+  const fold=key=>page.locator(`[data-${key}]`),arrow=async key=>fold(key).locator('summary > span[aria-hidden] > span').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).map(n=>n.textContent).join(''));
+  for(const width of [320,375,390])for(const theme of ['dark','light']){
+   await page.setViewportSize({width,height:667});await page.evaluate(t=>{document.documentElement.dataset.theme=t;document.body.dataset.theme=t;},theme);
+   for(const key of ['fixed-settings','round-history']){
+    const details=fold(key),summary=details.locator(':scope > summary');await summary.waitFor();assert.equal(await arrow(key),'▶');assert.equal(await summary.evaluate(n=>getComputedStyle(n).listStyleType),'none');assert.equal(await summary.evaluate(n=>getComputedStyle(n).display),'flex');await summary.click();assert.equal(await arrow(key),'▼');
+    await page.getByRole('tab',{name:'参加者',exact:true}).click();await page.getByRole('tab',{name:'対戦',exact:true}).click();assert(await details.evaluate(n=>n.open));assert.equal(await arrow(key),'▼');
+    if(key==='round-history'){
+     const expand=page.getByRole('button',{name:'全試合履歴を拡大',exact:true});assert.equal((await expand.innerText()).trim(),'');assert.equal(await expand.locator('svg[aria-hidden="true"]').count(),1);assert(await expand.evaluate(n=>{const r=n.getBoundingClientRect();return r.height>=44&&r.width>=44;}));assert.equal(await page.getByText('一覧内をスクロールして確認',{exact:true}).count(),0);
+     await page.screenshot({path:`/tmp/friendly-ui-polish-${width}-${theme}.png`,animations:'disabled'});
+    }
+    await summary.click();assert.equal(await arrow(key),'▶');
+   }
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  }
+  // 矢印だけを取り除き、既存コート数ダイアログと保存は1〜5面とも維持。
+  const court=()=>page.getByRole('button',{name:'利用コート数を変更',exact:true});
+  for(const count of [1,2,3,4,5]){
+   assert(!/[⌄▼]/.test(await court().innerText()));assert(await court().evaluate(n=>n.getBoundingClientRect().height>=44));await court().click();await dialog().getByRole('button',{name:count+'面',exact:true}).click();await dialog().getByRole('button',{name:'保存',exact:true}).click();await poll(async()=>await page.locator('dialog[open]').count()===0);assert.equal(f.tables.events.find(e=>e.id===ordinary).court_count,count);assert.match(await court().innerText(),new RegExp(count+'面'));
+  }
+  // 表示名だけの変更。auto/manualのDB値を維持し、終了済みでも同じ分類を使う。
+  f.tables.events.find(e=>e.id===ordinary).status='closed';await page.reload();await page.getByText('終了済み · 乱数',{exact:true}).waitFor();assert.equal(f.tables.events.find(e=>e.id===ordinary).event_mode,'auto');assert.equal(await page.getByRole('tab',{name:'結果',exact:true}).getAttribute('aria-selected'),'true');
+  await page.goto(base+'/events/'+manual);await page.getByText('開催中 · 手動',{exact:true}).waitFor();f.tables.events.find(e=>e.id===manual).status='closed';await page.reload();await page.getByText('終了済み · 手動',{exact:true}).waitFor();assert.equal(f.tables.events.find(e=>e.id===manual).event_mode,'manual');
   fs.writeFileSync(output+'/layout.json',JSON.stringify(evidence,null,2));await c.close();
   assert.deepEqual(external,[]);assert.deepEqual(errors,[]);
-  console.log('変更前後36条件＋34pxセーフエリア12条件、1〜5面、二重マウント防止・同一DOM保持、拡大内の初回/修正/取消/保存失敗/再試行、次Roundの配置変更、タブ・動画入力保持を確認。本番通信なし。');
+  console.log('モバイル3幅・両テーマ＋34pxセーフエリア12条件、固定/履歴の矢印・単一マーカー・開閉保持・拡大アイコン・1〜5面変更・乱数/手動/終了ヘッダー、1〜5面、二重マウント防止・同一DOM保持、拡大内の初回/修正/取消/保存失敗/再試行、次Roundの配置変更、タブ・動画入力保持を確認。本番通信なし。');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -131,6 +131,7 @@ def rehearse():
     expect_failure(target,fail_atomic,'atomic_release_failure_not_detected')
     if result_hash(target)!=before or target.query("select to_json(to_regnamespace('lineup_private') is not null)"):raise b.BackupError('atomic_release_did_not_rollback')
     target.sql('SET ROLE postgres;'+atomic)
+    target.sql((HERE/'04_verify.sql').read_text())
     if dump_stats(target,root/'statistics-migrated.json')!=before_stats:raise b.BackupError('migration_changed_visible_statistics')
     if result_hash(target)!=repaired:raise b.BackupError('migration_changed_existing_results')
     b.verify_foreign_keys(target,manifest['tables']+[{'schema':'score_repair_182','name':'rows'},{'schema':'score_repair_182','name':'batches'},{'schema':'public','name':'friendly_match_operations'},{'schema':'public','name':'friendly_round_lineup_state'}])

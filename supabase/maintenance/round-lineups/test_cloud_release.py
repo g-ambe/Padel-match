@@ -67,6 +67,12 @@ class ReleaseGuards(unittest.TestCase):
             changed = definition.replace('known', 'changed').replace('\n', '\r\n')
             self.assertEqual(r.approved_reference_definition(changed), changed)
 
+    def test_pending_repair_approval_blocks_production_entry_points(self):
+        with patch('pathlib.Path.read_text',return_value=json.dumps({'status':'approval_pending'})),self.assertRaises(r.b.BackupError):r.require_score_repair_approval()
+        for action in (r.prepare,r.apply):
+            with patch('pathlib.Path.read_text',return_value=json.dumps({'status':'approval_pending'})),patch.object(r,'authority') as authority, self.assertRaises(r.b.BackupError):action()
+            authority.assert_not_called()
+
     def test_backup_context_does_not_accept_another_commit(self):
         manifest = {'release': {'backup_schema': 'round_lineup_backup_0041_r123_a1', 'source_sha': 'a' * 40, 'migrations': r.reviewed()['migrations']}}
         with patch.dict(os.environ, {'PADEL_RELEASE_AUTHORIZED': r.AUTHORITY, 'BACKUP_SOURCE_SHA': 'a' * 40}):

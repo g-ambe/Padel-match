@@ -132,7 +132,22 @@ def diagnose():
     return result
 
 
+def require_score_repair_approval():
+    path=HERE.parent/'match-result-repair/approval-plan.json'
+    if not path.is_file():raise b.BackupError('score_repair_explicit_approval_required')
+    approval=json.loads(path.read_text())
+    if approval.get('status')!='approved' or approval.get('production_changes_permitted') is not True:
+        raise b.BackupError('score_repair_explicit_approval_required')
+    required={'supabase/migrations/'+n for n in FILES}|{'supabase/maintenance/match-result-repair/02_repair_reviewed.sql','supabase/maintenance/match-result-repair/03_recover_reviewed.sql'}
+    if set(approval.get('sql_sha256',{}))!=required or not re.fullmatch(r'[0-9a-f]{64}',approval.get('plan_sha256','')):
+        raise b.BackupError('approved_score_repair_manifest_invalid')
+    for name,digest in approval.get('sql_sha256',{}).items():
+        if not name.startswith(('supabase/migrations/','supabase/maintenance/match-result-repair/')) or hashlib.sha256((ROOT/name).read_bytes()).hexdigest()!=digest:
+            raise b.BackupError('approved_score_repair_sql_changed')
+
+
 def prepare():
+    require_score_repair_approval()
     authority()
     main = identity()
     if main != os.environ.get('BACKUP_MAIN_SHA'):
@@ -226,6 +241,7 @@ def mark():
 
 
 def apply():
+    require_score_repair_approval()
     root = b.workdir()
     files, manifest = b.unpack(root)
     ctx = context(manifest)

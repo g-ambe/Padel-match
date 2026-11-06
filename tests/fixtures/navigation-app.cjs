@@ -15,11 +15,25 @@ function navigationFixture(){
   rounds:[{id:id(70),event_id:ordinary,round_number:1}],matches:[{id:match,event_id:ordinary,round_id:id(70),court_number:1,completed:true},{id:newMatch,event_id:ordinary,round_id:id(70),court_number:1,completed:false}],
   match_players:[match,newMatch].flatMap(m=>Array.from({length:4},(_,i)=>({id:m+'-'+i,match_id:m,participant_id:id(40+i),team:i<2?'A':'B'}))),match_results:[{id:id(80),match_id:match,score_a:4,score_b:2,winner_team:'A'}],event_video_links:[],user_preferences:[{auth_user_id:user.id,theme_mode:'dark'}],join_requests:[],padel_facilities:[],notifications:[{id:id(90),is_read:false,title:'テスト通知',created_at:'2026-11-05'}]
  };
- const calls=[];let seq=1000;
+ const calls=[],operations=new Map();let seq=1000;
  const filter=(row,key,value)=> value==='is.null'?row[key]===null:value.startsWith('eq.')?String(row[key])===value.slice(3):value.startsWith('neq.')?String(row[key])!==value.slice(4):value.startsWith('in.(')?value.slice(4,-1).split(',').includes(String(row[key])):true;
  const s=createClient('http://127.0.0.1:54321','local-test-key',{auth:{persistSession:false,autoRefreshToken:false},global:{fetch:async(input,init={})=>{
   const url=new URL(typeof input==='string'?input:input.url),table=url.pathname.split('/').at(-1),method=init.method??'GET',body=init.body?JSON.parse(init.body):null,headers=new Headers(init.headers);
   calls.push({table,method,body,url});
+  if(table==='get_friendly_lineup_versions')return new Response(JSON.stringify({version:1,editing_enabled:false,event_revision:0,rounds:[]}),{status:200});
+  if(table==='save_friendly_match_score'){
+   if(operations.has(body.p_request_id))return new Response(JSON.stringify(operations.get(body.p_request_id)),{status:200});
+   const m=tables.matches.find(m=>m.id===body.p_match_id),prior=tables.match_results.find(r=>r.match_id===m?.id);
+   const result={id:prior?.id??id(seq++),score_a:body.p_a,score_b:body.p_b,winner_team:body.p_a===body.p_b?'draw':body.p_a>body.p_b?'A':'B'};
+   if(prior)Object.assign(prior,result);else tables.match_results.push({...result,match_id:body.p_match_id});m.completed=true;
+   const data={request_id:body.p_request_id,match_id:body.p_match_id,result};operations.set(body.p_request_id,data);return new Response(JSON.stringify(data),{status:200});
+  }
+  if(table==='create_friendly_round'){
+   const b=body.p_request;if(operations.has(b.requestId))return new Response(JSON.stringify(operations.get(b.requestId)),{status:200});
+   const r={id:id(seq++),event_id:b.eventId,round_number:b.lastRound+1};tables.rounds.push(r);
+   for(const c of b.matches){const m={id:id(seq++),event_id:b.eventId,round_id:r.id,court_number:c.court,completed:false};tables.matches.push(m);for(const[team,people]of[['A',c.teamA],['B',c.teamB]])for(const participant_id of people)tables.match_players.push({id:id(seq++),match_id:m.id,participant_id,team});}
+   const data={event_id:b.eventId,request_id:b.requestId,round_id:r.id,round_number:r.round_number};operations.set(b.requestId,data);return new Response(JSON.stringify(data),{status:200});
+  }
   if(url.pathname.includes('/rpc/')){
    const data=table==='get_event_fixed_pair_state'?{event_id:body.p_event_id,revision:0,used_fixed_pairs:false,pairs:[],eligible_rounds:[]}:[];
    return new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});

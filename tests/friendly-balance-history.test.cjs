@@ -107,7 +107,7 @@ test('過去戦績取得に失敗したバランスペアはRoundを保存せず
    fetchActiveClubMemberParticipants:async()=>[0,1,2,3].map(i=>({playerProfileId:`player-${i}`})),setError:v=>{if(v)errors.push(v)},setIsGeneratingRound:()=>{},setEventStatus:()=>{},setIsDeletedEvent:()=>{},loadAll:async()=>{},
    setRoundModeSelection:()=>{throw Error('モードの自動変更は禁止')}
   })();
-  if(mode==='balance'){assert(errors.some(e=>e.includes('過去戦績')));assert(!db.calls.some(c=>c.method==='POST'));}
-  else{assert.deepEqual(errors,[]);assert(db.calls.some(c=>c.table==='create_fixed_pair_round'&&c.method==='POST'));assert(!db.calls.some(c=>c.table==='events'&&c.url.searchParams.has('status')));}
+  if(mode==='balance'){assert(errors.some(e=>e.includes('過去戦績')));assert(!db.calls.some(c=>c.method==='POST'&&c.table!=='get_friendly_lineup_versions'));}
+  else{assert.deepEqual(errors,[]);assert(db.calls.some(c=>c.table==='create_friendly_round'&&c.method==='POST'));assert(!db.calls.some(c=>c.table==='events'&&c.url.searchParams.has('status')));}
  }
 });

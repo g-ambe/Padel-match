@@ -38,7 +38,7 @@ test('画面の設定保存が競合・不明応答・DB拒否を成功表示せ
  const f=fixture(),db=database(f.tables);Object.assign(f.tables.events[0],{status:'active',event_mode:'auto',court_count:1});f.tables.event_participants.forEach(p=>p.status='active');let generated=false;
  const fail=()=>Promise.reject(new Error('固定設定の取得失敗'));
  await handler(page,'generateRound',{getSupabaseClient:()=>db.s,eventId:'event-a',eventMode:'auto',eventStatus:'active',guestMode:false,isGeneratingRound:false,roundUserId:'user',selectedRoundMode:'normal',latestRoundNumber:1,readFriendlyRoundRows,scoredFriendlyMatches,FRIENDLY_MODE_UNLOCK_MATCHES:10,fetchActiveClubMemberParticipants:async()=>[0,1,2,3].map(i=>({playerProfileId:`player-${i}`})),readEventFixedPairs:fail,generateFriendlyRound:()=>{generated=true},setIsGeneratingRound:()=>{},setError:e=>errors.push(e),setIsDeletedEvent:()=>{},loadAll:async()=>{}})();
- assert.equal(generated,false);assert(!db.calls.some(c=>c.method==='POST'));assert(errors.includes('固定設定の取得失敗'));
+ assert.equal(generated,false);assert(!db.calls.some(c=>c.method==='POST'&&c.table!=='get_friendly_lineup_versions'));assert(errors.includes('固定設定の取得失敗'));
 });
 test('画面の実生成処理は固定を生成器へ渡し、同じ要求の再試行で新しい生成を行わない',async()=>{
  const f=fixture(),db=database(f.tables);Object.assign(f.tables.events[0],{status:'active',event_mode:'auto',court_count:1});f.tables.event_participants.forEach(p=>p.status='active');

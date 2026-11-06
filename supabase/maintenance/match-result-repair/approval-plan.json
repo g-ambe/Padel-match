@@ -1,0 +1,25 @@
+{
+  "status": "approved",
+  "production_changes_permitted": true,
+  "plan_sha256": "5861cf7cb995f3b1c294ab70227193ff63c58c23d18b6b1bb921fc17cd7b0cd8",
+  "target_matches": 91,
+  "candidate_rows": 213,
+  "retained_rows": 91,
+  "removed_rows": 122,
+  "includes_deleted_manual_matches": 2,
+  "retention_order": "created_at ASC NULLS LAST, id ASC",
+  "backup_release_id": 436144065,
+  "private_review_release_id": 436191904,
+  "private_archive_sha256": "4519a003d7514d22ac497797321e0e38098403131cb58f763a99ab5b704625e2",
+  "source_audit_run": 42176957794,
+  "isolated_rehearsal_run": 42176958862,
+  "sql_sha256": {
+    "supabase/maintenance/match-result-repair/02_repair_reviewed.sql": "7994d7bde286fdda09feb5945b91bad35035ffcdcc2848065549ef9f7b55e1df",
+    "supabase/maintenance/match-result-repair/03_recover_reviewed.sql": "9c43286b667b6769a38411ffa424c74ef608a7e84ad1d59ec922d59b30a8556c",
+    "supabase/migrations/0041_atomic_round_lineups.sql": "0b202e54ff4ce491ca7157789e854739cdc35f571aa29c2cf53a5d9343032ac3",
+    "supabase/migrations/0042_round_lineup_safety.sql": "5e03c11215fb3d6a8fbc0654536c2dc5b3e621ec64eb0bb0363cce3d69e763c1",
+    "supabase/migrations/0043_match_results_one_per_match.sql": "fd130c0cfdf892d50ad4757aa74446ba2f7523ae6b953dc489490b6862cb4056"
+  },
+  "approval_date": "2026-11-06",
+  "approval_scope": "ユーザーが91試合213行、余剰122行、固定プランSHAと5件のSQLを明示承認。対象・SQL差分は停止。"
+}

@@ -5,6 +5,7 @@ const groupPage = 'app/groups/[id]/page.tsx';
 const eventPage = 'app/events/[id]/page.tsx';
 const { buildOfficialStats } = require('../lib/official-matches.ts');
 const clone = value => structuredClone(value);
+const {createFriendlyDeleteCommit} = require('../lib/round-lineup.ts');
 
 function eventActions(db, extra = {}) {
   const state = { loads:0, routes:[], errors:[], edits:{} };
@@ -145,7 +146,7 @@ test('初回スコアの登録も履歴だけを書き込み、未完了から�
   assert.deepEqual(action.state.errors,[]);
   assert.equal(tables.matches.find(m=>m.id==='match-0006').completed,true);
   assert.equal((await profileStats(db.s)).matches,9);
-  assert.deepEqual(db.calls.filter(c=>c.method!=='GET').map(c=>c.table),['match_results','matches']);
+  assert.deepEqual(db.calls.filter(c=>c.method!=='GET').map(c=>c.table),['save_friendly_match_score']);
 });
 
 test('試合単体の削除後はその履歴だけを除外し、選手・所属・旧累計値を保つ', async () => {
@@ -153,7 +154,7 @@ test('試合単体の削除後はその履歴だけを除外し、選手・所�
   let cancelled=false;
   const action=eventActions(db,{
     eventStatus:'active',matchDeleteTarget:{id:'match-0000'},
-    deleteEmptyRoundAndRenumber:async()=>true, cancelMatchDelete:()=>{cancelled=true},setScoreInputs:()=>{},
+    pendingMatchDelete:{current:createFriendlyDeleteCommit(db.s,'event-a',{...tables.matches.find(m=>m.id==='match-0000'),players:tables.match_players.filter(p=>p.match_id==='match-0000'),result:tables.match_results.find(r=>r.match_id==='match-0000')})}, cancelMatchDelete:()=>{cancelled=true},setScoreInputs:()=>{},
   });
   await action.run('deleteMatch');
   assert(cancelled);

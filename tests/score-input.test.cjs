@@ -70,6 +70,6 @@ test('実際のRound生成処理が選択中の各モードを生成器へ渡し
       setRoundModeSelection:()=>{throw Error('ユーザー操作以外のモード変更は禁止')},
     })();
     assert.deepEqual(errors,[]);assert.deepEqual(modes,[mode]);assert.equal(loads,1);
-    assert(db.calls.some(c=>c.table==='matches'&&c.method==='POST'));
+    assert(db.calls.some(c=>c.table==='create_friendly_round'&&c.method==='POST'));
   }
 });

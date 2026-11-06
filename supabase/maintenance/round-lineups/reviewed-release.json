@@ -1,0 +1,91 @@
+{
+  "basis": "最新のリポジトリ内本番RLS適用記録を再現した隔離DB + 0040。本番との一致は別途検査し、不一致なら停止する。",
+  "catalog": {
+    "tables": "21130378ca8f6aa92bb5810fe837ab5a9ac7e5f05ba66b831df0e2ea049ebb8c",
+    "columns": "048ed5144fe1025d09e54f7da1a334cffbb1b82b08cc6cd30e3f14c4243d4f46",
+    "column_acl": "21d7640c4925bb71b9f478a723d1a9eafca8adaea692dff8440acf28c99be8d6",
+    "policies": "732edd0a7fbf2fa328ec5255d655927d5816b3812efc693cd3666074e4552940",
+    "triggers": "0eeb51b7f3a4035cca91c020a2ee814c72b7d235dc6706b9c5dcf2254b4b57b5",
+    "rpc_functions": "7b39b5ef2e522446bea8fea4c6b5b4e645156f5bcc91fbcdd58cb96ec571dce2",
+    "constraints": "bed6a43a1af97ed32c6006a57be0f2e77b4dd5c28088ac89a370c918996c2eee"
+  },
+  "migrations": {
+    "0041_atomic_round_lineups.sql": "0b202e54ff4ce491ca7157789e854739cdc35f571aa29c2cf53a5d9343032ac3",
+    "0042_round_lineup_safety.sql": "5e03c11215fb3d6a8fbc0654536c2dc5b3e621ec64eb0bb0363cce3d69e763c1",
+    "0043_match_results_one_per_match.sql": "fd130c0cfdf892d50ad4757aa74446ba2f7523ae6b953dc489490b6862cb4056"
+  },
+  "triggers": [
+    {
+      "table": "events",
+      "trigger": "CREATE TRIGGER fixed_pair_event_finish BEFORE UPDATE OF status, stats_mode ON public.events FOR EACH ROW EXECUTE FUNCTION fixed_pair_private.guard_legacy_write()",
+      "enabled": "O",
+      "function_sha256": "95925ea8d7b1935e8d93b8419967794b057d061125be35e60f1d88a0a8af7fe2"
+    },
+    {
+      "table": "events",
+      "trigger": "CREATE TRIGGER guard_event_identity BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION events_identity_private.guard_event_identity()",
+      "enabled": "O",
+      "function_sha256": "d8b72493176c139e00e29aceaed6fd907a3bb333673e64cf81243824738bcc54"
+    },
+    {
+      "table": "events",
+      "trigger": "CREATE TRIGGER guard_event_member_fields BEFORE UPDATE ON public.events FOR EACH ROW EXECUTE FUNCTION events_operation_private.guard_member_fields()",
+      "enabled": "O",
+      "function_sha256": "60458496649cd7430d49807df9cf81b242e752022bc494b7c86d6f013d9d7790"
+    },
+    {
+      "table": "event_participants",
+      "trigger": "CREATE TRIGGER guard_participant_identity BEFORE UPDATE ON public.event_participants FOR EACH ROW EXECUTE FUNCTION participants_identity_private.guard_identity()",
+      "enabled": "O",
+      "function_sha256": "096fd1f0a363e53b7d6e78c373f8f29d13133f114d24831f22c71defea31028c"
+    },
+    {
+      "table": "event_participants",
+      "trigger": "CREATE TRIGGER profile_link_participant_reference BEFORE INSERT OR UPDATE OF player_profile_id, profile_id ON public.event_participants FOR EACH ROW EXECUTE FUNCTION profile_link_private.guard_reference('player_profile_id')",
+      "enabled": "O",
+      "function_sha256": "08712214f0a880010657c8ef773db17db28dec34fc2573ce3cba497c8a37de16"
+    },
+    {
+      "table": "rounds",
+      "trigger": "CREATE TRIGGER fixed_pair_round_create BEFORE INSERT ON public.rounds FOR EACH ROW EXECUTE FUNCTION fixed_pair_private.guard_legacy_write()",
+      "enabled": "O",
+      "function_sha256": "95925ea8d7b1935e8d93b8419967794b057d061125be35e60f1d88a0a8af7fe2"
+    },
+    {
+      "table": "rounds",
+      "trigger": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.rounds FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'event_id')",
+      "enabled": "O",
+      "function_sha256": "7f431e3a43533d0559383ea060b418e0e349299915a0b98a8a3267e1322d5f19"
+    },
+    {
+      "table": "matches",
+      "trigger": "CREATE TRIGGER fixed_pair_match_create BEFORE INSERT ON public.matches FOR EACH ROW EXECUTE FUNCTION fixed_pair_private.guard_legacy_write()",
+      "enabled": "O",
+      "function_sha256": "95925ea8d7b1935e8d93b8419967794b057d061125be35e60f1d88a0a8af7fe2"
+    },
+    {
+      "table": "matches",
+      "trigger": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.matches FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'event_id', 'round_id')",
+      "enabled": "O",
+      "function_sha256": "7f431e3a43533d0559383ea060b418e0e349299915a0b98a8a3267e1322d5f19"
+    },
+    {
+      "table": "match_players",
+      "trigger": "CREATE TRIGGER fixed_pair_lineup BEFORE INSERT OR UPDATE OF team ON public.match_players FOR EACH ROW EXECUTE FUNCTION fixed_pair_private.guard_legacy_write()",
+      "enabled": "O",
+      "function_sha256": "95925ea8d7b1935e8d93b8419967794b057d061125be35e60f1d88a0a8af7fe2"
+    },
+    {
+      "table": "match_players",
+      "trigger": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.match_players FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'match_id', 'participant_id')",
+      "enabled": "O",
+      "function_sha256": "7f431e3a43533d0559383ea060b418e0e349299915a0b98a8a3267e1322d5f19"
+    },
+    {
+      "table": "match_results",
+      "trigger": "CREATE TRIGGER guard_match_identity BEFORE UPDATE ON public.match_results FOR EACH ROW EXECUTE FUNCTION match_identity_private.guard_identity('id', 'match_id')",
+      "enabled": "O",
+      "function_sha256": "7f431e3a43533d0559383ea060b418e0e349299915a0b98a8a3267e1322d5f19"
+    }
+  ]
+}

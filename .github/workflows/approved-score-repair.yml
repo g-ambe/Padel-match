@@ -1,0 +1,181 @@
+name: PR182固定プランの最新バックアップ・隔離試験・承認適用
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: padel-database-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  PADEL_APPROVED_REPAIR: 5861cf7cb995f3b1c294ab70227193ff63c58c23d18b6b1bb921fc17cd7b0cd8
+  NODE_PATH: ${{ github.workspace }}/.score-review-tools/node_modules
+  BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  prepare:
+    if: >-
+      github.event.pull_request.number == 182 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.label.name == '182承認固定プラン事前検証' && github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/atomic-round-lineup'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.store.outputs.release_id }}
+      asset_id: ${{ steps.store.outputs.asset_id }}
+      sha256: ${{ steps.store.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: mainの復旧点を記録
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api repos/g-ambe/Padel-match/commits/main --jq '"sha=" + .sha' >> "$GITHUB_OUTPUT"
+      - name: 暗号化設定を確認
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py readiness
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: 戦績照合・検証用の依存を準備
+        run: npm install --prefix .score-review-tools --ignore-scripts --no-package-lock --no-audit --no-fund typescript@5.9.3 @electric-sql/pglite@0.3.14 @supabase/supabase-js@2.119.0
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 合成DB・リリースガードの回帰試験
+        env:
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: |
+          python3 -B - <<'PY'
+          import re, sys, unittest
+          directory = 'supabase/maintenance/event-fixed-pairs'
+          sys.path.insert(0, directory)
+          result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.discover(directory, pattern='test_cloud_*.py'))
+          for test, trace in result.errors + result.failures:
+              message = re.sub(r'(?:https?|postgres(?:ql)?)://\S+', '[URL省略]', str(test) + '\n' + trace[-3000:])
+              print('::error title=バックアップ合成試験::' + message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))
+          sys.exit(0 if result.wasSuccessful() else 1)
+          PY
+      - name: PR182の適用ガード回帰試験
+        run: python3 -B -m unittest discover -s supabase/maintenance/round-lineups -p 'test_cloud_release.py' -v
+      - name: 固定プラン・隔離ジョブの安全条件を確認
+        run: python3 -B -m unittest discover -s supabase/maintenance/match-result-repair -p 'test_*.py' -v
+      - name: 公式CAを照合
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 最新定義・02バックアップ・外部バックアップを取得
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-release-backup
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+          BACKUP_MAIN_SHA: ${{ steps.baseline.outputs.sha }}
+        run: python3 -B supabase/maintenance/match-result-repair/release_approved.py prepare
+      - name: 暗号化した実ファイルを未公開で保管
+        id: store
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-release-backup
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py publish
+
+  rehearse:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    env:
+      BACKUP_RELEASE_ID: ${{ needs.prepare.outputs.release_id }}
+      BACKUP_ASSET_ID: ${{ needs.prepare.outputs.asset_id }}
+      BACKUP_SHA256: ${{ needs.prepare.outputs.sha256 }}
+      PADEL_BACKUP_WORKDIR: /tmp/padel-release-rehearsal-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: 保管した実ファイルを別ジョブへ取得
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: 戦績照合・検証用の依存を準備
+        run: npm install --prefix .score-review-tools --ignore-scripts --no-package-lock --no-audit --no-fund typescript@5.9.3 @electric-sql/pglite@0.3.14 @supabase/supabase-js@2.119.0
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 本番接続を渡さず隔離復元・0041・0042・03を試験
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/match-result-repair/release_approved.py rehearse
+
+  apply:
+    if: >-
+      github.event.pull_request.number == 182 &&
+      github.event.pull_request.state == 'open' && github.event.pull_request.draft &&
+      github.event.label.name == '182承認固定プラン適用' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/atomic-round-lineup'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      PADEL_BACKUP_WORKDIR: /tmp/padel-release-apply-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: 戦績照合・検証用の依存を準備
+        run: npm install --prefix .score-review-tools --ignore-scripts --no-package-lock --no-audit --no-fund typescript@5.9.3 @electric-sql/pglite@0.3.14 @supabase/supabase-js@2.119.0
+      - name: 同一コミットの隔離成功バックアップを選定
+        id: selected
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/match-result-repair/release_approved.py select_backup
+      - name: バックアップの固定値を後続ステップへ渡す
+        env:
+          SELECTED_RELEASE: ${{ steps.selected.outputs.release_id }}
+          SELECTED_ASSET: ${{ steps.selected.outputs.asset_id }}
+          SELECTED_SHA: ${{ steps.selected.outputs.sha256 }}
+        run: |
+          echo "BACKUP_RELEASE_ID=$SELECTED_RELEASE" >> "$GITHUB_ENV"
+          echo "BACKUP_ASSET_ID=$SELECTED_ASSET" >> "$GITHUB_ENV"
+          echo "BACKUP_SHA256=$SELECTED_SHA" >> "$GITHUB_ENV"
+      - name: 検証済みの暗号化ファイルを取得
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 公式CAを照合
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 直前差分と承認済みSQLを原子的に検証・適用
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/match-result-repair/release_approved.py apply

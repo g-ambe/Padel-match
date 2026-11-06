@@ -28,9 +28,9 @@ const poll=async(fn,label='条件待ち')=>{const end=Date.now()+15000;while(!aw
    const answer=(status,body)=>route.fulfill({status,headers:cors,body:JSON.stringify(body)});
    if(method==='OPTIONS')return answer(200,{});
    if(url.pathname.startsWith('/auth/'))return answer(200,authenticated?user:null);
-   if(!url.pathname.includes('/rpc/')&&['POST','PATCH','DELETE'].includes(method))writes.push({table,method,body:JSON.parse(req.postData()||'null')});
+   if((!url.pathname.includes('/rpc/')||table==='save_friendly_match_score')&&['POST','PATCH','DELETE'].includes(method))writes.push({table,method,body:JSON.parse(req.postData()||'null')});
    if(table==='get_event_fixed_pair_state')return answer(200,{event_id:ordinary,revision:0,used_fixed_pairs:false,pairs:[],eligible_rounds:[{round:10,eligible:ordinaryIds,played:ordinaryIds.slice(0,4)}]});
-   if(table==='match_results'&&['POST','PATCH'].includes(method)){
+   if(['match_results','save_friendly_match_score'].includes(table)&&['POST','PATCH'].includes(method)){
     if(holdScore)await new Promise(r=>releaseScore=r);
     if(failScore)return answer(403,{code:'42501',message:'試験用スコア保存拒否'});
    }
@@ -56,9 +56,9 @@ const poll=async(fn,label='条件待ち')=>{const end=Date.now()+15000;while(!aw
   const expectTab=async name=>poll(async()=>await tab(name).getAttribute('aria-selected')==='true','初期・切替タブ');
   await page.goto(base+'/events/'+ordinary);await expectTab('対戦');await page.locator('[data-round-history] > summary').click();await card(newMatch).waitFor();
   // 初回0-0の自動保存。片方の数字入力中はモーダルがタブ切替を保護する。
-  const beforeScores=writes.filter(w=>w.table==='match_results').length;
+  const beforeScores=writes.filter(w=>['match_results','save_friendly_match_score'].includes(w.table)).length;
   holdScore=true;failScore=true;await card(newMatch).getByRole('button').first().click();await dialog().getByRole('button',{name:'0',exact:true}).click();
-  await page.evaluate(()=>document.querySelector('#event-tab-participants').click());await expectTab('対戦');assert.equal(writes.filter(w=>w.table==='match_results').length,beforeScores);
+  await page.evaluate(()=>document.querySelector('#event-tab-participants').click());await expectTab('対戦');assert.equal(writes.filter(w=>['match_results','save_friendly_match_score'].includes(w.table)).length,beforeScores);
   await dialog().getByRole('button',{name:'0',exact:true}).click();await poll(()=>!!releaseScore);await nav().waitFor();
   await tab('参加者').click();await tab('結果').click();await page.locator('[data-score-status]').waitFor();assert.equal(f.tables.matches.find(m=>m.id===newMatch).completed,false);
   holdScore=false;releaseScore();await poll(async()=>await page.locator('#event-panel-matches').getByRole('button',{name:'再試行',exact:true,includeHidden:true}).count()>0);
@@ -66,8 +66,8 @@ const poll=async(fn,label='条件待ち')=>{const end=Date.now()+15000;while(!aw
   await tab('対戦').click();failScore=false;await card(newMatch).getByRole('button',{name:'再試行',exact:true}).click();await card(newMatch).getByText('DRAW',{exact:true}).first().waitFor();
   assert.equal(f.tables.match_results.filter(r=>r.match_id===newMatch).length,1);
   // 保存済みスコアは編集確定まで送信しない。取消で元の0-0を維持する。
-  const savedCount=writes.filter(w=>w.table==='match_results').length;
-  await card(newMatch).getByRole('button').first().click();await dialog().getByRole('button',{name:'3',exact:true}).click();await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();assert.equal(writes.filter(w=>w.table==='match_results').length,savedCount);
+  const savedCount=writes.filter(w=>['match_results','save_friendly_match_score'].includes(w.table)).length;
+  await card(newMatch).getByRole('button').first().click();await dialog().getByRole('button',{name:'3',exact:true}).click();await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();assert.equal(writes.filter(w=>['match_results','save_friendly_match_score'].includes(w.table)).length,savedCount);
   assert.equal(f.tables.match_results.find(r=>r.match_id===newMatch).score_a,0);
   await card(newMatch).getByRole('button').first().click();await dialog().getByRole('button',{name:'キーボードで入力'}).click();await dialog().locator('input').nth(0).fill('2');await dialog().locator('input').nth(1).fill('2');await dialog().getByRole('button',{name:'完了',exact:true}).click();await poll(()=>f.tables.match_results.find(r=>r.match_id===newMatch).score_a===2);await poll(async()=>await page.locator('[data-score-status]').count()===0);
   // YouTubeの入力・折りたたみと全体動画の編集を保持。タブ切替だけでは書き込まない。

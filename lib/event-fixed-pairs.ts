@@ -3,7 +3,7 @@ import type { EligibleRound, FixedPair } from "./friendly-fixed-pairs";
 import type { FriendlyRoundMatch, FriendlyRoundMode } from "./friendly-rounds";
 
 export type FixedPairState = { event_id:string;revision:number;used_fixed_pairs:boolean;pairs:FixedPair[];eligible_rounds:EligibleRound[] };
-export type FixedRoundRequest = { eventId:string;revision:number;lastRound:number;courtCount:number;mode:FriendlyRoundMode;activeIds:string[];matches:FriendlyRoundMatch[];requestId:string };
+export type FixedRoundRequest = { lineupRevision?: number; eventId:string;revision:number;lastRound:number;courtCount:number;mode:FriendlyRoundMode;activeIds:string[];matches:FriendlyRoundMatch[];requestId:string };
 export class FixedPairRequestError extends Error {
   readonly definitelyRejected: boolean;
   constructor(message:string,definitelyRejected=false){super(message);this.definitelyRejected=definitelyRejected;}
@@ -35,7 +35,7 @@ export async function saveEventFixedPairs(s:SupabaseClient,previous:FixedPairSta
 }
 export async function createEventFixedRound(s:SupabaseClient,request:FixedRoundRequest){
  const {eventId,revision,lastRound,courtCount,mode,activeIds,matches,requestId}=request;
- const {data,error}=await s.rpc('create_fixed_pair_round',{p_event_id:eventId,p_expected_revision:revision,p_last_round:lastRound,p_court_count:courtCount,p_mode:mode,p_active_ids:activeIds,p_matches:matches,p_request_id:requestId});
+ const {data,error}=request.lineupRevision!==undefined?await s.rpc('create_friendly_round',{p_request:request}):await s.rpc('create_fixed_pair_round',{p_event_id:eventId,p_expected_revision:revision,p_last_round:lastRound,p_court_count:courtCount,p_mode:mode,p_active_ids:activeIds,p_matches:matches,p_request_id:requestId});
  if(error)fail(error,'Round生成の保存結果を確認できませんでした。同じ操作で再試行すると前回の結果を確認します');
  if(!data||data.event_id!==eventId||data.request_id!==requestId||typeof data.round_id!=='string'||!data.round_id||data.round_number!==lastRound+1)throw new FixedPairRequestError('Round生成の確認応答が不正です。再試行して結果を確認してください');
  return data as {event_id:string;request_id:string;round_id:string;round_number:number};

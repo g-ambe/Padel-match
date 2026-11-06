@@ -16,7 +16,7 @@ const poll=async fn=>{const until=Date.now()+12000;while(!await fn()){if(Date.no
    if(url.origin!==remote){external.push(req.url());return route.abort();}
    if(req.method()==='OPTIONS')return route.fulfill({status:200,headers:cors,body:'{}'});
    if(url.pathname.startsWith('/auth/'))return route.fulfill({status:200,headers:cors,body:JSON.stringify(user)});
-   if(url.pathname.endsWith('/match_results')&&['POST','PATCH'].includes(req.method())){
+   if(['match_results','save_friendly_match_score'].includes(url.pathname.split('/').at(-1))&&['POST','PATCH'].includes(req.method())){
     if(holdScore)await new Promise(resolve=>releaseScore=resolve);
     if(rejectScore)return route.fulfill({status:403,headers:cors,body:JSON.stringify({message:'試験用保存失敗',code:'42501'})});
    }
@@ -63,8 +63,8 @@ const poll=async fn=>{const until=Date.now()+12000;while(!await fn()){if(Date.no
   // 保存済みの編集はキャンセルでき、履歴モーダル・スコア入力中は下部バーを隠す。
   await page.goto(base+'/events/'+ordinary);await page.locator('[data-round-history] > summary').click();await page.locator(`[data-score-key="/events/${ordinary}#${match}"]`).waitFor();
   const card=key=>page.locator(`[data-score-key="/events/${ordinary}#${key}"]:visible`).first(),dialog=()=>page.locator('dialog[open]').last();
-  const before=f.calls.filter(call=>['POST','PATCH'].includes(call.method)&&call.table==='match_results').length;
-  await card(match).getByRole('button').first().click();await dialog().waitFor();await poll(async()=>!await nav().isVisible());await dialog().getByRole('button',{name:'0',exact:true}).click();await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();await nav().waitFor();assert.equal(f.calls.filter(call=>['POST','PATCH'].includes(call.method)&&call.table==='match_results').length,before);
+  const before=f.calls.filter(call=>['POST','PATCH'].includes(call.method)&&['match_results','save_friendly_match_score'].includes(call.table)).length;
+  await card(match).getByRole('button').first().click();await dialog().waitFor();await poll(async()=>!await nav().isVisible());await dialog().getByRole('button',{name:'0',exact:true}).click();await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();await nav().waitFor();assert.equal(f.calls.filter(call=>['POST','PATCH'].includes(call.method)&&['match_results','save_friendly_match_score'].includes(call.table)).length,before);
   await page.getByRole('button',{name:'全試合履歴を拡大'}).click();await dialog().waitFor();await poll(async()=>!await nav().isVisible());await page.keyboard.press('Escape');await nav().waitFor();
   holdScore=true;rejectScore=true;await card(newMatch).getByRole('button').first().click();await dialog().getByRole('button',{name:'0',exact:true}).click();await dialog().getByRole('button',{name:'0',exact:true}).click();await poll(()=>!!releaseScore);await nav().waitFor();
   await nav().getByRole('link',{name:'ランキング',exact:true}).click();assert(page.url().endsWith('/events/'+ordinary));await page.getByRole('alert').filter({hasText:'未保存のスコア'}).waitFor();await poll(()=>page.evaluate(()=>parseFloat(document.body.style.getPropertyValue('--app-navigation-height'))>100));holdScore=false;releaseScore();await card(newMatch).getByRole('button',{name:'再試行'}).waitFor();

@@ -14,12 +14,13 @@ type Props = {
   result?: "A" | "B" | "draw" | null;
   saveKey: string;
   names?: readonly [readonly { name: string; guest?: boolean }[], readonly { name: string; guest?: boolean }[]];
-  labels?: readonly [string, string]; title?: string; disabled?: boolean; kind?: ScoreInputKind; compact?: boolean;
+  labels?: readonly [string, string]; title?: string; disabled?: boolean; kind?: ScoreInputKind; compact?: boolean; captureCommit?: boolean;
 };
 const numbers = Array.from({ length: 13 }, (_, score) => score);
 const buttonClass = "min-h-12 rounded-xl border border-zinc-600 bg-zinc-800 px-2 py-1 font-bold disabled:opacity-40";
-export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer", compact = false }: Props) {
+export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer", compact = false, captureCommit = false }: Props) {
   const [open, setOpen] = useState(false), [draft, setDraft] = useState<ScorePair>(value), [activeTeam, setActiveTeam] = useState<"a" | "b">("a"), [keyboard, setKeyboard] = useState(false);
+  const editCommit = useRef(onCommit);
   const [chosen, setChosen] = useState({ a: false, b: false });
   const { queue, snapshot } = useScoreSaves(), job = snapshot[saveKey], saving = job?.status === "saving";
   const inputRefs = useRef<Partial<Record<"a" | "b", HTMLInputElement | null>>>({}), statusId = useId();
@@ -30,12 +31,13 @@ export function ScoreInput({ value, onChange, onCommit, saved = false, result, s
   const commit = (scores: ScorePair) => {
     if (queue.getSnapshot()[saveKey]?.status === "saving" || disabled || scoreInputError(scores, kind) || (onCommit && (!scores.a.trim() || !scores.b.trim()))) return;
     if (saved && !job && Number(scores.a) === Number(value.a) && Number(scores.b) === Number(value.b)) { close(); return; }
-    if (onCommit) { if (!queue.submit(saveKey, scores, onCommit)) return; }
+    if (onCommit) { const send = captureCommit ? editCommit.current : onCommit; if (!send || !queue.submit(saveKey, scores, send)) return; }
     else onChange?.(scores);
     setOpen(false);
   };
   const begin = (team: "a" | "b") => {
     if (disabled || saving) return;
+    editCommit.current = onCommit;
     setDraft({ ...(job?.scores ?? value) }); setChosen({ a: false, b: false }); setActiveTeam(team); setKeyboard(false); setOpen(true);
   };
   const choose = (score: string) => {
@@ -58,7 +60,7 @@ export function ScoreInput({ value, onChange, onCommit, saved = false, result, s
     {job && <div id={statusId} className="mt-2 space-y-2 text-xs" role={saving ? "status" : "alert"}>
       <p className={saving ? "text-zinc-300" : "text-red-400"}>{saving ? "保存中…" : job.error}</p>
       <p className="text-zinc-400">未確定の入力：{job.scores.a} : {job.scores.b}</p>
-      {!saving && <button type="button" className={`${buttonClass} w-full text-sm`} disabled={disabled} onClick={() => { if (onCommit) queue.submit(saveKey, job.scores, onCommit); else queue.retry(saveKey); }}>再試行</button>}
+      {!saving && <button type="button" className={`${buttonClass} w-full text-sm`} disabled={disabled} onClick={() => { if (onCommit && !captureCommit) queue.submit(saveKey, job.scores, onCommit); else queue.retry(saveKey); }}>再試行</button>}
     </div>}
     <AppDialog open={open} title={title} busy={saving} onClose={close}>
       <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-zinc-700 p-4">

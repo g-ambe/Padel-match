@@ -32,8 +32,12 @@ jobs:
         with:
           ref: ${{ env.BACKUP_SOURCE_SHA }}
           persist-credentials: false
+      - name: 検証済みNode.js 24を準備
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
       - name: 比較・合成SQL試験用の依存を準備
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: npm install --ignore-scripts --no-package-lock --no-audit --no-fund
       - name: 合成DBで修復・復旧・再実行・権限を確認
         run: node --test tests/match-results-repair.test.cjs
       - name: クラウド実行ガードを確認

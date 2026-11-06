@@ -43,7 +43,7 @@ test('重複修復・監査・復旧・一意制約を隔離SQLで検証する',
   });
   await t.test('復旧プレビューは変更せず、明示復旧は全ID・日時を戻し再実行も無変更',async()=>{
    const after=await fingerprint();await db.exec(render('03_recover_reviewed.sql',batch,p));assert.equal(await fingerprint(),after);
-   const recover=render('03_recover_reviewed.sql',batch,p).replace(/rollback;\s*$/i,'commit;');await db.exec(recover);assert.equal(await fingerprint(),before);assert.equal((await db.query("select count(*) n from pg_constraint where conname='match_results_one_per_match'")).rows[0].n,0);await db.exec(recover);assert.equal(await fingerprint(),before);
+   const recover=render('03_recover_reviewed.sql',batch,p).replace(/rollback;\s*$/i,'commit;');await db.exec(recover);assert.equal(await fingerprint(),before);assert.equal(Number((await db.query("select count(*) n from pg_constraint where conname='match_results_one_per_match'")).rows[0].n),0);await db.exec(recover);assert.equal(await fingerprint(),before);
   });
   await t.test('修復後の正本更新があれば復旧を拒否し、データを上書きしない',async()=>{
    const batch2=uuid();await db.exec(render('02_repair_reviewed.sql',batch2,p));await db.query('update match_results set score_a=5 where match_id=$1',[m1]);const changed=await fingerprint();await assert.rejects(db.exec(render('03_recover_reviewed.sql',batch2,p).replace(/rollback;\s*$/i,'commit;')),/修復後に結果/);await db.exec('rollback');assert.equal(await fingerprint(),changed);await db.query('update match_results set score_a=4 where match_id=$1',[m1]);
@@ -51,11 +51,20 @@ test('重複修復・監査・復旧・一意制約を隔離SQLで検証する',
   if(client){
    await db.exec(fs.readFileSync('supabase/migrations/0043_match_results_one_per_match.sql','utf8'));
    monitor=new Client({connectionString:external});await monitor.connect();
-   const connection=async()=>{const c=new Client({connectionString:external});await c.connect();await c.query("select set_config('request.jwt.claim.sub',$1,false)",[id(3)]);await c.query('set role authenticated');return c;};
+   const connection=async()=>{const c=new Client({connectionString:external});await c.connect();await c.query("select set_config('request.jwt.claim.sub',$1,false)",[id(3)]);await c.query('set role authenticated');c.pid=(await c.query('select pg_backend_pid() id')).rows[0].id;return c;};
+   await t.test('旧INSERT方式は一意制約がないと別接続の同時保存で重複する',async()=>{
+    const ev=await f.event(sequence++,4,{mode:'manual'}),mid=await card(ev);await db.exec('alter table match_results drop constraint match_results_one_per_match');
+    const a=await connection(),b=await connection();try{await Promise.all([a.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,0,0,'draw')",[mid]),b.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,0,0,'draw')",[mid])]);assert.equal(Number((await db.query('select count(*) n from match_results where match_id=$1',[mid])).rows[0].n),2);}finally{await a.end();await b.end();}await owner();await db.query('delete from match_results where match_id=$1',[mid]);await db.exec(fs.readFileSync('supabase/migrations/0043_match_results_one_per_match.sql','utf8'));
+   });
+   await t.test('旧クライアントの応答喪失と保存キュー再試行でも1行・同一IDを維持',async()=>{
+    const {createScoreSaveQueue}=require('../lib/score-save-queue.ts');const ev=await f.event(sequence++,4,{mode:'manual'}),mid=await card(ev),queue=createScoreSaveQueue(),c=await connection();let lost=true,savedId;
+    const send=async()=>{const prior=(await c.query('select id from match_results where match_id=$1',[mid])).rows[0];if(prior)await c.query('update match_results set score_a=0,score_b=0 where id=$1',[prior.id]);else savedId=(await c.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,0,0,'draw') returning id",[mid])).rows[0].id;if(lost){lost=false;throw Error('応答喪失');}};
+    try{queue.submit('test#'+mid,{a:'0',b:'0'},send);while(queue.getSnapshot()['test#'+mid]?.status!=='error')await new Promise(r=>setTimeout(r,5));queue.retry('test#'+mid);while(queue.has('test#'+mid))await new Promise(r=>setTimeout(r,5));const result=(await db.query('select id from match_results where match_id=$1',[mid])).rows;assert.equal(result.length,1);assert.equal(result[0].id,savedId);}finally{await c.end();}
+   });
    for(const order of ['legacy/legacy','rpc/legacy','legacy/rpc'])await t.test('PostgreSQL複数接続・一意制約: '+order,async()=>{
     const ev=await f.event(sequence++,4,{mode:order==='legacy/legacy'?'manual':'auto'}),mid=await card(ev),players=(await db.query('select participant_id,team from match_players where match_id=$1 order by team,participant_id',[mid])).rows;
     const c1=await connection(),c2=await connection();const call=(c,kind)=>kind==='legacy'?c.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,0,0,'draw')",[mid]):c.query('select save_friendly_match_score($1,$2,0,$3,$4,0,0,$5)',[ev.eid,mid,JSON.stringify(players),JSON.stringify({completed:false,results:[]}),uuid()]);
-    try{const[a,b]=order.split('/');await c1.query('begin');await call(c1,a);let done=false;const pending=call(c2,b).then(()=>({ok:true}),err=>({error:err})).finally(()=>done=true);await new Promise(r=>setTimeout(r,100));assert.equal(done,false);await c1.query('commit');const result=await pending;assert(result.error);assert.equal(Number((await db.query('select count(*) n from match_results where match_id=$1',[mid])).rows[0].n),1);}finally{await c1.query('rollback');await c1.end();await c2.end();}
+    try{const[a,b]=order.split('/');await c1.query('begin');await call(c1,a);let done=false;const pending=call(c2,b).then(()=>({ok:true}),err=>({error:err})).finally(()=>done=true);const deadline=Date.now()+5000;while((await monitor.query('select wait_event_type from pg_stat_activity where pid=$1',[c2.pid])).rows[0]?.wait_event_type!=='Lock'){if(done||Date.now()>deadline)throw Error('2接続目がロック待機しません');await new Promise(r=>setTimeout(r,10));}assert.equal(done,false);await c1.query('commit');const result=await pending;assert(result.error);assert.equal(Number((await db.query('select count(*) n from match_results where match_id=$1',[mid])).rows[0].n),1);}finally{await c1.query('rollback');await c1.end();await c2.end();}
    });
   }
  }finally{if(monitor)await monitor.end();if(client)await client.end();else await db.close();}

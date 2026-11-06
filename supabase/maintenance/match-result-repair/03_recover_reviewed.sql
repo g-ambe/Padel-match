@@ -1,6 +1,7 @@
 -- 復旧専用・既定ROLLBACK。本番は別途承認・停止時間帯が必要。修復後に更新があれば停止する。
 begin;
 set local lock_timeout='5s';
+set local timezone='UTC';
 set local statement_timeout='60s';
 lock table public.events,public.matches,public.match_players,public.event_participants,public.match_results in share row exclusive mode;
 create temporary table score_repair_approval(batch_id uuid,plan jsonb,sha256 text,approved boolean) on commit drop;

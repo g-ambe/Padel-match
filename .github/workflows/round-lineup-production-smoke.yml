@@ -1,0 +1,43 @@
+name: PR182本番の専用イベント検証と入替有効化
+on:
+  workflow_dispatch:
+    inputs:
+      expected_main_sha:
+        description: PR182をSquash mergeしたmainの完全SHA
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: padel-lineup-production-verification
+  cancel-in-progress: false
+jobs:
+  verify-and-enable:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NODE_PATH: ${{ github.workspace }}/.production-smoke-tools/node_modules
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.expected_main_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: ブラウザ試験だけの依存を準備
+        run: |
+          npm install --prefix .production-smoke-tools --ignore-scripts --no-package-lock --no-audit --no-fund playwright@1.62.1
+          .production-smoke-tools/node_modules/.bin/playwright install --with-deps chromium
+      - name: 公式CAを照合
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 自動デプロイ照合・専用テスト・入替有効化・最終検証
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+          EXPECTED_MAIN_SHA: ${{ inputs.expected_main_sha }}
+        run: python3 -B supabase/maintenance/match-result-repair/production_smoke.py

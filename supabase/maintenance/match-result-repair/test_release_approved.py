@@ -45,4 +45,11 @@ class ApprovedReleaseGuards(unittest.TestCase):
         with patch.object(a,'approval'),patch.dict(os.environ,{'PADEL_APPROVED_REPAIR':a.PLAN}),patch.object(a.lineup,'identity',return_value='a'*40),patch.object(a.b,'api',side_effect=[pr,[{'type':'required_status_checks'}]]),self.assertRaises(a.b.BackupError):a.identity()
 
 
+    def test_independent_restore_gets_github_token_but_never_db_connection(self):
+        text=(a.ROOT/'.github/workflows/approved-score-repair.yml').read_text()
+        step=text.split('- name: 本番接続を渡さず隔離復元・0041・0042・03を試験')[1].split('\n  apply:')[0]
+        self.assertIn('GH_TOKEN: ${{ github.token }}',step)
+        self.assertNotIn('SUPABASE_DB_URL',step)
+
+
 if __name__=='__main__':unittest.main()

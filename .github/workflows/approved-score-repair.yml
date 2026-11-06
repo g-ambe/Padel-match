@@ -70,6 +70,8 @@ jobs:
           PY
       - name: PR182の適用ガード回帰試験
         run: python3 -B -m unittest discover -s supabase/maintenance/round-lineups -p 'test_cloud_release.py' -v
+      - name: 固定プラン・隔離ジョブの安全条件を確認
+        run: python3 -B -m unittest discover -s supabase/maintenance/match-result-repair -p 'test_*.py' -v
       - name: 公式CAを照合
         env:
           PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
@@ -120,6 +122,7 @@ jobs:
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
       - name: 本番接続を渡さず隔離復元・0041・0042・03を試験
         env:
+          GH_TOKEN: ${{ github.token }}
           PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
           SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
         run: python3 -B supabase/maintenance/match-result-repair/release_approved.py rehearse

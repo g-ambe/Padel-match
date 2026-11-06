@@ -69,13 +69,17 @@ language plpgsql stable security definer set search_path='' as $$begin
  'rounds',coalesce((select jsonb_agg(jsonb_build_object('round_id',round_id,'revision',revision) order by round_id) from public.friendly_round_lineup_state where event_id=p_event_id),'[]'::jsonb));
 end$$;
 create function lineup_private.snapshot(p_event uuid,p_round uuid) returns jsonb
-language plpgsql stable security definer set search_path='' as $$declare eligible uuid[];a public.event_fixed_pair_rounds;reason text;begin
+language plpgsql stable security definer set search_path='' as $$declare eligible uuid[];known uuid[];a public.event_fixed_pair_rounds;reason text;begin
  if not exists(select 1 from public.rounds where id=p_round and event_id=p_event) then raise exception 'Roundが見つかりません';end if;
  eligible:=lineup_private.eligible(p_event);
  select * into a from public.event_fixed_pair_rounds where round_id=p_round and event_id=p_event;
  if found then
   if jsonb_array_length(a.effective_pairs)>0 or jsonb_array_length(a.applied_pairs)>0 or jsonb_array_length(a.split_pairs)>0 then reason:='このRoundは固定ペアの使用履歴があるためメンバー変更できません。固定設定・履歴は保持されます。';end if;
   select coalesce(array_agg(x order by x),'{}'::uuid[]) into eligible from unnest(eligible) x where x=any(a.eligible_ids);
+ else
+  -- グループなしの新生成にも、要求監査に当時の参加可能者がある。
+  select array(select x::uuid from jsonb_array_elements_text(o.body->'activeIds') x) into known from public.friendly_match_operations o where o.event_id=p_event and o.round_id=p_round and o.kind='generate' order by o.created_at limit 1;
+  if found then select coalesce(array_agg(x order by x),'{}'::uuid[]) into eligible from unnest(eligible) x where x=any(known);end if;
  end if;
  return jsonb_build_object('event_id',p_event,'round_id',p_round,'round_number',(select round_number from public.rounds where id=p_round),
  'event_revision',lineup_private.revision(p_event),'revision',coalesce((select revision from public.friendly_round_lineup_state where round_id=p_round),0),

@@ -30,8 +30,22 @@ def canonical(value):
     return value
 
 
+def approved_reference_definition(text):
+    # 既知の参照ガード全文と一致する場合だけ、CRLF/LFを同じ定義として扱う。
+    # 未知のコードや文字列の違いは受け入れない。
+    normalized = text.replace('\r\n', '\n')
+    approved = {v['function_sha256'] for v in reviewed().get('triggers', []) if 'profile_link_private.guard_reference(' in v['trigger']}
+    return normalized if hashlib.sha256(normalized.encode()).hexdigest() in approved else text
+
+
 def fingerprints(value):
-    return {k: hashlib.sha256(json.dumps(canonical(value[k]), ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest() for k in SECTIONS}
+    result = {}
+    for k in SECTIONS:
+        section = value[k]
+        if k == 'triggers':
+            section = [dict(v, function=approved_reference_definition(v['function'])) for v in section]
+        result[k] = hashlib.sha256(json.dumps(canonical(section), ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return result
 
 
 def reviewed():
@@ -70,7 +84,7 @@ def trigger_differences(value):
     def key(v):
         return (v['table'], v['trigger'].split()[2])
     expected = {key(v): v for v in reviewed()['triggers']}
-    actual = {key(v): dict(v, function_sha256=hashlib.sha256(v['function'].encode()).hexdigest()) for v in value['triggers']}
+    actual = {key(v): dict(v, function_sha256=hashlib.sha256(approved_reference_definition(v['function']).encode()).hexdigest()) for v in value['triggers']}
     differences = []
     for k in sorted(expected.keys() | actual.keys()):
         fields = ['missing'] if k not in actual else ['unexpected'] if k not in expected else [f for f in ('trigger', 'enabled', 'function_sha256') if actual[k][f] != expected[k][f]]
@@ -108,6 +122,7 @@ def diagnose():
     stats = (HERE / '07_readonly_diagnostics.sql').read_text()
     result = json.loads(common.source_sql(stats))
     result['trigger_differences'] = trigger_differences(value)
+    result['catalog_differences'] = [k for k, v in fingerprints(value).items() if reviewed()['catalog'][k] != v]
     guard = json.loads(common.source_sql("BEGIN READ ONLY;SELECT jsonb_build_object('owner',pg_get_userbyid(proowner),'security_definer',prosecdef,'config',proconfig,'definition',pg_get_functiondef(oid)) FROM pg_proc WHERE oid='profile_link_private.guard_reference()'::regprocedure;ROLLBACK;"))
     definition = guard.pop('definition')
     guard['redacted_body'] = redacted_definition(definition)

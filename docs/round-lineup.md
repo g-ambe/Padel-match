@@ -68,7 +68,7 @@ docker stop padel-lineup-pg
 
 ## 検証結果
 
-- 全単体テスト350件成功（安全性修正後）。既存の取得エラー・重複増殖防止・手動保存の安全性・戦績再計算の検査を維持した。
+- 全単体テスト351件成功（安全性修正後）。既存の取得エラー・重複増殖防止・手動保存の安全性・戦績再計算の検査を維持した。
 - 隔離PostgreSQL 17は安全性修正後44件成功。20通りの競合順序、入替／スコア／削除の同時再送を含む。リリースSQLも別の隔離PostgreSQLで1件成功し、0042途中失敗時に0041もROLLBACKすることを確認した。
 - 個別復旧テンプレートは未承認停止、ROLLBACKによるプレビュー、合成データでの承認COMMITを検証した。
 - TypeScript、Next.js本番ビルド、OpenNext Cloudflare Worker生成に成功。本番SQL・デプロイは実施していない。
@@ -122,6 +122,7 @@ tests/stats-history.test.cjs
 
 - `.github/workflows/round-lineup-release.yml`
 - `supabase/migrations/0042_round_lineup_safety.sql`
+- `supabase/maintenance/round-lineups/07_readonly_diagnostics.sql`
 - `supabase/maintenance/round-lineups/cloud_release.py`
 - `supabase/maintenance/round-lineups/reviewed-release.json`
 - `supabase/maintenance/round-lineups/test_cloud_release.py`

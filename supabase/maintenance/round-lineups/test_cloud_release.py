@@ -59,6 +59,14 @@ class ReleaseGuards(unittest.TestCase):
         for secret in ('confidential comment', 'credential-value', 'dollar-secret'):
             self.assertNotIn(secret, value)
 
+    def test_only_approved_reference_definition_accepts_line_endings(self):
+        definition = 'known reference guard\nsecond line\n'
+        expected = {'triggers': [{'trigger': 'EXECUTE FUNCTION profile_link_private.guard_reference()', 'function_sha256': r.hashlib.sha256(definition.encode()).hexdigest()}]}
+        with patch.object(r, 'reviewed', return_value=expected):
+            self.assertEqual(r.approved_reference_definition(definition.replace('\n', '\r\n')), definition)
+            changed = definition.replace('known', 'changed').replace('\n', '\r\n')
+            self.assertEqual(r.approved_reference_definition(changed), changed)
+
     def test_backup_context_does_not_accept_another_commit(self):
         manifest = {'release': {'backup_schema': 'round_lineup_backup_0041_r123_a1', 'source_sha': 'a' * 40, 'migrations': r.reviewed()['migrations']}}
         with patch.dict(os.environ, {'PADEL_RELEASE_AUTHORIZED': r.AUTHORITY, 'BACKUP_SOURCE_SHA': 'a' * 40}):

@@ -75,7 +75,7 @@ docker stop padel-lineup-pg
 
 ## リリース前の保留
 
-[手動適用・バックアップ・復旧の手順](../supabase/maintenance/round-lineups/README.md)をレビューする。0041は初期状態で入替無効。SQL適用 → 検証 → 別途マージ承認・新アプリ反映 → 検証 → 手動有効化の順序を守る。本番の最新カタログ、DB外バックアップ実ファイルの復元、本番JWT／実iPhone・Safariは未確認。本PRでは本番SQL・マージ・デプロイを行わない。
+[手動適用・バックアップ・復旧の手順](../supabase/maintenance/round-lineups/README.md)をレビューする。0041は初期状態でログインイベントの入替無効。ゲストはDBを使わず、新アプリ反映時から利用できるため、SQLによる停止の対象外。SQL適用 → 検証 → 別途マージ承認・新アプリ反映 → 検証 → 手動有効化の順序を守る。本番の最新カタログ、DB外バックアップ実ファイルの復元、本番JWT／実iPhone・Safariは未確認。本PRでは本番SQL・マージ・デプロイを行わない。
 
 [375pxライト](assets/round-lineup/light.png) / [375pxダーク](assets/round-lineup/dark.png)。合成データのローカルChromium表示。実機の画像ではない。
 

@@ -61,7 +61,7 @@ const poll=async fn=>{const until=Date.now()+12000;while(!await fn()){if(Date.no
   await page.getByRole('button',{name:'メニュー',exact:true}).click();await page.getByRole('button',{name:'アカウント・アプリ設定',exact:true}).click();await page.getByRole('button',{name:'ホワイトモード',exact:true}).click();await poll(()=>page.evaluate(()=>document.documentElement.dataset.theme==='light'));
   await page.getByRole('button',{name:'メニュー',exact:true}).click();await page.getByRole('button',{name:'アプリについて',exact:true}).click();await page.getByRole('link',{name:'利用規約',exact:true}).waitFor();
   // 保存済みの編集はキャンセルでき、履歴モーダル・スコア入力中は下部バーを隠す。
-  await page.goto(base+'/events/'+ordinary);await page.locator('[data-round-history] > summary').click();await page.locator(`[data-match-list="normal"] [data-score-key="/events/${ordinary}#${match}"]`).waitFor();
+  await page.goto(base+'/events/'+ordinary);await page.locator('[data-round-history] > summary').click();await page.locator(`[data-score-key="/events/${ordinary}#${match}"]`).waitFor();
   const card=key=>page.locator(`[data-score-key="/events/${ordinary}#${key}"]:visible`).first(),dialog=()=>page.locator('dialog[open]').last();
   const before=f.calls.filter(call=>['POST','PATCH'].includes(call.method)&&call.table==='match_results').length;
   await card(match).getByRole('button').first().click();await dialog().waitFor();await poll(async()=>!await nav().isVisible());await dialog().getByRole('button',{name:'0',exact:true}).click();await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();await nav().waitFor();assert.equal(f.calls.filter(call=>['POST','PATCH'].includes(call.method)&&call.table==='match_results').length,before);

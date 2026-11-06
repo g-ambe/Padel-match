@@ -4,17 +4,16 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
-import { GuestName, MatchHistoryList, YoutubeDisclosure } from "@/components/match-ui";
+import { GuestName, YoutubeDisclosure } from "@/components/match-ui";
 import type { ScorePair } from "@/lib/score-input";
 import { ScoreInput } from "@/components/score-input";
 import { useScoreSaves } from "@/components/score-save-provider";
 import { AppDialog } from "@/components/app-dialog";
-import { GuestRoundLineupEditor } from "@/components/guest-round-lineup-editor";
-import { guestLineupSnapshot, saveGuestRoundLineup, type RoundCard } from "@/lib/guest-round-lineup";
+import { FriendlyMatchCards } from "@/components/friendly-match-cards";
 import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
 import { MatchShareButtons } from "@/components/match-share-buttons";
 import { getSupabaseClient } from "@/lib/supabase";
-import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type GuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
+import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
 import { readParticipantStatus, saveParticipantStatus, type ParticipantStatus } from "@/lib/event-participant-status";
 import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
@@ -67,10 +66,12 @@ export default function EventDetailPage() {
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [eventName, setEventName] = useState("-");
   const [courtCount, setCourtCount] = useState(1);
-  const boardOperation = useRef<"court" | "round" | "delete" | "fixed" | "lineup" | null>(null);
-  const [guestLineupEdit, setGuestLineupEdit] = useState<{ event: GuestEvent; round: number; target: string } | null>(null);
-  const [lineupSaving, setLineupSaving] = useState(false);
+  const boardOperation = useRef<"court" | "round" | "delete" | "fixed" | null>(null);
   const [moreCourts, setMoreCourts] = useState(false);
+  const [allHistoryOpen, setAllHistoryOpen] = useState(false);
+  const latestCardsHost = useRef<HTMLDivElement>(null);
+  const pastCardsHost = useRef<HTMLDivElement>(null);
+  const expandedCardsHost = useRef<HTMLDivElement>(null);
   const courtDialogRequest = useRef(0);
   const [showCourtDialog, setShowCourtDialog] = useState(false);
   const [courtDraft, setCourtDraft] = useState(1);
@@ -234,6 +235,7 @@ export default function EventDetailPage() {
 
   const latestRoundNumber = useMemo(() => matches.reduce((max, m) => Math.max(max, m.round_number), 0), [matches]);
   useEffect(() => { setMoreCourts(false); }, [eventId, latestRoundNumber]);
+  useEffect(() => { setAllHistoryOpen(false); }, [eventId]);
   const sortedMatches = useMemo(() => [...matches].sort((a, b) => (b.round_number - a.round_number) || (a.court_number - b.court_number) || ((b.created_at ?? "").localeCompare(a.created_at ?? "")) || a.id.localeCompare(b.id)), [matches]);
   const scoredMatchCount = useMemo(() => scoredFriendlyMatches(eventId, matches, new Set(participants.map(p => p.id))).length, [eventId, matches, participants]);
   const specialModesUnlocked = scoredMatchCount >= FRIENDLY_MODE_UNLOCK_MATCHES;
@@ -915,7 +917,6 @@ export default function EventDetailPage() {
   };
 
   const saveScore = async (matchId: string, entered?: ScorePair) => {
-    if (boardOperation.current === "lineup") { setError("メンバー変更を保存またはキャンセルしてから入力してください"); return false; }
     if (closingEvent.current) { setError("イベントの終了処理中です"); return false; }
     if (scoreSaveState.current.saving.has(matchId)) return false;
     const score: ScoreInput | undefined = entered ? { a: entered.a.trim() === "" ? "" : Number(entered.a), b: entered.b.trim() === "" ? "" : Number(entered.b) } : scoreInputs[matchId];
@@ -1469,25 +1470,6 @@ export default function EventDetailPage() {
   };
 
   const latestRoundPlayers = new Set(matches.filter(m => m.round_number === latestRoundNumber).flatMap(m => m.players.map(p => p.participant_id)));
-  const openGuestLineup = (match: MatchView) => {
-    if (!guestMode || eventStatus !== "active" || eventMode !== "auto" || boardOperation.current || closingEvent.current || scoreQueue.hasUnsaved(scoreScope) || match.completed || match.result) return;
-    const event = getGuestEvent(eventId);
-    if (!event) return setError("ゲストイベントが見つかりません");
-    const current = event.matches.find(m => m.id === match.id);
-    if (!current || current.completed || current.result) return setError("スコア・カードが更新されています。最新の対戦を確認してください");
-    boardOperation.current = "lineup";
-    setGuestLineupEdit({ event, round: match.round_number, target: match.id });
-  };
-  const closeGuestLineup = () => { if (lineupSaving) return; boardOperation.current = null; setGuestLineupEdit(null); void loadAll(); };
-  const commitGuestLineup = async (cards: RoundCard[]) => {
-    if (!guestLineupEdit || !guestMode || scoreQueue.hasUnsaved(scoreScope) || closingEvent.current || lineupSaving) throw new Error("他の保存・終了処理が終わってから操作してください。");
-    setLineupSaving(true);
-    try {
-      saveGuestRoundLineup(eventId, guestLineupSnapshot(guestLineupEdit.event), guestLineupEdit.round, cards, { read: getGuestEvent, write: upsertGuestEvent });
-      scoreQueue.invalidateReads(scoreScope); await loadAll();
-      boardOperation.current = null; setGuestLineupEdit(null);
-    } finally { setLineupSaving(false); }
-  };
   const latestRoundEligibility = displayEligibility?.eventId === eventId && displayEligibility.owner === roundUserId ? displayEligibility.rounds.find(round => round.round === latestRoundNumber) : undefined;
   const participantRoundLabel = (id: string) => {
     if (!latestRoundNumber) return null;
@@ -1554,7 +1536,7 @@ export default function EventDetailPage() {
         </div>
         <div className="grid grid-cols-2 gap-2">
           <button type="button" className="rounded-xl border border-zinc-600 py-3 text-sm" onClick={addManualDraft}>試合を追加</button>
-          <button type="button" className="rounded-xl bg-accent py-3 font-semibold text-black" disabled={!!guestLineupEdit || busyParticipants.size > 0 || isClosingEvent || unsavedScoreCount > 0} onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void createManualRound(); }}>Roundを作成</button>
+          <button type="button" className="rounded-xl bg-accent py-3 font-semibold text-black" disabled={busyParticipants.size > 0 || isClosingEvent || unsavedScoreCount > 0} onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void createManualRound(); }}>Roundを作成</button>
         </div>
       </div>
     </Card>
@@ -1581,15 +1563,14 @@ export default function EventDetailPage() {
                     else setSwipeOffsets((prev) => ({ ...prev, [m.id]: 0 }));
                   }}
                 >
-                <div className="mb-1 flex flex-wrap items-center gap-1"><p className="mr-auto text-[11px] font-bold">{m.round_number === latestRoundNumber ? "" : `R${m.round_number} · `}コート{m.court_number}</p>
-                  {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="min-h-11 rounded-xl border border-zinc-600 px-2 text-[11px] disabled:opacity-40" disabled={!guestMode || !!guestLineupEdit || m.completed || !!m.result || unsavedScoreCount > 0 || isClosingEvent || isGeneratingRound || busyParticipants.size > 0} title={!guestMode ? "ログインした開催のメンバー変更は準備中です" : undefined} onClick={() => openGuestLineup(m)}>メンバー変更</button>}
+                <div className="mb-1 flex flex-wrap items-center gap-1"><p className="mr-auto text-[11px] font-bold">{m.round_number === latestRoundNumber && !allHistoryOpen ? "" : `R${m.round_number} · `}コート{m.court_number}</p>
                   <YoutubeDisclosure compact registered={!!m.youtube_url}>
                   {m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="inline-block rounded border border-zinc-500 px-3 py-2 text-sm">動画を見る</a>}
                   <input className="w-full rounded bg-zinc-700 p-2 text-sm" placeholder="https://www.youtube.com/watch?v=..." value={youtubeInputs[m.id] ?? ""} onChange={e => setYoutubeInputs(previous => ({ ...previous, [m.id]: e.target.value }))} />
                   <div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={() => void saveYoutubeUrl(m.id)}>URLを保存</button>{m.youtube_url && <button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>URLを削除</button>}</div>
                   {canViewVideoClickCounts && m.youtube_url && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}
                 </YoutubeDisclosure>
-                  {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="min-h-11 min-w-11 rounded-xl border border-zinc-600 px-2 text-[11px] text-zinc-400" disabled={!!guestLineupEdit || scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={() => requestMatchDelete(m)}>削除</button>}
+                  {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="min-h-11 min-w-11 rounded-xl border border-zinc-600 px-2 text-[11px] text-zinc-400" disabled={scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={() => requestMatchDelete(m)}>削除</button>}
                 </div>
                 {eventMode === "manual" && (lineupDrafts[m.id] ? (
                   <div className="mb-3 space-y-2 rounded-lg border border-zinc-700 p-2">
@@ -1613,7 +1594,7 @@ export default function EventDetailPage() {
                 <div className="flex items-center gap-2">
                   <ScoreInput compact saveKey={`${scoreScope}${m.id}`} names={(["A", "B"] as const).map(team => m.players.filter(player => player.team === team).map(player => ({ name: nameMap[player.participant_id] || "選手名未設定", guest: participants.find(p => p.id === player.participant_id)?.participant_type === "guest" }))) as [{ name: string; guest: boolean }[], { name: string; guest: boolean }[]]} value={{ a: m.result ? String(m.result.score_a) : "", b: m.result ? String(m.result.score_b) : "" }} kind="number"
                     saved={hasEnteredFriendlyMatchScore(m)} result={hasEnteredFriendlyMatchScore(m) ? m.result!.winner_team : null}
-                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={!!guestLineupEdit || eventStatus === "closed" || isClosingEvent || isGeneratingRound || !!lineupDrafts[m.id]}
+                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={eventStatus === "closed" || isClosingEvent || isGeneratingRound || !!lineupDrafts[m.id]}
                     onCommit={async scores => { if (!await saveScore(m.id, scores)) throw new Error(scoreSaveState.current.error || "スコアを保存できませんでした。再試行してください"); }} />
                 </div>
                 </div>
@@ -1668,12 +1649,12 @@ export default function EventDetailPage() {
       <section id="event-panel-matches" role="tabpanel" aria-labelledby="event-tab-matches" hidden={!tabReady || activeTab !== "matches"} className="space-y-4">
       <section aria-label="マッチボード" className="space-y-1.5" data-event-operations>
         <div className="flex items-center justify-between"><h2 className="text-sm font-bold">{latestRoundNumber ? `Round ${latestRoundNumber}` : "試合はまだありません"}</h2><span className="text-xs text-zinc-400">{matches.filter(m => m.round_number === latestRoundNumber).length}コート</span></div>
-        <div data-scoreboard-latest className="space-y-1.5">{sortedMatches.filter(m => m.round_number === latestRoundNumber).map((m, index) => <div key={m.id} hidden={index >= 2 && !moreCourts}>{renderMatchCard(m)}</div>)}</div>
+        <div ref={latestCardsHost} data-scoreboard-latest className="space-y-1.5" />
         {matches.filter(m => m.round_number === latestRoundNumber).length > 2 && <button type="button" aria-expanded={moreCourts} className="min-h-11 w-full rounded-xl border border-zinc-600 px-3 text-sm" onClick={() => setMoreCourts(value => !value)}>{moreCourts ? "コートを2面にまとめる" : `残り${matches.filter(m => m.round_number === latestRoundNumber).length - 2}コートを表示`}{unsavedScoreCount > 0 && " · 未保存あり"}</button>}
       {eventMode === "manual" ? manualRoundSection : (
         <div className="space-y-2" data-court-generation>
 
-          <div className="min-w-0 flex-1">{eventStatus === "closed" ? <button className="min-h-12 w-full rounded-xl bg-zinc-700 px-2 py-3 text-sm font-semibold text-zinc-300" disabled>次のRoundを生成（終了済み）</button> : <ActionButton aria-label="次Round生成" onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void generateRound(); }} disabled={!!guestLineupEdit || busyParticipants.size > 0 || isGeneratingRound || courtSaving || courtLoading || isDeletingMatch || isClosingEvent || unsavedScoreCount > 0}>{isGeneratingRound ? "生成中..." : "次のRoundを生成"}</ActionButton>}</div>
+          <div className="min-w-0 flex-1">{eventStatus === "closed" ? <button className="min-h-12 w-full rounded-xl bg-zinc-700 px-2 py-3 text-sm font-semibold text-zinc-300" disabled>次のRoundを生成（終了済み）</button> : <ActionButton aria-label="次Round生成" onClick={() => { if (!scoreQueue.hasUnsaved(scoreScope) && !closingEvent.current) void generateRound(); }} disabled={busyParticipants.size > 0 || isGeneratingRound || courtSaving || courtLoading || isDeletingMatch || isClosingEvent || unsavedScoreCount > 0}>{isGeneratingRound ? "生成中..." : "次のRoundを生成"}</ActionButton>}</div>
         </div>
       )}
           {showCourtWarning && <p className="text-xs text-amber-300">※ {courtCount}面設定ですが、現在の参加人数では{maxPlayableCourts}面まで生成可能です（1試合につき4人必要です）</p>}
@@ -1701,15 +1682,18 @@ export default function EventDetailPage() {
         </fieldset>
         </details>
       )}
-          {eventMode === "auto" && ((guestMode || canManageEventName) && eventStatus === "active" ? <button type="button" aria-label="利用コート数を変更" className="min-h-12 min-w-24 shrink-0 rounded-xl border border-zinc-500 px-2 py-1 disabled:opacity-40" onClick={() => void openCourtDialog()} disabled={!!guestLineupEdit || busyParticipants.size > 0 || isGeneratingRound || courtSaving || isDeletingMatch || courtLoading || isClosingEvent}>
+          {eventMode === "auto" && ((guestMode || canManageEventName) && eventStatus === "active" ? <button type="button" aria-label="利用コート数を変更" className="min-h-12 min-w-24 shrink-0 rounded-xl border border-zinc-500 px-2 py-1 disabled:opacity-40" onClick={() => void openCourtDialog()} disabled={busyParticipants.size > 0 || isGeneratingRound || courtSaving || isDeletingMatch || courtLoading || isClosingEvent}>
             <span className="block text-xs text-zinc-300">利用コート数</span><span className="text-sm font-bold">{courtCount}面 <span aria-hidden="true">⌄</span></span>
           </button> : <p className="flex min-h-12 shrink-0 flex-col justify-center rounded-xl border border-zinc-700 px-2 text-center"><span className="text-xs text-zinc-400">利用コート数</span><span className="text-sm font-bold">{courtCount}面</span></p>)}
         </div>
         {fixedFeature && <details data-fixed-settings className="rounded-xl border border-zinc-700"><summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm font-bold">固定ペア{scopedFixedState ? ` · ${scopedFixedState.pairs.length}組` : ""}</summary>
-        {fixedFeature && <EventFixedPairs key={`${roundUserId}:${eventId}`} people={participants.map(p => ({ id: p.id, name: participantLabel(p), guest: p.participant_type === "guest", status: p.status }))} activeIds={candidateParticipants.map(p => p.id)} snapshot={scopedFixedState} error={fixedError} busy={!!guestLineupEdit || busyParticipants.size > 0 || fixedSaving || isGeneratingRound || isClosingEvent || courtSaving || isDeletingMatch} closed={eventStatus === "closed"} onSave={saveFixedPairs} onReload={reloadFixedPairs} />}
+        {fixedFeature && <EventFixedPairs key={`${roundUserId}:${eventId}`} people={participants.map(p => ({ id: p.id, name: participantLabel(p), guest: p.participant_type === "guest", status: p.status }))} activeIds={candidateParticipants.map(p => p.id)} snapshot={scopedFixedState} error={fixedError} busy={busyParticipants.size > 0 || fixedSaving || isGeneratingRound || isClosingEvent || courtSaving || isDeletingMatch} closed={eventStatus === "closed"} onSave={saveFixedPairs} onReload={reloadFixedPairs} />}
         </details>}
-        <details data-round-history className="rounded-xl border border-zinc-700"><summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm font-bold">過去Round・全試合履歴 · {matches.length}試合{unsavedScoreCount > 0 && " · 未保存あり"}</summary><div className="p-2"><MatchHistoryList heading="全Roundの対戦履歴">{sortedMatches.map(renderMatchCard)}</MatchHistoryList></div></details>
-        {!guestMode && eventMode === "auto" && <details className="rounded-xl border border-zinc-700"><summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm">メンバー変更について</summary><p className="px-3 pb-3 text-xs text-zinc-400">ログインした開催のメンバー変更は準備中です。ゲストの未入力試合では、同じRoundの選手や休憩者と入れ替えられます。</p></details>}
+        <details data-round-history className="rounded-xl border border-zinc-700"><summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm font-bold">過去Round · {matches.filter(m => m.round_number !== latestRoundNumber).length}試合{unsavedScoreCount > 0 && " · 未保存あり"}</summary><div className="space-y-2 p-2">
+          <div className="flex items-center justify-between gap-2"><p className="text-xs text-zinc-400">一覧内をスクロールして確認</p><button type="button" aria-label="全試合履歴を拡大" title="全試合履歴を拡大" className="flex min-h-11 items-center rounded-xl border border-zinc-600 px-3 text-xs" onClick={() => { if (!document.querySelector('dialog[open]')) setAllHistoryOpen(true); }}>全試合を拡大</button></div>
+          {!matches.some(m => m.round_number !== latestRoundNumber) && <p className="text-xs text-zinc-400">過去Roundはまだありません。拡大すると最新Roundを含む全試合を確認できます。</p>}
+          <div ref={pastCardsHost} data-match-list="normal" className="max-h-[min(25rem,50dvh)] space-y-3 overflow-y-auto overscroll-contain pr-1" />
+        </div></details>
       </section>
 
       <details data-event-videos className="rounded-xl border border-zinc-700"><summary className="flex min-h-11 cursor-pointer items-center px-3 text-sm font-bold">YouTube動画一覧・管理</summary>
@@ -1741,7 +1725,7 @@ export default function EventDetailPage() {
 
       {eventStatus !== "closed" && <Card title="開催操作">
           <div className="space-y-2">
-            <button className="min-h-11 w-full rounded-xl border border-zinc-500 px-3 py-2 text-sm font-semibold disabled:opacity-50" onClick={() => void openCloseEvent()} disabled={!!guestLineupEdit || busyParticipants.size > 0 || isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch}>イベント終了</button>
+            <button className="min-h-11 w-full rounded-xl border border-zinc-500 px-3 py-2 text-sm font-semibold disabled:opacity-50" onClick={() => void openCloseEvent()} disabled={busyParticipants.size > 0 || isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch}>イベント終了</button>
             <p className="text-xs text-zinc-400">終了後、ランキング・MVP・結果共有を確認できます</p>
           </div>
       </Card>}
@@ -1837,7 +1821,7 @@ export default function EventDetailPage() {
       )}
       {eventStatus === "closed" && <Card title="開催操作">
         <p className="text-sm text-zinc-300">この開催は終了しました</p>
-        <button className="mt-2 min-h-11 w-full rounded-xl border border-zinc-500 py-3" disabled={!!guestLineupEdit || busyParticipants.size > 0 || isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch} onClick={reopenEvent}>イベント再開</button>
+        <button className="mt-2 min-h-11 w-full rounded-xl border border-zinc-500 py-3" disabled={busyParticipants.size > 0 || isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch} onClick={reopenEvent}>イベント再開</button>
         {canDeleteEvent && <button className="mt-2 min-h-11 w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
       </Card>}
 
@@ -1846,7 +1830,11 @@ export default function EventDetailPage() {
       {guestMode && <p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>}
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
-      {guestLineupEdit && <GuestRoundLineupEditor key={`${eventId}:${guestLineupEdit.round}`} event={guestLineupEdit.event} round={guestLineupEdit.round} target={guestLineupEdit.target} busy={lineupSaving} onClose={closeGuestLineup} onSave={commitGuestLineup} />}
+      <AppDialog open={allHistoryOpen} title="全試合履歴" wide onClose={() => { if (document.querySelectorAll('dialog[open]').length <= 1) setAllHistoryOpen(false); }}>
+        <p className="shrink-0 px-4 pt-3 text-xs text-zinc-400">最新Round {latestRoundNumber}を含む全{matches.length}試合</p>
+        <div ref={expandedCardsHost} data-match-list="all" className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4" />
+      </AppDialog>
+      <FriendlyMatchCards cards={sortedMatches.map(match => ({ id: match.id, round: match.round_number, content: renderMatchCard(match) }))} latestRound={latestRoundNumber} moreCourts={moreCourts} expanded={allHistoryOpen} latestHost={latestCardsHost} pastHost={pastCardsHost} expandedHost={expandedCardsHost} />
       <AppDialog open={!!matchDeleteTarget} title="この試合を削除しますか？" busy={isDeletingMatch} onClose={cancelMatchDelete}>
         <div className="space-y-3 overflow-y-auto p-4">
           {matchDeleteTarget?.hasScore && <div className="space-y-1 text-sm text-red-300"><p>この試合にはスコアが入力されています。</p><p>削除すると戦績からも除外されます。</p><p>本当に削除しますか？</p></div>}

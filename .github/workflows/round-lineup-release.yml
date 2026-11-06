@@ -5,7 +5,7 @@ on:
     types: [labeled]
 
 concurrency:
-  group: padel-database-backup
+  group: ${{ github.event.label.name == '182DB読取調査' && 'padel-lineup-readonly-diagnostics' || 'padel-database-backup' }}
   cancel-in-progress: false
 
 permissions:
@@ -150,3 +150,30 @@ jobs:
           PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
           PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
         run: python3 -B supabase/maintenance/round-lineups/cloud_release.py apply
+
+  diagnose:
+    if: >-
+      github.event.pull_request.number == 182 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.label.name == '182DB読取調査' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/atomic-round-lineup'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: 読み取り集計・差分検出の回帰試験
+        run: python3 -B -m unittest discover -s supabase/maintenance/round-lineups -p 'test_cloud_release.py' -v
+      - name: 公式CAを照合
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 変更せず重複の集計とトリガー名だけ確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/round-lineups/cloud_release.py diagnose

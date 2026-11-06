@@ -66,6 +66,30 @@ def identity():
     return main['sha']
 
 
+def trigger_differences(value):
+    def key(v):
+        return (v['table'], v['trigger'].split()[2])
+    expected = {key(v): v for v in reviewed()['triggers']}
+    actual = {key(v): dict(v, function_sha256=hashlib.sha256(v['function'].encode()).hexdigest()) for v in value['triggers']}
+    differences = []
+    for k in sorted(expected.keys() | actual.keys()):
+        fields = ['missing'] if k not in actual else ['unexpected'] if k not in expected else [f for f in ('trigger', 'enabled', 'function_sha256') if actual[k][f] != expected[k][f]]
+        if fields:
+            differences.append({'table': k[0], 'trigger': k[1], 'changed_fields': fields})
+    return differences
+
+
+def diagnose():
+    authority()
+    identity()
+    value = json.loads(common.source_sql('BEGIN READ ONLY;' + query() + 'ROLLBACK;'))
+    stats = (HERE / '07_readonly_diagnostics.sql').read_text()
+    result = json.loads(common.source_sql(stats))
+    result['trigger_differences'] = trigger_differences(value)
+    result['production_mutations'] = False
+    return result
+
+
 def prepare():
     authority()
     main = identity()
@@ -180,7 +204,7 @@ def apply():
 def main():
     os.umask(0o077)
     try:
-        actions = {'prepare': prepare, 'rehearse': rehearse, 'mark': mark, 'apply': apply}
+        actions = {'diagnose': diagnose, 'prepare': prepare, 'rehearse': rehearse, 'mark': mark, 'apply': apply}
         if len(sys.argv) != 2 or sys.argv[1] not in actions:
             raise b.BackupError('unknown_pr182_release_action')
         result = actions[sys.argv[1]]()

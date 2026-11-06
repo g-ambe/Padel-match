@@ -43,6 +43,15 @@ class ReleaseGuards(unittest.TestCase):
         with patch.dict(os.environ, {'BACKUP_SOURCE_SHA': 'a' * 40}), patch.object(r.b, 'api', side_effect=[good, {'sha': 'b' * 40}]), self.assertRaises(r.b.BackupError):
             r.identity()
 
+    def test_trigger_diagnostic_lists_only_names_and_fields(self):
+        expected = r.reviewed()['triggers']
+        changed = dict(expected[0], function='synthetic altered definition')
+        value = {'triggers': [changed]}
+        result = r.trigger_differences(value)
+        self.assertTrue(result)
+        self.assertNotIn('synthetic altered definition', json.dumps(result))
+        self.assertIn('function_sha256', json.dumps(result))
+
     def test_backup_context_does_not_accept_another_commit(self):
         manifest = {'release': {'backup_schema': 'round_lineup_backup_0041_r123_a1', 'source_sha': 'a' * 40, 'migrations': r.reviewed()['migrations']}}
         with patch.dict(os.environ, {'PADEL_RELEASE_AUTHORIZED': r.AUTHORITY, 'BACKUP_SOURCE_SHA': 'a' * 40}):

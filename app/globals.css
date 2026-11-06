@@ -66,6 +66,8 @@ body {
 .bg-card { background-color: var(--app-card) !important; }
 .bg-accent { background-color: var(--app-accent) !important; }
 .text-accent { color: var(--app-accent) !important; }
+.event-disclosure-icon { @apply shrink-0 text-accent; }
+[data-theme="light"] .event-disclosure-icon { color: var(--badge-positive-text); }
 .border-accent { border-color: var(--app-accent) !important; }
 .text-black { color: var(--app-accent-text) !important; }
 

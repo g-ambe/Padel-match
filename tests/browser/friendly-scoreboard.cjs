@@ -6,7 +6,7 @@ const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3002',before=proce
 const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','access-control-expose-headers':'Content-Range','content-type':'application/json'};
 const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now()>end)throw Error('条件待ちタイムアウト');await new Promise(r=>setTimeout(r,30));}};
 (async()=>{
- const f=navigationFixture(),external=[],errors=[],evidence=[];let hold=false,fail=false,release;
+ const f=navigationFixture(),external=[],errors=[],evidence=[];let hold=false,fail=false,release,holdVideo=false,releaseVideo,videoWrites=0;
  const seed=courts=>{
   Object.assign(f.tables.events.find(e=>e.id===noGroup),{name:'土曜パデル',court_count:courts,event_mode:'auto',status:'active'});
   f.tables.event_participants=f.tables.event_participants.filter(p=>p.event_id!==noGroup).concat(Array.from({length:20},(_,i)=>({id:id(10040+i),event_id:noGroup,profile_id:null,player_profile_id:null,participant_type:'guest',guest_name:'選手'+i,status:'active'})));
@@ -23,6 +23,7 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
    const req=route.request(),url=new URL(req.url()),table=url.pathname.split('/').at(-1);if([base,before].includes(url.origin))return route.continue();if(url.origin!==remote){external.push(url.origin);return route.abort();}
    const respond=(status,body)=>route.fulfill({status,headers:cors,body:JSON.stringify(body)});
    if(req.method()==='OPTIONS')return respond(200,{});if(url.pathname.startsWith('/auth/'))return respond(200,authenticated?user:null);
+   if(table==='matches'&&req.method()==='PATCH'&&Object.hasOwn(req.postDataJSON()||{},'youtube_url')){videoWrites++;if(holdVideo)await new Promise(r=>releaseVideo=r);}
    if(['match_results','save_friendly_match_score'].includes(table)&&['POST','PATCH'].includes(req.method())){if(hold)await new Promise(r=>release=r);if(fail)return respond(403,{code:'42501',message:'試験用保存拒否'});}
    const response=await f.fetch(req.url(),{method:req.method(),headers:req.headers(),body:req.postData()||undefined});return route.fulfill({status:response.status,headers:{...cors,...Object.fromEntries(response.headers)},body:await response.text()});
   });c.on('page',p=>p.on('pageerror',error=>errors.push(error.message)));return c;
@@ -82,12 +83,15 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
    await latest().locator('[data-score-key]').first().getByRole('button').first().click();await poll(async()=>!await nav.isVisible());await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();await nav.waitFor();
   }
   // 表示の微調整。固定・履歴の矢印、標準マーカー抑止、開閉状態の保持。
+  f.tables.event_video_links.push({id:id(15000),event_id:ordinary,title:'確認用動画',video_url:'https://youtu.be/listPreview',memo:null,display_order:1});
   await page.goto(base+'/events/'+ordinary);await page.getByText('開催中 · 乱数',{exact:true}).waitFor();
   const fold=key=>page.locator(`[data-${key}]`),arrow=async key=>fold(key).locator('summary > span[aria-hidden] > span').evaluateAll(nodes=>nodes.filter(n=>n.getClientRects().length).map(n=>n.textContent).join(''));
   for(const width of [320,375,390])for(const theme of ['dark','light']){
    await page.setViewportSize({width,height:667});await page.evaluate(t=>{document.documentElement.dataset.theme=t;document.body.dataset.theme=t;},theme);
-   for(const key of ['fixed-settings','round-history']){
+   for(const key of ['fixed-settings','round-history','event-videos','round-mode']){
     const details=fold(key),summary=details.locator(':scope > summary');await summary.waitFor();assert.equal(await arrow(key),'▶');assert.equal(await summary.evaluate(n=>getComputedStyle(n).listStyleType),'none');assert.equal(await summary.evaluate(n=>getComputedStyle(n).display),'flex');await summary.click();assert.equal(await arrow(key),'▼');
+    const color=await summary.locator('.event-disclosure-icon').evaluate(n=>getComputedStyle(n).color);const rgb=color.match(/[0-9.]+/g).map(Number);assert(rgb[1]>rgb[0]&&rgb[1]>rgb[2]);assert.equal(color,await page.locator('[data-scoreboard-latest] .friendly-scoreboard-video .event-disclosure-icon').first().evaluate(n=>getComputedStyle(n).color));
+    if(key==='event-videos')assert.equal(await details.getByRole('link',{name:'YouTubeで見る',exact:true}).getAttribute('href'),'https://youtu.be/listPreview');
     await page.getByRole('tab',{name:'参加者',exact:true}).click();await page.getByRole('tab',{name:'対戦',exact:true}).click();assert(await details.evaluate(n=>n.open));assert.equal(await arrow(key),'▼');
     if(key==='round-history'){
      const expand=page.getByRole('button',{name:'全試合履歴を拡大',exact:true});assert.equal((await expand.innerText()).trim(),'');assert.equal(await expand.locator('svg[aria-hidden="true"]').count(),1);assert(await expand.evaluate(n=>{const r=n.getBoundingClientRect();return r.height>=44&&r.width>=44;}));assert.equal(await page.getByText('一覧内をスクロールして確認',{exact:true}).count(),0);
@@ -95,8 +99,18 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
     }
     await summary.click();assert.equal(await arrow(key),'▶');
    }
+   const video=page.locator('[data-scoreboard-latest] .friendly-scoreboard-video').first();await video.locator('summary').click();
+   const close=video.getByRole('button',{name:'動画登録を閉じる',exact:true});assert(await close.evaluate(n=>{const r=n.getBoundingClientRect();return r.width>=44&&r.height>=44;}));
+   const writes=videoWrites;await video.locator('input').fill('https://youtu.be/keepVideoDraft');await close.click();assert(!await video.evaluate(n=>n.open));assert.equal(videoWrites,writes);await video.locator('summary').click();assert.equal(await video.locator('input').inputValue(),'https://youtu.be/keepVideoDraft');await close.click();
+   await page.getByRole('tab',{name:'結果',exact:true}).click();
+   for(const label of ['勝利数ランキング','勝率ランキング','得失点差ランキング','MVP']){const button=page.getByRole('button',{name:label,exact:true}),icon=button.locator('.event-disclosure-icon');assert.equal(await icon.evaluate(n=>getComputedStyle(n).color),await fold('fixed-settings').locator('summary .event-disclosure-icon').evaluate(n=>getComputedStyle(n).color));assert.equal(await icon.innerText(),'▶');await button.click();assert.equal(await icon.innerText(),'▼');await button.click();const rgb=(await icon.evaluate(n=>getComputedStyle(n).color)).match(/[0-9.]+/g).map(Number);assert(rgb[1]>rgb[0]&&rgb[1]>rgb[2]);}
+   await page.getByRole('tab',{name:'対戦',exact:true}).click();
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   }
+  // URLの保存/削除中は閉じる・入力・再送を防ぎ、既存の保存結果を維持。
+  const video=page.locator('[data-scoreboard-latest] .friendly-scoreboard-video').first();await video.locator('summary').click();const closeVideo=()=>video.getByRole('button',{name:'動画登録を閉じる',exact:true});
+  holdVideo=true;releaseVideo=null;const writesBefore=videoWrites;await video.getByRole('button',{name:'URLを保存',exact:true}).click();await poll(()=>!!releaseVideo);assert(await closeVideo().isDisabled());assert(await video.locator('input').isDisabled());assert(await video.getByRole('button',{name:'URLを保存',exact:true}).isDisabled());await video.locator('summary').evaluate(n=>n.click());assert(await video.evaluate(n=>n.open));holdVideo=false;releaseVideo();await poll(async()=>!await closeVideo().isDisabled());assert.equal(videoWrites,writesBefore+1);assert.equal(await video.getByRole('link',{name:'動画を見る',exact:true}).getAttribute('href'),'https://youtu.be/keepVideoDraft');
+  holdVideo=true;releaseVideo=null;await video.getByRole('button',{name:'URLを削除',exact:true}).click();await poll(()=>!!releaseVideo);assert(await closeVideo().isDisabled());holdVideo=false;releaseVideo();await poll(async()=>!await closeVideo().isDisabled());assert.equal(await video.locator('input').inputValue(),'');await closeVideo().click();assert(!await video.evaluate(n=>n.open));
   // 矢印だけを取り除き、既存コート数ダイアログと保存は1〜5面とも維持。
   const court=()=>page.getByRole('button',{name:'利用コート数を変更',exact:true});
   for(const count of [1,2,3,4,5]){
@@ -107,6 +121,6 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
   await page.goto(base+'/events/'+manual);await page.getByText('開催中 · 手動',{exact:true}).waitFor();f.tables.events.find(e=>e.id===manual).status='closed';await page.reload();await page.getByText('終了済み · 手動',{exact:true}).waitFor();assert.equal(f.tables.events.find(e=>e.id===manual).event_mode,'manual');
   fs.writeFileSync(output+'/layout.json',JSON.stringify(evidence,null,2));await c.close();
   assert.deepEqual(external,[]);assert.deepEqual(errors,[]);
-  console.log('モバイル3幅・両テーマ＋34pxセーフエリア12条件、固定/履歴の矢印・単一マーカー・開閉保持・拡大アイコン・1〜5面変更・乱数/手動/終了ヘッダー、1〜5面、二重マウント防止・同一DOM保持、拡大内の初回/修正/取消/保存失敗/再試行、次Roundの配置変更、タブ・動画入力保持を確認。本番通信なし。');
+  console.log('動画登録×の44px・入力保持・保存/削除中の開閉抑止、固定/履歴/動画一覧/モード/結果の▶▼と両テーマの緑統一、モバイル3幅・両テーマ＋34pxセーフエリア12条件、固定/履歴の矢印・単一マーカー・開閉保持・拡大アイコン・1〜5面変更・乱数/手動/終了ヘッダー、1〜5面、二重マウント防止・同一DOM保持、拡大内の初回/修正/取消/保存失敗/再試行、次Roundの配置変更、タブ・動画入力保持を確認。本番通信なし。');
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

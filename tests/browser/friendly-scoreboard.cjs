@@ -23,7 +23,7 @@ const poll=async fn=>{const end=Date.now()+15000;while(!await fn()){if(Date.now(
    const req=route.request(),url=new URL(req.url()),table=url.pathname.split('/').at(-1);if([base,before].includes(url.origin))return route.continue();if(url.origin!==remote){external.push(url.origin);return route.abort();}
    const respond=(status,body)=>route.fulfill({status,headers:cors,body:JSON.stringify(body)});
    if(req.method()==='OPTIONS')return respond(200,{});if(url.pathname.startsWith('/auth/'))return respond(200,authenticated?user:null);
-   if(table==='match_results'&&['POST','PATCH'].includes(req.method())){if(hold)await new Promise(r=>release=r);if(fail)return respond(403,{code:'42501',message:'試験用保存拒否'});}
+   if(['match_results','save_friendly_match_score'].includes(table)&&['POST','PATCH'].includes(req.method())){if(hold)await new Promise(r=>release=r);if(fail)return respond(403,{code:'42501',message:'試験用保存拒否'});}
    const response=await f.fetch(req.url(),{method:req.method(),headers:req.headers(),body:req.postData()||undefined});return route.fulfill({status:response.status,headers:{...cors,...Object.fromEntries(response.headers)},body:await response.text()});
   });c.on('page',p=>p.on('pageerror',error=>errors.push(error.message)));return c;
  }

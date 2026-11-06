@@ -3,13 +3,13 @@ const assert=require('node:assert/strict');
 const {handler,database,fixture}=require('./fixtures/stats-helpers.cjs');
 function normal(db) {
   const state={errors:[]};
-  const b={getSupabaseClient:()=>db.s,eventId:'event-a',eventStatus:'active',guestMode:false,scoreInputs:{},scoreSaveState:{current:{saving:new Set(),resultIds:new Map()}},
+  const b={getSupabaseClient:()=>db.s,eventId:'event-a',eventMode:'manual',eventStatus:'active',guestMode:false,scoreInputs:{},scoreSaveState:{current:{saving:new Set(),resultIds:new Map()}},
     matches:db.tables.matches.map(m=>({...m,result:db.tables.match_results.find(r=>r.match_id===m.id)})),getWinnerTeam:(a,b)=>a>b?'A':a<b?'B':'draw',
     setMatches:fn=>b.matches=fn(b.matches),setScoreInputs:fn=>b.scoreInputs=fn(b.scoreInputs),setError:v=>state.errors.push(v),setMessage:()=>{},loadAll:async()=>{}};
   return {b,state,save:(id,scores)=>handler('app/events/[id]/page.tsx','saveScore',b)(id,scores)};
 }
 
-test('保存中の連打は同じスコアを二重送信せず、応答前は確定表示を更新しない',async()=>{
+test('手動の保存中の連打は同じスコアを二重送信せず、応答前は確定表示を更新しない',async()=>{
   let release;const gate=new Promise(resolve=>release=resolve);
   const db=database(fixture().tables,{fail:async c=>{if(c.table==='match_results'&&c.method==='PATCH')await gate;return false}}),a=normal(db);
   const original=structuredClone(a.b.matches[0]);
@@ -20,7 +20,7 @@ test('保存中の連打は同じスコアを二重送信せず、応答前は�
   assert.equal(a.b.matches[0].result.winner_team,'B');assert(!db.calls.some(c=>c.table==='player_stats'));
 });
 
-test('初回の確定失敗後も元の表示を保ち、再試行で結果行を増やさない',async()=>{
+test('手動の初回の確定失敗後も元の表示を保ち、再試行で結果行を増やさない',async()=>{
   const {tables}=fixture();tables.match_results=tables.match_results.filter(r=>r.match_id!=='match-0006');
   let fail=true;const db=database(tables,{fail:c=>fail&&c.table==='matches'&&c.method==='PATCH'}),a=normal(db);
   const before=structuredClone(a.b.matches.find(m=>m.id==='match-0006'));
@@ -37,7 +37,7 @@ function loseResponse(db, table) {
   db.s.rest.fetch=async(input,init)=>{const result=await fetch(input,init);if(!lost&&String(input).includes('/'+table+'?')&&init.method==='POST'){lost=true;return new Response(JSON.stringify({message:'応答受信失敗'}),{status:400})}return result};
 }
 
-test('初回スコアの保存応答が失われても、履歴を再確認して同じ結果行へ保存する',async()=>{
+test('手動の初回スコアの保存応答が失われても、履歴を再確認して同じ結果行へ保存する',async()=>{
   const {tables}=fixture();tables.match_results=tables.match_results.filter(r=>r.match_id!=='match-0006');
   const db=database(tables);loseResponse(db,'match_results');const a=normal(db);
   assert.equal(await a.save('match-0006',{a:'4',b:'2'}),false);

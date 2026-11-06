@@ -9,6 +9,7 @@ const { readProfileRows } = require('../../lib/player-profiles.ts');
 const eventCourts = require('../../lib/event-courts.ts');
 const { fetchBalancePastStats } = require('../../lib/friendly-balance-history.ts');
 const fixedPairs = require('../../lib/event-fixed-pairs.ts');
+const roundLineup = require('../../lib/round-lineup.ts');
 
 // Reactを偽装せず、画面が実行する関数そのものをASTから取り出して検証する。
 function expression(source, name) {
@@ -27,7 +28,7 @@ function expression(source, name) {
 }
 function evaluate(source, name, bindings = {}) {
   const code = ts.transpileModule(`module.exports = (${expression(source, name)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, setEventTab:()=>{}, initializeEventTab:()=>{}, participantStatusRevision:{current:0}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
+  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, ...roundLineup, eventMode:"manual", fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, setEventTab:()=>{}, initializeEventTab:()=>{}, participantStatusRevision:{current:0}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
   const module = { exports: {} };
   new Function('module', ...Object.keys(values), code)(module, ...Object.values(values));
   return module.exports;
@@ -38,7 +39,7 @@ const legacySource = () => fs.readFileSync(path.join(__dirname, 'legacy-stats.ts
 
 // 実Supabase SDKでURL・ページング・書込み対象まで検証。外部通信は行わない。
 function database(tables, options = {}) {
-  const calls = [];
+  const calls = [], operations = new Map();
   const s = createClient('https://stats-test.invalid', 'public-test-key', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     global: { fetch: async (input, init = {}) => {
@@ -48,9 +49,18 @@ function database(tables, options = {}) {
       calls.push(call);
       const failure = await options.fail?.(call);
       if (failure) return new Response(JSON.stringify({ code: '42501', message: '取得または更新を拒否' }), { status: 403 });
+      if (table === 'get_friendly_lineup_versions') return new Response(JSON.stringify({version:1,editing_enabled:false,event_revision:0,rounds:[]}),{status:200});
+      if (table === 'save_friendly_match_score') {
+        if(operations.has(call.body.p_request_id))return new Response(JSON.stringify(operations.get(call.body.p_request_id)),{status:200});
+        const b=call.body,m=tables.matches.find(m=>m.id===b.p_match_id),prior=tables.match_results.find(r=>r.match_id===m?.id);
+        if(await options.fail?.({table:'match_results',method:prior?'PATCH':'POST'})||await options.fail?.({table:'matches',method:'PATCH'}))return new Response(JSON.stringify({message:'試合の確定に失敗しました'}),{status:403});
+        const result={id:prior?.id??'score-'+calls.length,score_a:b.p_a,score_b:b.p_b,winner_team:b.p_a===b.p_b?'draw':b.p_a>b.p_b?'A':'B'};
+        if(prior)Object.assign(prior,result);else tables.match_results.push({...result,match_id:b.p_match_id});m.completed=true;
+        const data={request_id:b.p_request_id,match_id:b.p_match_id,result};operations.set(b.p_request_id,data);return new Response(JSON.stringify(data),{status:200});
+      }
       if (table === 'get_event_fixed_pair_state') return new Response(JSON.stringify({event_id:call.body.p_event_id,revision:0,used_fixed_pairs:false,pairs:[],eligible_rounds:[]}),{status:200});
-      if (table === 'create_fixed_pair_round') {
-        const b=call.body,round={id:`round-rpc-${calls.length}`,event_id:b.p_event_id,round_number:b.p_last_round+1};tables.rounds.push(round);
+      if (table === 'create_fixed_pair_round' || table === 'create_friendly_round') {
+        const r=call.body.p_request;const b=r?{p_event_id:r.eventId,p_last_round:r.lastRound,p_matches:r.matches,p_request_id:r.requestId}:call.body,round={id:`round-rpc-${calls.length}`,event_id:b.p_event_id,round_number:b.p_last_round+1};tables.rounds.push(round);
         for(const [i,m] of b.p_matches.entries()) {const match={id:`match-rpc-${calls.length}-${i}`,event_id:b.p_event_id,round_id:round.id,court_number:m.court,completed:false};tables.matches.push(match);for(const [team,ids] of [['A',m.teamA],['B',m.teamB]])for(const participant_id of ids)tables.match_players.push({match_id:match.id,participant_id,team});}
         return new Response(JSON.stringify({event_id:b.p_event_id,request_id:b.p_request_id,round_id:round.id,round_number:round.round_number}),{status:200});
       }

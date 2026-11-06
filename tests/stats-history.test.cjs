@@ -145,7 +145,7 @@ test('初回スコアの登録も履歴だけを書き込み、未完了から�
   assert.deepEqual(action.state.errors,[]);
   assert.equal(tables.matches.find(m=>m.id==='match-0006').completed,true);
   assert.equal((await profileStats(db.s)).matches,9);
-  assert.deepEqual(db.calls.filter(c=>c.method!=='GET').map(c=>c.table),['match_results','matches']);
+  assert.deepEqual(db.calls.filter(c=>c.method!=='GET').map(c=>c.table),['save_friendly_match_score']);
 });
 
 test('試合単体の削除後はその履歴だけを除外し、選手・所属・旧累計値を保つ', async () => {

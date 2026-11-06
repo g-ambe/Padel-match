@@ -9,6 +9,9 @@ import type { ScorePair } from "@/lib/score-input";
 import { ScoreInput } from "@/components/score-input";
 import { useScoreSaves } from "@/components/score-save-provider";
 import { AppDialog } from "@/components/app-dialog";
+import { RoundLineupEditor, type LineupEditorData } from "@/components/round-lineup-editor";
+import { readLineupVersions, readRoundLineup, createLineupCommit, createFriendlyScoreCommit, canonicalPlayers, type LineupVersions } from "@/lib/round-lineup";
+import { guestLineupSnapshot, roundCards, saveGuestRoundLineup, type RoundCard } from "@/lib/guest-round-lineup";
 import { FriendlyMatchCards } from "@/components/friendly-match-cards";
 import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
 import { MatchShareButtons } from "@/components/match-share-buttons";
@@ -27,7 +30,7 @@ import { readEventFixedPairs, saveEventFixedPairs, createEventFixedRound, finish
 
 type Participant = { id: string; profile_id: string | null; player_profile_id: string | null; guest_name: string | null; status: "active" | "resting" | "absent"; participant_type?: "member" | "guest"; display_name?: string | null; is_member_candidate: boolean };
 type TeamResult = "A" | "B" | "draw";
-type MatchView = { id: string; event_id?: string; round_id?: string | null; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: TeamResult } | null };
+type MatchView = { id: string; event_id?: string; round_id?: string | null; lineup_revision?: number; court_number: number; round_number: number; created_at?: string; youtube_url?: string | null; players: { participant_id: string; team: "A" | "B" }[]; completed: boolean; result?: { id?: string; score_a: number; score_b: number; winner_team: TeamResult } | null };
 type ScoreInput = { a: number | ""; b: number | "" };
 type ManualMatchDraft = { id: string; court_number: number; teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type LineupDraft = { teamA1: string; teamA2: string; teamB1: string; teamB2: string };
@@ -66,7 +69,10 @@ export default function EventDetailPage() {
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [eventName, setEventName] = useState("-");
   const [courtCount, setCourtCount] = useState(1);
-  const boardOperation = useRef<"court" | "round" | "delete" | "fixed" | null>(null);
+  const boardOperation = useRef<"court" | "round" | "delete" | "fixed" | "lineup" | null>(null);
+  const [lineupVersions, setLineupVersions] = useState<{eventId:string;userId:string;data:LineupVersions}|null>(null);
+  const [lineupEditor, setLineupEditor] = useState<{data:LineupEditorData;target:string;save:(cards:RoundCard[])=>Promise<unknown>}|null>(null);
+  const [lineupLoading,setLineupLoading] = useState(false), [lineupSaving,setLineupSaving] = useState(false);
   const [moreCourts, setMoreCourts] = useState(false);
   const [allHistoryOpen, setAllHistoryOpen] = useState(false);
   const latestCardsHost = useRef<HTMLDivElement>(null);
@@ -259,7 +265,7 @@ export default function EventDetailPage() {
     setTabNotice(""); setEventTab({ eventId, value });
   };
 
-  const loadAll = async () => {
+  const loadAll = async (confirmFailedScores = false) => {
     const scoreRevision = scoreQueue.getRevision(scoreScope);
     const statusRevision = participantStatusRevision.current;
     if (typeof eventId === "string" && eventId.startsWith("guest_")) {
@@ -378,6 +384,12 @@ export default function EventDetailPage() {
       catch (cause) { setFixedState(null); setDisplayEligibility(null); setFixedError(cause instanceof Error ? cause.message : "固定ペア設定を確認できませんでした"); }
     } else { setFixedState(null); setDisplayEligibility(null); setFixedError(""); }
 
+    let currentLineupVersions: LineupVersions | null = null;
+    if (allowOperateEvent && event.event_mode === "auto") {
+      try { currentLineupVersions = await readLineupVersions(supabase,eventId); setLineupVersions({eventId,userId:uid!,data:currentLineupVersions}); }
+      catch (cause) { setLineupVersions(null); setError(cause instanceof Error ? cause.message : "構成の版数を確認できませんでした。"); }
+    } else setLineupVersions(null);
+
     // グループ定常メンバーをイベント参加者へ自動反映（未登録分のみ）
     if (event?.club_id) {
       await addMissingClubMembersToEvent(supabase, eventId, event.club_id);
@@ -439,11 +451,11 @@ export default function EventDetailPage() {
     const { data: ms, error: matchLoadError } = await readFriendlyRoundRows((start, end) => matchQuery().order("id").range(start, end));
     if (matchLoadError) { setError("試合履歴を取得できませんでした。画面を更新してください"); return; }
 
-    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
+    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, lineup_revision: currentLineupVersions?.rounds.find(r=>r.round_id===m.round_id)?.revision ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
     // 遅れて届いた取得結果で、保存中・失敗中のスコアや新しい確定値を上書きしない。
     if (scoreRevision !== scoreQueue.getRevision(scoreScope)) { await loadAll(); return; }
     setMatches(previous => normalizedMatches.map(row => {
-      if (!scoreQueue.has(`${scoreScope}${row.id}`)) return row;
+      if (!scoreQueue.has(`${scoreScope}${row.id}`) || (confirmFailedScores && scoreQueue.getSnapshot()[`${scoreScope}${row.id}`]?.status === "error")) return row;
       const confirmed = previous.find(match => match.id === row.id);
       return { ...row, completed: confirmed?.completed ?? false, result: confirmed?.result ?? null };
     }));
@@ -916,7 +928,8 @@ export default function EventDetailPage() {
     await loadAll();
   };
 
-  const saveScore = async (matchId: string, entered?: ScorePair) => {
+  const saveScore = async (matchId: string, entered?: ScorePair, send?: ReturnType<typeof createFriendlyScoreCommit> | null) => {
+    if (boardOperation.current === "lineup") { scoreSaveState.current.error="メンバー変更の完了後に保存してください"; return false; }
     if (closingEvent.current) { setError("イベントの終了処理中です"); return false; }
     if (scoreSaveState.current.saving.has(matchId)) return false;
     const score: ScoreInput | undefined = entered ? { a: entered.a.trim() === "" ? "" : Number(entered.a), b: entered.b.trim() === "" ? "" : Number(entered.b) } : scoreInputs[matchId];
@@ -930,12 +943,18 @@ export default function EventDetailPage() {
       if (guestMode && eventId) {
         const ge = getGuestEvent(eventId);
         if (!ge) throw new Error("イベントが見つかりません");
+        const current = ge.matches.find(m=>m.id===matchId);
+        if (!current || JSON.stringify(canonicalPlayers(current.players)) !== JSON.stringify(canonicalPlayers(targetMatch.players))) throw new Error("メンバー構成が変更されています。選手を確認してスコアを再入力してください。");
         ge.matches = ge.matches.map(m => m.id === matchId ? { ...m, completed: true, result: { score_a: Number(score.a), score_b: Number(score.b), winner_team: winner } } : m);
         upsertGuestEvent(ge);
       } else {
         const supabase = getSupabaseClient();
         if (!supabase) throw new Error("保存の準備ができませんでした");
-        // 初回保存の応答が失われた場合も、保存済みの行を確認してから再試行する。
+        if (eventMode === "auto") {
+          const saved = await (send ?? createFriendlyScoreCommit(supabase,eventId,targetMatch))(Number(score.a),Number(score.b));
+          resultId = saved.id;
+        } else {
+        // 手動Roundの既存保存経路は維持する。
         if (!resultId) {
           const existing = await supabase.from("match_results").select("id").eq("match_id", matchId).maybeSingle();
           if (existing.error) throw new Error("保存済みスコアを確認できませんでした");
@@ -953,6 +972,7 @@ export default function EventDetailPage() {
           if (complete.error) throw new Error("試合の確定に失敗しました。再度保存してください");
         }
       }
+      }
       setMatches(previous => previous.map(m => m.id === matchId ? { ...m, completed: true, result: { id: resultId, score_a: Number(score.a), score_b: Number(score.b), winner_team: winner } } : m));
       setScoreInputs(previous => ({ ...previous, [matchId]: score }));
       // 保存済み履歴を正本として再取得する。取得失敗を保存の失敗と取り違えない。
@@ -960,6 +980,32 @@ export default function EventDetailPage() {
       return true;
     } catch (cause) { const message=cause instanceof Error ? cause.message : "スコアの保存に失敗しました";scoreSaveState.current.error=message; return false; }
     finally { scoreSaveState.current.saving.delete(matchId); }
+  };
+
+  const openLineupEditor = async (match: MatchView) => {
+    if (document.querySelectorAll('dialog[open]').length > (allHistoryOpen ? 1 : 0)) return setError("開いている入力を確定またはキャンセルしてから操作してください。");
+    if (boardOperation.current || closingEvent.current || scoreQueue.hasUnsaved(scoreScope) || busyParticipants.size) return setError("保存中・未保存の操作を完了してからメンバーを変更してください。");
+    if (eventMode !== "auto" || eventStatus !== "active" || (!guestMode && !canManageEventName) || match.completed || match.result) return;
+    boardOperation.current="lineup";setLineupLoading(true);setError("");
+    try {
+      if (guestMode) {
+        const event=getGuestEvent(eventId);if(!event)throw new Error("ゲストイベントが見つかりません。");
+        const expected=guestLineupSnapshot(event), cards=roundCards(event,match.round_number);
+        setLineupEditor({target:match.id,data:{round:match.round_number,cards:cards.map(c=>({...c,court_number:event.matches.find(m=>m.id===c.id)!.court_number})),people:event.participants.map(p=>({id:p.id,name:p.guest_name})),eligible:event.participants.filter(p=>p.status==="active").map(p=>p.id)},save:async cards=>saveGuestRoundLineup(eventId,expected,match.round_number,cards,{read:getGuestEvent,write:upsertGuestEvent})});
+      } else {
+        const db=getSupabaseClient();if(!db||!match.round_id)throw new Error("Roundの情報を確認できません。");
+        const snapshot=await readRoundLineup(db,eventId,match.round_id);
+        setLineupEditor({target:match.id,data:{round:snapshot.round_number,cards:snapshot.cards.map(c=>({...c,result:c.result.length?c.result:null})),people:snapshot.people,eligible:snapshot.eligible,blocked_reason:snapshot.blocked_reason},save:createLineupCommit(db,snapshot)});
+      }
+    } catch(cause) {boardOperation.current=null;setError(cause instanceof Error?cause.message:"メンバー変更を開けませんでした。");}
+    finally {setLineupLoading(false);}
+  };
+  const closeLineupEditor = () => {if(lineupSaving)return;setLineupEditor(null);boardOperation.current=null;void loadAll().catch(()=>setError("最新の構成を再取得してください。"));};
+  const commitLineupEditor = async (cards: RoundCard[]) => {
+    if (!lineupEditor || lineupSaving) return;
+    setLineupSaving(true);
+    try {await lineupEditor.save(cards);setLineupEditor(null);boardOperation.current=null;scoreQueue.invalidateReads(scoreScope);await loadAll();}
+    finally {setLineupSaving(false);}
   };
 
   const matchHasSavedScore = (match: MatchView) => {
@@ -1221,6 +1267,7 @@ export default function EventDetailPage() {
       pendingFixedRound.current = null; storePendingFixedRound(roundUserId, eventId, null);
       await loadAll(); setMessage("前回生成したRoundの保存を確認しました"); return;
     }
+    const generationVersions = await readLineupVersions(supabase,eventId);
     const requestedMode = selectedRoundMode;
     // 実行時の状態・参加者・スコアを確認する。履歴取得は既存の問い合わせを拡張する。
     const [eventResult, roundsResult, matchesResult, participantsResult] = await Promise.all([
@@ -1263,8 +1310,8 @@ export default function EventDetailPage() {
       : generateFriendlyRound(generationInput);
     const bestMatches = generated.matches;
 
-    if (currentFixed) {
-      const request: FixedRoundRequest = { eventId, revision: currentFixed.revision, lastRound: lastRoundNumber, courtCount: currentEvent.court_count, mode: requestedMode, activeIds, matches: bestMatches, requestId: crypto.randomUUID() };
+    {
+      const request: FixedRoundRequest = { eventId, lineupRevision:generationVersions.event_revision, revision: currentFixed?.revision ?? 0, lastRound: lastRoundNumber, courtCount: currentEvent.court_count, mode: requestedMode, activeIds, matches: bestMatches, requestId: crypto.randomUUID() };
       pendingFixedOwner.current = roundUserId; pendingFixedRound.current = request; storePendingFixedRound(roundUserId, eventId, request);
       try { await createEventFixedRound(supabase, request); }
       catch (cause) {
@@ -1274,35 +1321,6 @@ export default function EventDetailPage() {
       pendingFixedRound.current = null; storePendingFixedRound(roundUserId, eventId, null);
       await loadAll(); return;
     }
-    const roundNumber = lastRoundNumber + 1;
-    const { data: round, error: roundInsertError } = await supabase.from("rounds").insert({ event_id: eventId, round_number: roundNumber }).select("id").single();
-    if (roundInsertError?.code === "23505") {
-      setError("他のユーザーが先にRoundを生成しました。画面を更新したので、追加されたRoundをご確認ください。");
-      await loadAll();
-      return;
-    }
-    if (roundInsertError || !round) {
-      setError("Round生成に失敗しました");
-      return;
-    }
-
-    for (const m of bestMatches) {
-      const { data: match, error: matchError } = await supabase
-        .from("matches")
-        .insert({ event_id: eventId, round_id: round.id, court_number: m.court, completed: false })
-        .select("id")
-        .single();
-      if (matchError || !match) throw new Error("試合の保存に失敗しました。画面を更新して作成状況を確認してください");
-      const { error: playersError } = await supabase.from("match_players").insert([
-        { match_id: match.id, participant_id: m.teamA[0], team: "A" },
-        { match_id: match.id, participant_id: m.teamA[1], team: "A" },
-        { match_id: match.id, participant_id: m.teamB[0], team: "B" },
-        { match_id: match.id, participant_id: m.teamB[1], team: "B" }
-      ]);
-      if (playersError) throw new Error("出場選手の保存に失敗しました。画面を更新して作成状況を確認してください");
-    }
-
-    await loadAll();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Round生成に失敗しました。再試行してください");
     } finally {
@@ -1543,6 +1561,8 @@ export default function EventDetailPage() {
   ) : null;
 
   const renderMatchCard = (m: MatchView) => {
+            const db = !guestMode && eventMode === "auto" ? getSupabaseClient() : null;
+            const send = db ? createFriendlyScoreCommit(db,eventId,m) : null;
             return (
               <div key={m.id} className="relative overflow-hidden rounded-xl bg-red-950/70">
                 <div className="absolute inset-y-0 left-0 flex w-28 items-center justify-center bg-red-600 text-sm font-bold text-white">削除</div>
@@ -1570,6 +1590,7 @@ export default function EventDetailPage() {
                   <div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs" onClick={() => void saveYoutubeUrl(m.id)}>URLを保存</button>{m.youtube_url && <button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300" onClick={() => void deleteYoutubeUrl(m.id)}>URLを削除</button>}</div>
                   {canViewVideoClickCounts && m.youtube_url && <p className="text-xs text-zinc-400">動画クリック数: {videoClickCounts[m.id] ?? 0}回</p>}
                 </YoutubeDisclosure>
+                {eventMode === "auto" && eventStatus === "active" && !m.completed && !m.result && (guestMode || (canManageEventName && lineupVersions?.eventId===eventId && lineupVersions.userId===roundUserId && lineupVersions.data.editing_enabled)) && <button type="button" className="min-h-11 shrink-0 rounded-xl border border-zinc-600 px-2 text-[11px]" disabled={lineupLoading||!!lineupEditor||isGeneratingRound||isClosingEvent||unsavedScoreCount>0||busyParticipants.size>0} onClick={()=>void openLineupEditor(m)}>メンバー変更</button>}
                   {eventMode === "auto" && eventStatus !== "closed" && <button type="button" className="min-h-11 min-w-11 rounded-xl border border-zinc-600 px-2 text-[11px] text-zinc-400" disabled={scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={() => requestMatchDelete(m)}>削除</button>}
                 </div>
                 {eventMode === "manual" && (lineupDrafts[m.id] ? (
@@ -1592,10 +1613,10 @@ export default function EventDetailPage() {
                   <button className="mb-2 rounded border border-zinc-500 px-3 py-2 text-xs" disabled={scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={() => startLineupEdit(m)}>組み合わせ編集</button>
                 ) : null)}
                 <div className="flex items-center gap-2">
-                  <ScoreInput compact saveKey={`${scoreScope}${m.id}`} names={(["A", "B"] as const).map(team => m.players.filter(player => player.team === team).map(player => ({ name: nameMap[player.participant_id] || "選手名未設定", guest: participants.find(p => p.id === player.participant_id)?.participant_type === "guest" }))) as [{ name: string; guest: boolean }[], { name: string; guest: boolean }[]]} value={{ a: m.result ? String(m.result.score_a) : "", b: m.result ? String(m.result.score_b) : "" }} kind="number"
+                  <ScoreInput compact captureCommit={eventMode === "auto"} saveKey={`${scoreScope}${m.id}`} names={(["A", "B"] as const).map(team => m.players.filter(player => player.team === team).map(player => ({ name: nameMap[player.participant_id] || "選手名未設定", guest: participants.find(p => p.id === player.participant_id)?.participant_type === "guest" }))) as [{ name: string; guest: boolean }[], { name: string; guest: boolean }[]]} value={{ a: m.result ? String(m.result.score_a) : "", b: m.result ? String(m.result.score_b) : "" }} kind="number"
                     saved={hasEnteredFriendlyMatchScore(m)} result={hasEnteredFriendlyMatchScore(m) ? m.result!.winner_team : null}
-                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={eventStatus === "closed" || isClosingEvent || isGeneratingRound || !!lineupDrafts[m.id]}
-                    onCommit={async scores => { if (!await saveScore(m.id, scores)) throw new Error(scoreSaveState.current.error || "スコアを保存できませんでした。再試行してください"); }} />
+                    title={`Round ${m.round_number} / Court${m.court_number} のスコア`} disabled={eventStatus === "closed" || isClosingEvent || isGeneratingRound || lineupLoading || !!lineupEditor || !!lineupDrafts[m.id]}
+                    onCommit={async scores => { if (!await saveScore(m.id, scores, send)) throw new Error(scoreSaveState.current.error || "スコアを保存できませんでした。再試行してください"); }} />
                 </div>
                 </div>
               </div>
@@ -1640,6 +1661,7 @@ export default function EventDetailPage() {
       </div>
       {!tabReady && <p role="status" className="text-sm text-zinc-400">開催情報を読み込み中…</p>}
       {tabNotice && <p role="status" className="text-sm text-amber-300">{tabNotice}</p>}
+      {failedScoreCount>0 && eventMode==="auto" && !guestMode && <button type="button" className="min-h-11 rounded-xl border border-zinc-600 px-3 text-xs" onClick={()=>void loadAll(true).then(()=>setMessage("入力した得点は保持しています。最新の選手を確認し、対戦タブの得点をタップして再入力してください。")).catch(()=>setError("最新データを確認できませんでした。"))}>最新データを確認</button>}
       {busyParticipants.size > 0 && <p role="status" className="text-sm text-zinc-300">参加状態を保存・確認中…</p>}
       {Object.entries(participantErrors).map(([id, detail]) => <div key={id} role="alert" className="space-y-2 rounded-xl border border-red-500 p-3 text-sm text-red-300">
         <p>{participants.find(p => p.id === id) ? participantLabel(participants.find(p => p.id === id)!) : "参加者"}：{detail}</p>
@@ -1830,6 +1852,7 @@ export default function EventDetailPage() {
       {guestMode && <p className="text-xs text-amber-300">TOPへ戻るとゲストイベントの一時データは削除されます</p>}
       <button className="w-full rounded-2xl border border-zinc-500 py-3 text-zinc-200" onClick={() => void goTop()}>TOPへ戻る</button>
 
+      {lineupEditor && <RoundLineupEditor key={`${eventId}:${lineupEditor.target}`} data={lineupEditor.data} target={lineupEditor.target} busy={lineupSaving} onClose={closeLineupEditor} onSave={commitLineupEditor} />}
       <AppDialog open={allHistoryOpen} title="全試合履歴" wide onClose={() => { if (document.querySelectorAll('dialog[open]').length <= 1) setAllHistoryOpen(false); }}>
         <p className="shrink-0 px-4 pt-3 text-xs text-zinc-400">最新Round {latestRoundNumber}を含む全{matches.length}試合</p>
         <div ref={expandedCardsHost} data-match-list="all" className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4" />

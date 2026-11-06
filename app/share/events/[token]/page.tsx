@@ -7,7 +7,7 @@ import { GuestName, MatchHistoryList } from "@/components/match-ui";
 import { SharedPageHeader } from "@/components/shared-page-header";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getSharedEventClient } from "@/lib/shared-event-client";
-import { hasEnteredFriendlyMatchScore, isFriendlyMatchDraw } from "@/lib/friendly-match-results";
+import { firstMatchResult, hasEnteredFriendlyMatchScore, isFriendlyMatchDraw } from "@/lib/friendly-match-results";
 
 type Row = { name: string; played: number; wins: number; losses: number; draws: number; scored: number; conceded: number; winRate: number; diff: number; matchPoints: number };
 
@@ -86,7 +86,7 @@ export default function SharedEventPage() {
     setParticipants(rows.map((r: any) => ({ ...r, display_name: (r.player_profile_id ? ppm.get(r.player_profile_id) : null) ?? (r.profile_id ? pm.get(r.profile_id) : null) ?? r.guest_name ?? "ゲスト" })));
     const { data: ms, error: matchesError } = await supabase.from("matches").select("id,court_number,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(score_a,score_b,winner_team)").eq("event_id", event.id).order("created_at", { ascending: false });
     if (matchesError) logSharedLoadError("共有イベント試合結果の取得に失敗しました", matchesError);
-    setMatches((ms ?? []).map((m: any) => ({ ...m, round_number: m.rounds?.round_number ?? 0, result: m.match_results?.[0] ?? null })));
+    setMatches((ms ?? []).map((m: any) => ({ ...m, round_number: m.rounds?.round_number ?? 0, result: firstMatchResult(m.match_results) })));
     const { data: videos, error: videosError } = await supabase.from("event_video_links").select("id,title,video_url,memo,display_order").eq("event_id", event.id).order("display_order", { ascending: true }).order("created_at", { ascending: true });
     if (videosError) {
       logSharedLoadError("共有イベント全試合動画の取得に失敗しました", videosError);

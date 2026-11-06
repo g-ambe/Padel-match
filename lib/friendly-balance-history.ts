@@ -1,11 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchCountedFriendlyEvents, readStatsRows, readStatsRowsByIds } from "./stats-history";
-import { getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "./friendly-match-results";
+import { matchResultRows, firstMatchResult, getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore, type EmbeddedMatchResults } from "./friendly-match-results";
 import type { FriendlyFormStat } from "./friendly-rounds";
 
 type Participant = { id: string; player_profile_id: string | null; participant_type?: string | null };
 type PastParticipant = Participant & { event_id: string };
-type PastMatch = { id: string; event_id: string; completed: boolean; match_players: { participant_id: string; team: string }[]; match_results: { score_a: number; score_b: number }[] };
+type PastMatch = { id: string; event_id: string; completed: boolean; match_players: { participant_id: string; team: string }[]; match_results: EmbeddedMatchResults<{ score_a: number; score_b: number }> };
 type CurrentEvent = { id: string; club_id: string | null; created_at: string };
 
 // 新しい権限やサーバーの代理取得は使わず、本人の既存セッションで同じグループだけ読む。
@@ -52,11 +52,11 @@ export function collectBalancePastStats(participants: readonly Participant[], me
     const profiles = match.match_players.map(p => participantMap.get(p.participant_id)!.player_profile_id);
     if (new Set(profiles).size !== 4) continue;
     if (!profiles.some(id => id && targetIds.has(id))) continue;
-    const result = match.match_results?.[0];
+    const result = firstMatchResult(match.match_results);
     // 既存の戦績画面と同じく1試合を1回だけ数える。同じ得点の重複行で二重計上しない。
     // 異なる得点から先頭や最新を勝手に選ばない。未成立・対象外の試合は評価しない。
-    if (match.completed && result && match.match_results.some(r => r.score_a !== result.score_a || r.score_b !== result.score_b)) throw new Error("過去の同じ試合に異なる得点が保存されています");
-    if (!hasEnteredFriendlyMatchScore({ completed: match.completed, result }) || !Number.isSafeInteger(result.score_a) || !Number.isSafeInteger(result.score_b) || result.score_a < 0 || result.score_b < 0) continue;
+    if (match.completed && result && matchResultRows(match.match_results).some(r => r.score_a !== result.score_a || r.score_b !== result.score_b)) throw new Error("過去の同じ試合に異なる得点が保存されています");
+    if (!result || !hasEnteredFriendlyMatchScore({ completed: match.completed, result }) || !Number.isSafeInteger(result.score_a) || !Number.isSafeInteger(result.score_b) || result.score_a < 0 || result.score_b < 0) continue;
     for (const player of match.match_players) {
       const profileId = participantMap.get(player.participant_id)!.player_profile_id!;
       if (!targetIds.has(profileId)) continue;

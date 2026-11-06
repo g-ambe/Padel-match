@@ -19,7 +19,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
 import { readParticipantStatus, saveParticipantStatus, type ParticipantStatus } from "@/lib/event-participant-status";
-import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
+import { firstMatchResult, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { FRIENDLY_MODE_UNLOCK_MATCHES, friendlyRoundModes, generateFriendlyRound, scoredFriendlyMatches, type FriendlyRoundMode } from "@/lib/friendly-rounds";
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { readEventCourts, saveEventCourts, validCourtCount } from "@/lib/event-courts";
@@ -452,7 +452,7 @@ export default function EventDetailPage() {
     const { data: ms, error: matchLoadError } = await readFriendlyRoundRows((start, end) => matchQuery().order("id").range(start, end));
     if (matchLoadError) { setError("試合履歴を取得できませんでした。画面を更新してください"); return; }
 
-    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, lineup_revision: currentLineupVersions?.rounds.find(r=>r.round_id===m.round_id)?.revision ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
+    const normalizedMatches = (ms ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id ?? null, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url ?? null, round_number: m.rounds?.round_number ?? 0, lineup_revision: currentLineupVersions?.rounds.find(r=>r.round_id===m.round_id)?.revision ?? 0, completed: m.completed, players: m.match_players ?? [], result: firstMatchResult(m.match_results) }));
     // 遅れて届いた取得結果で、保存中・失敗中のスコアや新しい確定値を上書きしない。
     if (scoreRevision !== scoreQueue.getRevision(scoreScope)) { await loadAll(); return; }
     setMatches(previous => normalizedMatches.map(row => {
@@ -1226,7 +1226,7 @@ export default function EventDetailPage() {
       await loadAll();
       return;
     }
-    const historyMatches: MatchView[] = (matchesResult.data ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url, round_number: roundMap.get(m.round_id) ?? 0, completed: m.completed, players: m.match_players ?? [], result: m.match_results?.[0] ?? null }));
+    const historyMatches: MatchView[] = (matchesResult.data ?? []).map((m: any) => ({ id: m.id, event_id: m.event_id, round_id: m.round_id, court_number: m.court_number, created_at: m.created_at, youtube_url: m.youtube_url, round_number: roundMap.get(m.round_id) ?? 0, completed: m.completed, players: m.match_players ?? [], result: firstMatchResult(m.match_results) }));
     const knownIds = new Set((participantsResult.data ?? []).map(p => p.id as string));
     if (requestedMode !== "normal" && scoredFriendlyMatches(eventId, historyMatches, knownIds).length < FRIENDLY_MODE_UNLOCK_MATCHES) {
       await loadAll();

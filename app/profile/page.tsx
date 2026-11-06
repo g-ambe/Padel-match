@@ -6,7 +6,7 @@ import { Card } from "@/components/ui";
 import Link from "next/link";
 import { GroupDestinations } from "@/components/group-destinations";
 import { ProfileLinkRequests } from "@/components/profile-link-requests";
-import { hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
+import { firstMatchResult, hasEnteredFriendlyMatchScore, type EmbeddedMatchResults } from "@/lib/friendly-match-results";
 import { fetchCountedFriendlyEvents, readStatsRows } from "@/lib/stats-history";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { choosePlayerProfile, ensureLinkedPlayerProfile, fetchLinkedPlayerProfiles, fetchProfileUsage, preferredPlayerProfileId, profileDetailCount, profileErrorMessage, rememberPlayerProfile, saveLinkedPlayerProfile, type PlayerProfile, type ProfileUsage } from "@/lib/player-profiles";
@@ -269,7 +269,7 @@ function toForm(profile: PlayerProfile): ProfileForm {
   };
 }
 
-type ProfileMatchRow = { team: string; matches: { id: string; event_id: string; completed: boolean; match_results: { score_a: number; score_b: number; winner_team: string }[] } | null };
+type ProfileMatchRow = { team: string; matches: { id: string; event_id: string; completed: boolean; match_results: EmbeddedMatchResults<{ score_a: number; score_b: number; winner_team: string }> } | null };
 
 async function loadProfileStats(s: SupabaseClient, profiles: PlayerProfile[], userId: string): Promise<ProfileStats> {
   const profileIds = profiles.map((profile) => profile.id);
@@ -287,8 +287,8 @@ async function loadProfileStats(s: SupabaseClient, profiles: PlayerProfile[], us
     for (const row of rows) {
       const match = row.matches;
       if (!match || !closedIds.has(match.event_id) || seenMatches.has(match.id)) continue;
-      const result = match.match_results?.[0];
-      if (!hasEnteredFriendlyMatchScore({ completed: match.completed, result })) continue;
+      const result = firstMatchResult(match.match_results);
+      if (!result || !hasEnteredFriendlyMatchScore({ completed: match.completed, result })) continue;
       seenMatches.add(match.id);
       scored += row.team === "A" ? result.score_a : result.score_b;
       conceded += row.team === "A" ? result.score_b : result.score_a;

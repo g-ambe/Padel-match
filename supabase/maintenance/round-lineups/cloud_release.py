@@ -127,6 +127,7 @@ def diagnose():
     definition = guard.pop('definition')
     guard['redacted_body'] = redacted_definition(definition)
     result['reference_guard'] = guard
+    result['score_audit'] = json.loads(common.source_sql((HERE.parent / 'match-result-repair/01_audit.sql').read_text()))
     result['production_mutations'] = False
     return result
 

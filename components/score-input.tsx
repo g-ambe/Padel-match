@@ -14,17 +14,17 @@ type Props = {
   result?: "A" | "B" | "draw" | null;
   saveKey: string;
   names?: readonly [readonly { name: string; guest?: boolean }[], readonly { name: string; guest?: boolean }[]];
-  labels?: readonly [string, string]; title?: string; disabled?: boolean; kind?: ScoreInputKind;
+  labels?: readonly [string, string]; title?: string; disabled?: boolean; kind?: ScoreInputKind; compact?: boolean;
 };
 const numbers = Array.from({ length: 13 }, (_, score) => score);
 const buttonClass = "min-h-12 rounded-xl border border-zinc-600 bg-zinc-800 px-2 py-1 font-bold disabled:opacity-40";
-export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer" }: Props) {
+export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer", compact = false }: Props) {
   const [open, setOpen] = useState(false), [draft, setDraft] = useState<ScorePair>(value), [activeTeam, setActiveTeam] = useState<"a" | "b">("a"), [keyboard, setKeyboard] = useState(false);
   const [chosen, setChosen] = useState({ a: false, b: false });
   const { queue, snapshot } = useScoreSaves(), job = snapshot[saveKey], saving = job?.status === "saving";
   const inputRefs = useRef<Partial<Record<"a" | "b", HTMLInputElement | null>>>({}), statusId = useId();
   const teamLabel = (index: 0 | 1) => names?.[index].map(player => player.name.trim() || "選手名未設定").join(" / ") || labels[index];
-  const teamNames = (index: 0 | 1) => names?.[index].length ? <span className="flex min-w-0 flex-col items-stretch gap-1">{names[index].map((player, i) => <GuestName key={i} name={player.name.trim() || "選手名未設定"} guest={player.guest} compact />)}</span> : labels[index];
+  const teamNames = (index: 0 | 1, expanded = false) => names?.[index].length ? <span className={`flex min-w-0 flex-col items-stretch ${compact ? "gap-0" : "gap-1"} ${compact && expanded ? "max-h-24 overflow-y-auto" : ""}`}>{names[index].map((player, i) => <GuestName key={i} name={player.name.trim() || "選手名未設定"} guest={player.guest} compact={!(compact && expanded)} />)}</span> : labels[index];
   const error = scoreInputError(draft, kind), complete = draft.a.trim() !== "" && draft.b.trim() !== "";
   const close = () => setOpen(false);
   const commit = (scores: ScorePair) => {
@@ -47,11 +47,11 @@ export function ScoreInput({ value, onChange, onCommit, saved = false, result, s
   };
   useEffect(() => { if (disabled || saving) setOpen(false); }, [disabled, saving]);
   useEffect(() => { if (open && keyboard) inputRefs.current[activeTeam]?.focus(); }, [open, keyboard, activeTeam]);
-  return <div data-score-key={saveKey} className="min-w-0 flex-1" aria-busy={saving}>
+  return <div data-score-key={saveKey} className={`min-w-0 flex-1 ${compact ? "friendly-scoreboard-input" : ""}`} aria-busy={saving}>
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
       {(["a", "b"] as const).map((team, index) => <div key={team} className="contents">{index === 1 && <span aria-hidden="true">:</span>}
-        <button type="button" className={`${buttonClass} min-w-0 w-full ${result === (team === "a" ? "A" : "B") ? "score-winner" : ""}`} disabled={disabled || saving} aria-label={`${teamLabel(index as 0 | 1)}の得点を入力：${value[team] || "未入力"}`} aria-describedby={job ? statusId : undefined} aria-haspopup="dialog" onClick={() => begin(team)}>
-          <span className="block min-w-0 text-xs font-normal text-zinc-300">{teamNames(index as 0 | 1)}</span><span className="flex flex-wrap items-center justify-center gap-1"><span className="text-2xl">{value[team] || "—"}</span><ResultBadge result={result} team={team === "a" ? "A" : "B"} /></span>
+        <button type="button" className={`${buttonClass} min-w-0 w-full ${compact ? `friendly-scoreboard-pair pair-${team}` : ""} ${result === (team === "a" ? "A" : "B") ? "score-winner" : ""}`} disabled={disabled || saving} aria-label={`${teamLabel(index as 0 | 1)}の得点を入力：${value[team] || "未入力"}`} aria-describedby={job ? statusId : undefined} aria-haspopup="dialog" onClick={() => begin(team)}>
+          {compact && <span className="block text-[10px] font-semibold leading-3">ペア{team === "a" ? "A" : "B"}</span>}<span className={`block min-w-0 font-normal ${compact ? "text-xs leading-[14px]" : "text-xs text-zinc-300"}`}>{teamNames(index as 0 | 1)}</span><span className="flex flex-wrap items-center justify-center gap-1"><span className={compact ? "text-2xl leading-7" : "text-2xl"}>{value[team] || "—"}</span><ResultBadge result={result} team={team === "a" ? "A" : "B"} /></span>
         </button>
       </div>)}
     </div>
@@ -62,7 +62,7 @@ export function ScoreInput({ value, onChange, onCommit, saved = false, result, s
     </div>}
     <AppDialog open={open} title={title} busy={saving} onClose={close}>
       <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-zinc-700 p-4">
-        {(["a", "b"] as const).map((team, index) => <button key={team} type="button" disabled={saving} aria-pressed={activeTeam === team} className={`min-h-16 min-w-0 break-all rounded-xl border-2 p-2 ${activeTeam === team ? "border-accent bg-zinc-800" : "border-zinc-700"}`} onClick={() => setActiveTeam(team)}><span className="block text-xs">{teamNames(index as 0 | 1)}</span><span className="block break-all text-3xl font-black">{draft[team] || "—"}</span></button>)}
+        {(["a", "b"] as const).map((team, index) => <button key={team} type="button" disabled={saving} aria-pressed={activeTeam === team} className={`min-h-16 min-w-0 break-all rounded-xl border-2 p-2 ${activeTeam === team ? "border-accent bg-zinc-800" : "border-zinc-700"}`} onClick={() => setActiveTeam(team)}><span className="block text-xs">{teamNames(index as 0 | 1, true)}</span><span className="block break-all text-3xl font-black">{draft[team] || "—"}</span></button>)}
       </div>
       <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4">
         <button type="button" disabled={saving} className="min-h-11 w-full rounded-xl border border-zinc-600 text-sm" onClick={() => setKeyboard(previous => !previous)}>{keyboard ? "数字ボタンで選ぶ" : "キーボードで入力"}</button>

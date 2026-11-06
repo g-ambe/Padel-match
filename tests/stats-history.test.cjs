@@ -19,7 +19,7 @@ function eventActions(db, extra = {}) {
     setEditingMatchIds:fn=>state.edits=fn(state.edits), loadAll:async()=>{state.loads++}, router:{push:v=>state.routes.push(v)},
     ...extra,
   };
-  return { state, run:(name,...args)=>handler(eventPage,name,bindings)(...args) };
+  return { state, scoreState:bindings.scoreSaveState.current, run:(name,...args)=>handler(eventPage,name,bindings)(...args) };
 }
 
 test('有効な同一履歴の個人・グループ・ペアの結果が改修前コードと完全一致する', async () => {
@@ -212,14 +212,14 @@ test('スコア更新拒否・確定失敗・0行更新・イベント更新拒�
   for(const name of ['saveScore','closeEvent','reopenEvent','deleteEvent']) {
     const {tables}=fixture(), before=clone(tables), db=database(tables,{fail:c=>c.method!=='GET'});
     const action=eventActions(db,{eventStatus:name==='deleteEvent'?'closed':'active',scoreInputs:{'match-0000':{a:4,b:2}}});
-    await action.run(name,'match-0000');
-    assert.equal(action.state.errors.length,1);assert.equal(action.state.loads,0);assert.deepEqual(action.state.routes,[]);
+    const saved=await action.run(name,'match-0000');
+    if(name==='saveScore'){assert.equal(saved,false);assert.match(action.scoreState.error,/スコア/);assert.equal(action.state.errors.length,0);}else assert.equal(action.state.errors.length,1);assert.equal(action.state.loads,0);assert.deepEqual(action.state.routes,[]);
     assert.deepEqual(tables,before);
   }
   const f=fixture();f.tables.matches[0].completed=false;const db=database(f.tables,{fail:c=>c.table==='matches'&&c.method==='PATCH'});
   const action=eventActions(db,{scoreInputs:{'match-0000':{a:4,b:2}}});
-  await action.run('saveScore','match-0000');
-  assert.match(action.state.errors[0],/確定に失敗/);assert.equal(action.state.loads,0);
+  assert.equal(await action.run('saveScore','match-0000'),false);
+  assert.match(action.scoreState.error,/確定に失敗/);assert.equal(action.state.loads,0);
   const zero=eventActions(db,{eventId:'not-found',eventStatus:'closed'});
   await zero.run('deleteEvent');assert.match(zero.state.errors[0],/削除に失敗/);
 });

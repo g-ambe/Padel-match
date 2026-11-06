@@ -55,7 +55,7 @@ test('同じ参加者の連打は1回だけ送信し、確認前には表示を�
  const {state,bindings}=statusBindings({saveParticipantStatus:async()=>{calls++;await new Promise(r=>release=r);return {status:'resting'};},getSupabaseClient:()=>({})});
  const update=handler(page,'updateStatus',bindings),first=update('p','resting');
  await update('p','absent');assert.equal(calls,1);assert.equal(state.people[0].status,'active');assert(state.busy.has('p'));
- release();await first;assert.equal(state.people[0].status,'resting');assert.equal(state.busy.size,0);assert.match(state.message,/保存しました/);
+ release();await first;assert.equal(state.people[0].status,'resting');assert.equal(state.busy.size,0);assert.equal(state.message,'');
  const db=database({event_participants:[{id:'p',event_id:'event',status:'active'}]});
  const real=statusBindings({getSupabaseClient:()=>db.s});await handler(page,'updateStatus',real.bindings)('p','absent');
  assert(db.calls.every(c=>c.table==='event_participants'));assert.equal(real.state.people[0].status,'absent');

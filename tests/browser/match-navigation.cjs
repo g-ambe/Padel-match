@@ -51,7 +51,7 @@ const poll=async fn=>{const until=Date.now()+12000;while(!await fn()){if(Date.no
   }
   // A/Bを独立して指定。試験内だけA側も管理可能な役職へ変更する。
   f.tables.club_members[0].role='sub_admin';await page.goto(base+'/matches/new');await page.getByRole('link',{name:'チーム戦',exact:true}).first().click();await page.getByLabel('イベント名',{exact:true}).fill('作成テストチーム');
-  for(const [label,group]of [['チームA',clubA],['チームB',clubB]]){const box=page.getByText(label,{exact:true}).locator('..');await box.getByRole('combobox').first().selectOption('group');await box.getByRole('combobox').nth(1).selectOption(group);}
+  for(const [label,group]of [['チームA',clubA],['チームB',clubB]]){const box=page.getByText(label,{exact:true}).locator('..');await box.getByRole('combobox').first().selectOption(group);}
   await page.getByRole('button',{name:'作成',exact:true}).click();await page.waitForURL(/\/team-matches\/[0-9a-f-]+$/);
   const made=f.tables.events.find(e=>e.name==='作成テストチーム'),sides=f.tables.event_team_sides.filter(side=>side.event_id===made.id);assert.equal(sides[0].club_id,clubA);assert.equal(sides[1].club_id,clubB);f.tables.club_members[0].role='member';
   await page.goto(base+'/matches/new');await page.getByRole('link',{name:'チーム戦',exact:true}).last().click();await page.getByLabel('大会/リーグ名').fill('作成テスト公式');await page.getByLabel('所属グループ').selectOption(clubB);await page.getByRole('button',{name:'作成',exact:true}).click();await page.waitForURL(/\/official-matches\/[0-9a-f-]+$/);assert(f.tables.official_events.some(e=>e.title==='作成テスト公式'));

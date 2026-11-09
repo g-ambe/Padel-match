@@ -39,6 +39,10 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
+      - name: Cloudflareと同じBunを検証用ディレクトリへ準備
+        run: |
+          npm install --prefix "$RUNNER_TEMP/bun-tool" --no-package-lock --no-audit --no-fund bun@1.2.15
+          echo "$RUNNER_TEMP/bun-tool/node_modules/.bin" >> "$GITHUB_PATH"
       - name: 単体テスト・TypeScript・Cloudflare互換ビルド
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
@@ -48,7 +52,7 @@ jobs:
           python3 -B - <<'PY'
           import re, subprocess, sys
           # 既存Cloudflareと同じBun。アプリの依存指定・Next.jsを変更しない。
-          for cmd in [['npx','--yes','--package=bun@1.2.15','--call','bun install && npm test && npx tsc --noEmit && npm run cf:build']]:
+          for cmd in [['bun','install'],['npm','test'],['node','node_modules/typescript/bin/tsc','--noEmit'],['npm','run','cf:build']]:
               result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
               print(result.stdout, flush=True)
               if result.returncode:

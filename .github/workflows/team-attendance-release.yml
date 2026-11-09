@@ -1,0 +1,74 @@
+name: PR187の隔離復元・0044適用
+
+on:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: padel-database-backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+
+jobs:
+  verify-and-apply:
+    if: >-
+      github.event.pull_request.number == 187 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/team-roster-ui' &&
+      (github.event.label.name == '187隔離リハーサル' || github.event.label.name == '187本番適用')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      BACKUP_RELEASE_ID: '438791604'
+      BACKUP_ASSET_ID: '726427919'
+      BACKUP_SHA256: 39f749a8319706fb03f0b1ec89c757477885e3a9c725716e5e62231d8d00b954
+      PADEL_BACKUP_WORKDIR: /tmp/padel-team187-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: リリースガードの単体試験
+        run: python3 -B -m unittest discover -s supabase/maintenance/team-attendance -p 'test_cloud_release.py' -v
+      - name: 依存パッケージをロックファイルから取得
+        run: npm ci
+      - name: 単体テスト・TypeScript・Cloudflare互換ビルド
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-test-key
+          NEXT_TELEMETRY_DISABLED: '1'
+        run: |
+          npm test
+          npx tsc --noEmit
+          npm run cf:build
+      - name: 保管済みの暗号化実ファイルを取得・照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 本番接続なしで実データ復元・0044・出欠・競合・復旧を検証
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/team-attendance/cloud_release.py rehearse
+      - name: 公式CAを照合
+        if: github.event.label.name == '187本番適用'
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 承認済み0044のみを原子的に本番適用・再検証
+        if: github.event.label.name == '187本番適用'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PADEL_RELEASE_AUTHORIZED: PR187-0044-20261109
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/team-attendance/cloud_release.py apply

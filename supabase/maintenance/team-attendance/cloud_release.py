@@ -145,11 +145,11 @@ def functions(target):
     def race(first, second):
         process = subprocess.Popen(target.prefix + b.PSQL, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:
-            process.stdin.write((session() + 'BEGIN;' + first + 'SELECT pg_sleep(3);COMMIT;').encode())
+            process.stdin.write((session() + "SET application_name='team187-attendance-race';BEGIN;" + first + 'SELECT pg_sleep(3);COMMIT;').encode())
             process.stdin.close()
             # 固定sleepで先行順序を推測せず、実際の待機中クエリを確認する。
             for _ in range(50):
-                if target.query("SELECT to_json(EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND wait_event='PgSleep' AND query LIKE '%" + eid + "%'))"):
+                if target.query("SELECT to_json(EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid<>pg_backend_pid() AND wait_event='PgSleep' AND application_name='team187-attendance-race'))"):
                     break
                 time.sleep(.1)
             else:
@@ -176,14 +176,19 @@ def rehearse():
             '0044_backup_not_recent')
     target = b.start_isolated_database(root)
     restored = b.restore_files(target, files, manifest)
+    print('::notice title=PR187 DB段階::isolated_restore_and_catalog_verified', flush=True)
+    target.sql('SET ROLE postgres;' + (HERE / '01_preflight.sql').read_text() + 'RESET ROLE;')
     require(not target.query("SELECT to_json(to_regclass('public.event_team_attendance') IS NOT NULL)"), '0044_already_present')
     before = probes(target, manifest)
     rows = json.loads((files / 'rows.json').read_text())
     target.sql('SET ROLE postgres;' + MIGRATION.read_text() + verify_sql() + 'RESET ROLE;')
+    target.sql('SET ROLE postgres;' + (HERE / '02_verify.sql').read_text() + 'RESET ROLE;')
     after = probes(target, manifest)
     check_existing_catalog(before, after)
     require(b.row_fingerprints(target.query, manifest['tables']) == rows, '0044_migration_changed_existing_rows')
+    print('::notice title=PR187 DB段階::0044_applied_existing_rows_and_security_unchanged', flush=True)
     functions(target)
+    print('::notice title=PR187 DB段階::attendance_card_permissions_and_concurrency_verified', flush=True)
     target.sql(verify_sql())
     require(b.row_fingerprints(target.query, manifest['tables']) == rows, '0044_test_cleanup_changed_existing_rows')
     rollback = (HERE / '03_rollback.sql').read_text()
@@ -210,6 +215,7 @@ def apply():
     proof = json.loads((root / 'team187-proof.json').read_text())
     require(proof['head'] == os.environ['BACKUP_SOURCE_SHA'] and proof['main'] == MAIN_SHA and
             proof['backup'] == BACKUP_SHA and proof['migration'] == MIGRATION_SHA, '0044_rehearsal_proof_changed')
+    common.source_sql((HERE / '01_preflight.sql').read_text(), phase='0044_readonly_preflight_failed')
     locks = ','.join('public.' + b.ident(t) for t in ('events','club_members','event_team_sides','event_team_matches','event_team_guests'))
     tables = proof['manifest']['tables']
     sql = ("BEGIN ISOLATION LEVEL REPEATABLE READ;SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='120s';"
@@ -221,6 +227,7 @@ def apply():
     require(result.get('0044_applied') is True, '0044_application_not_confirmed')
     # ここで失敗した場合もDDLを自動で戻さず、状態を保全する。
     common.source_sql('BEGIN READ ONLY;' + verify_sql() + catalog_guard(proof['after']) + 'ROLLBACK;')
+    common.source_sql((HERE / '02_verify.sql').read_text(), phase='0044_verification_query_failed')
     authority()
     return result
 

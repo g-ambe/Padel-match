@@ -13,7 +13,7 @@ CREATE TABLE public.event_team_attendance (
  UNIQUE(event_id,side,member_id), UNIQUE(event_id,side,guest_id)
 );
 ALTER TABLE public.event_team_attendance ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON public.event_team_attendance FROM anon,authenticated;
+REVOKE ALL ON public.event_team_attendance FROM PUBLIC,anon,authenticated;
 GRANT SELECT ON public.event_team_attendance TO authenticated;
 CREATE POLICY team_attendance_read ON public.event_team_attendance FOR SELECT TO authenticated USING (
  EXISTS(SELECT 1 FROM public.events e WHERE e.id=event_id AND e.event_mode='team' AND NOT e.is_deleted

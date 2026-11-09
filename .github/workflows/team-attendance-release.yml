@@ -36,17 +36,28 @@ jobs:
           persist-credentials: false
       - name: リリースガードの単体試験
         run: python3 -B -m unittest discover -s supabase/maintenance/team-attendance -p 'test_cloud_release.py' -v
-      - name: 依存パッケージをロックファイルから取得
-        run: npm ci
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: 既存package.jsonどおり依存パッケージを取得
+        run: npm install --package-lock=false
       - name: 単体テスト・TypeScript・Cloudflare互換ビルド
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-test-key
           NEXT_TELEMETRY_DISABLED: '1'
         run: |
-          npm test
-          npx tsc --noEmit
-          npm run cf:build
+          python3 -B - <<'PY'
+          import re, subprocess, sys
+          for cmd in [['npm','test'],['npx','tsc','--noEmit'],['npm','run','cf:build']]:
+              result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+              print(result.stdout, flush=True)
+              if result.returncode:
+                  # 合成DB・ビルドのみ。本番接続・暗号鍵はこのステップに渡さない。
+                  detail = re.sub(r'(?:https?|postgres(?:ql)?)://\S+', '[URL省略]', result.stdout[-3000:])
+                  print('::error title=PR187回帰試験::' + detail.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
+                  sys.exit(result.returncode)
+          PY
       - name: 保管済みの暗号化実ファイルを取得・照合
         env:
           GH_TOKEN: ${{ github.token }}

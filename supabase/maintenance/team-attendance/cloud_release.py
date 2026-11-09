@@ -19,7 +19,7 @@ spec = importlib.util.spec_from_file_location('release_common', HERE.parent / 'e
 common = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(common)
 MIGRATION = ROOT / 'supabase/migrations/0044_friendly_team_attendance.sql'
-MIGRATION_SHA = 'daaa18166f98df9dfaba9b8d168e4e7592daa0d66470cf56e9484dc5ba737765'
+MIGRATION_SHA = 'd329bcb1ea4fa43f6c513b4805a601210a5706d665a6c7c2c4653d67890ba4ca'
 MAIN_SHA = '59e9032744c930936598c7bed5424146ba8d4721'
 BACKUP_SHA = '39f749a8319706fb03f0b1ec89c757477885e3a9c725716e5e62231d8d00b954'
 

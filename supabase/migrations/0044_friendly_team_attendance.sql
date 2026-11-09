@@ -41,7 +41,7 @@ BEGIN
  IF NOT FOUND THEN RAISE EXCEPTION '現在のチームメンバーを確認してください'; END IF;
  END IF;
  IF p_guest IS NOT NULL THEN
- SELECT * INTO g FROM public.event_team_guests WHERE id=p_guest AND event_id=p_event AND side=p_side;
+ SELECT * INTO g FROM public.event_team_guests WHERE id=p_guest AND event_id=p_event AND side=p_side FOR SHARE;
  IF NOT FOUND THEN RAISE EXCEPTION '現在のゲストを確認してください'; END IF;
  END IF;
  IF p_status='absent' AND EXISTS(SELECT 1 FROM public.event_team_matches m WHERE m.event_id=p_event

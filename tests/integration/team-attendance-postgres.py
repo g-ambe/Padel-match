@@ -61,6 +61,24 @@ try:
  race(insert,absent,'未完了カード')
  assert sql('SELECT count(*) FROM event_team_attendance').stdout.strip()=='0'
  assert sql('SELECT count(*) FROM event_team_matches').stdout.strip()=='1'
+ # 出欠の検証中に、プロフィール統合の所属参照更新が割り込まない。
+ sql(f"INSERT INTO player_profiles VALUES('{u(21)}',true)")
+ first=sp.Popen(cmd,stdin=sp.PIPE,stdout=sp.PIPE,stderr=sp.PIPE,text=True)
+ first.stdin.write(actor+f"BEGIN;SELECT set_friendly_team_attendance('{u(10)}','team_a','{u(30)}',null,'active');SELECT pg_sleep(3);COMMIT;");first.stdin.close()
+ for _ in range(100):
+  if sql("SELECT count(*) FROM pg_stat_activity WHERE wait_event='PgSleep'").stdout.strip()=='1':break
+  time.sleep(.02)
+ else:raise AssertionError('出欠RPCの検証ロックを確認できない')
+ second=sp.Popen(cmd,stdin=sp.PIPE,stdout=sp.PIPE,stderr=sp.PIPE,text=True)
+ second.stdin.write(f"SET application_name='attendance-profile-merge-test';UPDATE club_members SET player_profile_id='{u(21)}' WHERE id='{u(30)}';");second.stdin.close()
+ for _ in range(100):
+  if sql("SELECT count(*) FROM pg_stat_activity WHERE application_name='attendance-profile-merge-test' AND cardinality(pg_blocking_pids(pid))>0").stdout.strip()=='1':break
+  time.sleep(.02)
+ else:raise AssertionError('所属の参照更新がRPC終了まで待機しなかった')
+ first.wait(timeout=15);second.wait(timeout=15)
+ assert first.returncode==0 and second.returncode==0,'プロフィール参照の直列化に失敗'
+ assert sql(f"SELECT player_profile_id='{u(21)}' FROM club_members WHERE id='{u(30)}'").stdout.strip()=='t'
  print('PostgreSQL 17：出欠→編成／編成→出欠の両実行順で競合を拒否し、失敗側の全体ロールバックを確認')
+ print('PostgreSQL 17：出欠検証の所属ロックがプロフィール参照更新を直列化することを確認')
 finally:
  sp.run(['docker','rm','-f',name],capture_output=True)

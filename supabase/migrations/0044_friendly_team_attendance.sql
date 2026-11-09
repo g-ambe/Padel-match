@@ -32,16 +32,18 @@ BEGIN
  THEN RAISE EXCEPTION '開催の出欠を変更する権限がありません' USING ERRCODE='42501'; END IF;
  IF p_side NOT IN ('team_a','team_b') OR p_side IS NULL OR p_status NOT IN ('active','absent') OR p_status IS NULL
  OR num_nonnulls(p_member,p_guest)<>1 THEN RAISE EXCEPTION '出欠の指定が不正です'; END IF;
- IF p_member IS NOT NULL AND NOT EXISTS (
- SELECT 1 FROM public.event_team_sides s JOIN public.club_members cm ON cm.club_id=s.club_id
+ IF p_member IS NOT NULL THEN
+ SELECT COALESCE(cm.player_profile_id,cm.profile_id) INTO player_id FROM
+ public.event_team_sides s JOIN public.club_members cm ON cm.club_id=s.club_id
  JOIN public.player_profiles pp ON pp.id=COALESCE(cm.player_profile_id,cm.profile_id)
  WHERE s.event_id=p_event AND s.side=p_side AND cm.is_active AND pp.is_active AND cm.id=p_member
- ) THEN RAISE EXCEPTION '現在のチームメンバーを確認してください'; END IF;
+ FOR SHARE OF cm;
+ IF NOT FOUND THEN RAISE EXCEPTION '現在のチームメンバーを確認してください'; END IF;
+ END IF;
  IF p_guest IS NOT NULL THEN
  SELECT * INTO g FROM public.event_team_guests WHERE id=p_guest AND event_id=p_event AND side=p_side;
  IF NOT FOUND THEN RAISE EXCEPTION '現在のゲストを確認してください'; END IF;
  END IF;
- IF p_member IS NOT NULL THEN SELECT COALESCE(player_profile_id,profile_id) INTO player_id FROM public.club_members WHERE id=p_member; END IF;
  IF p_status='absent' AND EXISTS(SELECT 1 FROM public.event_team_matches m WHERE m.event_id=p_event
  AND (m.result='undecided' OR m.team_a_score IS NULL OR m.team_b_score IS NULL)
  AND CASE WHEN p_side='team_a' THEN (player_id IN(m.team_a_player1_profile_id,m.team_a_player2_profile_id)

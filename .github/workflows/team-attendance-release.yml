@@ -9,7 +9,8 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: read
+  # 未公開Draft Releaseのバックアップ取得は、既存の復元ジョブと同じ権限が必要。
+  contents: write
   pull-requests: read
   checks: read
 
@@ -61,6 +62,8 @@ jobs:
                   print('::error title=PR187回帰試験::' + detail.replace('%','%25').replace('\r','%0D').replace('\n','%0A'))
                   sys.exit(result.returncode)
           PY
+      - name: PostgreSQL 17の複数接続試験
+        run: python3 -B tests/integration/team-attendance-postgres.py
       - name: 保管済みの暗号化実ファイルを取得・照合
         env:
           GH_TOKEN: ${{ github.token }}

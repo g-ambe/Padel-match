@@ -1,7 +1,8 @@
 "use client";
 
+import { readTeamGroups } from "@/lib/team-groups";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
 import { getOfficialAccess, officialStatusLabel, type OfficialGroup } from "@/lib/official-matches";
@@ -33,13 +34,20 @@ export default function NewFriendlyTeamMatchPage() {
   const [teamBClubId, setTeamBClubId] = useState("");
   const [teamAName, setTeamAName] = useState("チームA");
   const [teamBName, setTeamBName] = useState("チームB");
+  const editedNames = useRef({ a: false, b: false });
+  const chooseGroup = (side: "a" | "b", id: string, edited = editedNames.current[side]) => {
+    const group = groups.find(g => g.id === id);
+    if (side === "a") { setTeamAClubId(id); if (group && !edited) setTeamAName(group.name); }
+    else { setTeamBClubId(id); if (group && !edited) setTeamBName(group.name); }
+  };
+  const [memberGroupIds, setMemberGroupIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const groupReturn = useMatchGroupReturn({
     kind: "friendly_team", ownerId, ready,
-    values: { name, description, memo, teamAMode, teamBMode, teamAClubId, teamBClubId, teamAName, teamBName },
+    values: { name, description, memo, teamAMode, teamBMode, teamAClubId, teamBClubId, teamAName, teamBName, teamAManual: String(editedNames.current.a), teamBManual: String(editedNames.current.b) },
     selectableIds: groups.map(group => group.id),
     restore: value => {
       setName(String(value.name)); setDescription(String(value.description)); setMemo(String(value.memo));
@@ -47,8 +55,9 @@ export default function NewFriendlyTeamMatchPage() {
       setTeamAClubId(groups.some(group => group.id === value.teamAClubId) ? String(value.teamAClubId) : "");
       setTeamBClubId(groups.some(group => group.id === value.teamBClubId) ? String(value.teamBClubId) : "");
       setTeamAName(String(value.teamAName)); setTeamBName(String(value.teamBName));
+      editedNames.current = { a: value.teamAManual === "true" || (value.teamAManual !== "false" && String(value.teamAName) !== (groups.find(g=>g.id===value.teamAClubId)?.name ?? "チームA")), b: value.teamBManual === "true" || (value.teamBManual !== "false" && String(value.teamBName) !== (groups.find(g=>g.id===value.teamBClubId)?.name ?? "チームB")) };
     },
-    selectGroup: (id, slot) => { if (slot === "team_a") { setTeamAMode("group"); setTeamAClubId(id); } else if (slot === "team_b") { setTeamBMode("group"); setTeamBClubId(id); } }
+    selectGroup: (id, slot) => { if (slot === "team_a") { setTeamAMode("group"); chooseGroup("a", id); } else if (slot === "team_b") { setTeamBMode("group"); chooseGroup("b", id); } }
   });
 
 
@@ -56,8 +65,8 @@ export default function NewFriendlyTeamMatchPage() {
     const supabase = getSupabaseClient();
     if (!supabase) return;
     const access = await getOfficialAccess(supabase);
-    const editableGroups = access.groups.filter((group) => access.superUser || group.role !== "member");
-    setGroups(editableGroups);
+    const available = await readTeamGroups(supabase);
+    setGroups(available.groups); setMemberGroupIds(available.memberIds);
     setOwnerId(access.uid || null); setReady(true);
 
     const { data: eventRows } = await supabase
@@ -93,7 +102,7 @@ export default function NewFriendlyTeamMatchPage() {
     }));
   };
 
-  useEffect(() => { void loadInitialData(); }, []);
+  useEffect(() => { void loadInitialData().catch(() => { setReady(false); setError("グループ一覧を取得できませんでした。再読み込みしてください。"); }); }, []);
 
   const createEvent = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -108,7 +117,9 @@ export default function NewFriendlyTeamMatchPage() {
       setLoading(false);
       return setError("ログイン情報を確認できません");
     }
-    const primaryClubId = teamAMode === "group" ? teamAClubId || null : teamBMode === "group" ? teamBClubId || null : null;
+    if ((teamAMode === "group" && !groups.some(g=>g.id===teamAClubId)) || (teamBMode === "group" && !groups.some(g=>g.id===teamBClubId))) { setLoading(false); return setError("チームのグループを選択してください"); }
+    // 公開相手の選択は所属権限を付与しない。開催の所属は本人の所属先だけを使う。
+    const primaryClubId = [teamAMode === "group" ? teamAClubId : "", teamBMode === "group" ? teamBClubId : ""].find(id=>memberGroupIds.includes(id)) || null;
     const { data, error: insertError } = await supabase.from("events").insert({
       name: name.trim(), category: "club", court_count: 1, club_id: primaryClubId, event_mode: "team", stats_mode: "undecided", created_by_auth_user_id: creatorUserId,
       description: description.trim() || null, memo: memo.trim() || null
@@ -134,12 +145,12 @@ export default function NewFriendlyTeamMatchPage() {
       <label className="block text-sm text-zinc-300">イベント名<input className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={name} onChange={(e)=>setName(e.target.value)} /></label>
       <label className="block text-sm text-zinc-300">説明<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={description} onChange={(e)=>setDescription(e.target.value)} /></label>
       <label className="block text-sm text-zinc-300">メモ<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={memo} onChange={(e)=>setMemo(e.target.value)} /></label>
-      <TeamSetup title="チームA" mode={teamAMode} setMode={setTeamAMode} clubId={teamAClubId} setClubId={setTeamAClubId} teamName={teamAName} setTeamName={setTeamAName} groups={groups} canCreateGroup={groupReturn.canCreate} busy={loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_a")} />
-      <TeamSetup title="チームB" mode={teamBMode} setMode={setTeamBMode} clubId={teamBClubId} setClubId={setTeamBClubId} teamName={teamBName} setTeamName={setTeamBName} groups={groups} canCreateGroup={groupReturn.canCreate} busy={loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_b")} />
+      <TeamSetup title="チームA" mode={teamAMode} setMode={setTeamAMode} clubId={teamAClubId} setClubId={id=>chooseGroup("a",id)} teamName={teamAName} setTeamName={value=>{editedNames.current.a=true;setTeamAName(value);}} groups={groups} canCreateGroup={groupReturn.canCreate} busy={loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_a")} />
+      <TeamSetup title="チームB" mode={teamBMode} setMode={setTeamBMode} clubId={teamBClubId} setClubId={id=>chooseGroup("b",id)} teamName={teamBName} setTeamName={value=>{editedNames.current.b=true;setTeamBName(value);}} groups={groups} canCreateGroup={groupReturn.canCreate} busy={loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_b")} />
       {error && <p className="text-sm text-red-400">{error}</p>}
       {groupReturn.message && <p role="status" className="text-sm text-accent">{groupReturn.message}</p>}
       {groupReturn.error && <p role="alert" className="text-sm text-red-400">{groupReturn.error}</p>}
-      <ActionButton disabled={loading || groupReturn.opening}>{loading ? "作成中..." : "作成"}</ActionButton>
+      <ActionButton disabled={!ready || loading || groupReturn.opening}>{loading ? "作成中..." : "作成"}</ActionButton>
     </form></Card>
     <Card title="フレンドリーチームマッチ一覧">
       <div className="space-y-3 text-sm">

@@ -32,6 +32,9 @@ function valuesFor(kind: MatchFormKind, value: unknown): MatchFormValues | null 
     result.courtCount = Number(raw.courtCount);
   }
   if (kind === "friendly_team" && (!["group", "free"].includes(String(raw.teamAMode)) || !["group", "free"].includes(String(raw.teamBMode)))) return null;
+  if (kind === "friendly_team") for (const field of ["teamAManual", "teamBManual"]) {
+    if (raw[field] === "true" || raw[field] === "false") result[field] = raw[field];
+  }
   return result;
 }
 

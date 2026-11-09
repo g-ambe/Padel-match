@@ -54,6 +54,7 @@ test('チーム・公式の新規カードは保存応答喪失後も同じIDで
     let values,save;
     if(kind==='team') {
       values={a1ProfileId:'',a2ProfileId:'',b1ProfileId:'',b2ProfileId:'',a1GuestName:'A',a2GuestName:'B',b1GuestName:'C',b2GuestName:'D',aScore:'4',bScore:'0',result:'win',scoreDetail:'詳細',memo:'保管',youtubeUrl:'https://youtu.be/keep'};
+      Object.assign(b,require('../lib/team-attendance.ts'),{setAttendance:()=>{},guests:{team_a:[],team_b:[]},members:{team_a:[],team_b:[]}});
       b.validate=handler(file,'validate',{isYoutubeUrl:()=>true});b.payload=handler(file,'payload');
       save=()=>handler(file,'saveMatch',b)(false,values);
     }else{

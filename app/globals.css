@@ -251,3 +251,6 @@ body {
 [data-theme="light"] .text-amber-200 { color: #854d0e !important; }
 [data-theme="light"] .bg-red-950\/40, [data-theme="light"] .bg-red-900\/40 { background: #fef2f2 !important; }
 [data-theme="light"] .bg-emerald-950\/40, [data-theme="light"] .bg-emerald-900\/40 { background: #dcfce7 !important; }
+/* フレンドリーチーム戦の候補選択。既存スコアボードと同じ色を使用する。 */
+.team-roster-side.team-side-a { background:var(--friendly-pair-a-bg); color:var(--friendly-pair-a-text); border-color:#25806a; }
+.team-roster-side.team-side-b { background:var(--friendly-pair-b-bg); color:var(--friendly-pair-b-text); border-color:#426a9a; }

@@ -14,11 +14,12 @@ type Props = {
   result?: "A" | "B" | "draw" | null;
   saveKey: string;
   names?: readonly [readonly { name: string; guest?: boolean }[], readonly { name: string; guest?: boolean }[]];
+  pairLabels?: readonly [string,string];
   labels?: readonly [string, string]; title?: string; disabled?: boolean; kind?: ScoreInputKind; compact?: boolean; captureCommit?: boolean;
 };
 const numbers = Array.from({ length: 13 }, (_, score) => score);
 const buttonClass = "min-h-12 rounded-xl border border-zinc-600 bg-zinc-800 px-2 py-1 font-bold disabled:opacity-40";
-export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer", compact = false, captureCommit = false }: Props) {
+export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, pairLabels, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer", compact = false, captureCommit = false }: Props) {
   const [open, setOpen] = useState(false), [draft, setDraft] = useState<ScorePair>(value), [activeTeam, setActiveTeam] = useState<"a" | "b">("a"), [keyboard, setKeyboard] = useState(false);
   const editCommit = useRef(onCommit);
   const [chosen, setChosen] = useState({ a: false, b: false });
@@ -53,7 +54,7 @@ export function ScoreInput({ value, onChange, onCommit, saved = false, result, s
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
       {(["a", "b"] as const).map((team, index) => <div key={team} className="contents">{index === 1 && <span aria-hidden="true">:</span>}
         <button type="button" className={`${buttonClass} min-w-0 w-full ${compact ? `friendly-scoreboard-pair pair-${team}` : ""} ${result === (team === "a" ? "A" : "B") ? "score-winner" : ""}`} disabled={disabled || saving} aria-label={`${teamLabel(index as 0 | 1)}の得点を入力：${value[team] || "未入力"}`} aria-describedby={job ? statusId : undefined} aria-haspopup="dialog" onClick={() => begin(team)}>
-          {compact && <span className="block text-[10px] font-semibold leading-3">ペア{team === "a" ? "A" : "B"}</span>}<span className={`block min-w-0 font-normal ${compact ? "text-xs leading-[14px]" : "text-xs text-zinc-300"}`}>{teamNames(index as 0 | 1)}</span><span className="flex flex-wrap items-center justify-center gap-1"><span className={compact ? "text-2xl leading-7" : "text-2xl"}>{value[team] || "—"}</span><ResultBadge result={result} team={team === "a" ? "A" : "B"} /></span>
+          {compact && <span className="block text-[10px] font-semibold leading-3">{pairLabels?.[index] ?? `ペア${team === "a" ? "A" : "B"}`}</span>}<span className={`block min-w-0 font-normal ${compact ? "text-xs leading-[14px]" : "text-xs text-zinc-300"}`}>{teamNames(index as 0 | 1)}</span><span className="flex flex-wrap items-center justify-center gap-1"><span className={compact ? "text-2xl leading-7" : "text-2xl"}>{value[team] || "—"}</span><ResultBadge result={result} team={team === "a" ? "A" : "B"} /></span>
         </button>
       </div>)}
     </div>

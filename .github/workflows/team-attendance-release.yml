@@ -26,9 +26,9 @@ jobs:
     timeout-minutes: 30
     env:
       BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
-      BACKUP_RELEASE_ID: '438791604'
-      BACKUP_ASSET_ID: '726427919'
-      BACKUP_SHA256: 39f749a8319706fb03f0b1ec89c757477885e3a9c725716e5e62231d8d00b954
+      BACKUP_RELEASE_ID: '438824660'
+      BACKUP_ASSET_ID: '726561241'
+      BACKUP_SHA256: 44a9045b15a328db5f6414baf75a7f4bc6b39df4e7f42fd8c79e93ab5b0288ea
       PADEL_BACKUP_WORKDIR: /tmp/padel-team187-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

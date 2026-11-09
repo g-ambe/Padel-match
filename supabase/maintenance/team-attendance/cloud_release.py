@@ -22,7 +22,7 @@ spec.loader.exec_module(common)
 MIGRATION = ROOT / 'supabase/migrations/0044_friendly_team_attendance.sql'
 MIGRATION_SHA = 'd329bcb1ea4fa43f6c513b4805a601210a5706d665a6c7c2c4653d67890ba4ca'
 MAIN_SHA = '59e9032744c930936598c7bed5424146ba8d4721'
-BACKUP_SHA = '39f749a8319706fb03f0b1ec89c757477885e3a9c725716e5e62231d8d00b954'
+BACKUP_SHA = '44a9045b15a328db5f6414baf75a7f4bc6b39df4e7f42fd8c79e93ab5b0288ea'
 DEFAULT_ACL = """SELECT coalesce(json_agg(json_build_object(
  'owner',pg_get_userbyid(d.defaclrole),'schema',coalesce(n.nspname,''),'kind',d.defaclobjtype,
  'acl',coalesce((SELECT json_agg(json_build_array(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,pg_get_userbyid(a.grantor),a.privilege_type,a.is_grantable)
@@ -176,6 +176,26 @@ def functions(target):
     target.sql('SET ROLE postgres;DELETE FROM public.events WHERE id=' + q(eid) + ';RESET ROLE;')
 
 
+def align_isolated_defaults(target):
+    # 2026-11-09のSELECTで、本番には以下の3行がないことを確認済み。
+    # Supabaseローカル起動が追加する初期値だけを隔離DBから除く。既存オブジェクトのACLは触らない。
+    require(isinstance(target, b.LocalRestore), '0044_default_alignment_requires_isolated_database')
+    actual = target.query(DEFAULT_ACL)
+    extra = [v for v in actual if v['owner']=='supabase_admin' and v['schema']=='supabase_functions']
+    if not extra:
+        return
+    privileges = {'S': {'SELECT','UPDATE','USAGE'}, 'f': {'EXECUTE'},
+                  'r': {'DELETE','INSERT','MAINTAIN','REFERENCES','SELECT','TRIGGER','TRUNCATE','UPDATE'}}
+    require(len(extra)==3 and {v['kind'] for v in extra}==set(privileges), '0044_isolated_bootstrap_defaults_changed')
+    for value in extra:
+        expected = {(role,'supabase_admin',privilege,False) for role in ('anon','authenticated','postgres','service_role') for privilege in privileges[value['kind']]}
+        require({tuple(a) for a in value['acl']}==expected, '0044_isolated_bootstrap_grants_changed')
+    for kind in ('TABLES','SEQUENCES','FUNCTIONS'):
+        target.sql('ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA supabase_functions REVOKE ALL ON ' + kind + ' FROM anon,authenticated,postgres,service_role;')
+    require(not any(v['owner']=='supabase_admin' and v['schema']=='supabase_functions' for v in target.query(DEFAULT_ACL)),
+            '0044_isolated_default_alignment_failed')
+
+
 def rehearse():
     authority()
     root = b.workdir()
@@ -184,6 +204,7 @@ def rehearse():
             '0044_backup_not_recent')
     target = b.start_isolated_database(root)
     restored = b.restore_files(target, files, manifest)
+    align_isolated_defaults(target)
     print('::notice title=PR187 DB段階::isolated_restore_and_catalog_verified', flush=True)
     target.sql('SET ROLE postgres;' + (HERE / '01_preflight.sql').read_text() + 'RESET ROLE;')
     require(not target.query("SELECT to_json(to_regclass('public.event_team_attendance') IS NOT NULL)"), '0044_already_present')

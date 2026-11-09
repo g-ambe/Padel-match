@@ -24,7 +24,9 @@ type Props = {
 };
 
 export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled, onSelect, onAddGuest, continuous = false, onAdd, onCancel, saveDisabled = false, saveError, children }: Props) {
-  const [slot, setSlot] = useState<Slot | null>(continuous ? 0 : null);
+  const [slot, setSlot] = useState<Slot | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<0 | 2 | null>(null);
+  const promptedTeams = useRef(new Set<number>());
   const [guestDraft, setGuestDraft] = useState({ team_a: "", team_b: "" });
   const [guestOpen, setGuestOpen] = useState({ team_a: false, team_b: false });
   const [freeDraft, setFreeDraft] = useState<Record<number, string>>({});
@@ -39,8 +41,11 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
   const recentAvailable = !!recentValue && choices[team].some(choice => choice.value === recentValue);
   const locked = disabled || guestBusy;
   const duplicate = (value: string) => values.some((selected, index) => index !== slot && selected === value);
+  const confirmationValid = confirmTarget !== null && !values[confirmTarget] && !values[confirmTarget + 1]
+    && !!values[2 - confirmTarget] && !!values[3 - confirmTarget];
 
   useEffect(() => { if (disabled && !continuous) setSlot(null); }, [disabled, continuous]);
+  useEffect(() => { if (confirmTarget !== null && !confirmationValid) setConfirmTarget(null); }, [confirmTarget, confirmationValid]);
   useEffect(() => {
     if (!continuous || slot === null) return;
     if (candidateList.current) candidateList.current.scrollTop = 0;
@@ -55,17 +60,29 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
   const open = (next: Slot) => {
     if (disabled || guestLock.current) return;
     setFreeDraft(previous => previous[next] !== undefined ? previous : { ...previous, [next]: values[next].startsWith("guest:") ? values[next].slice(6) : "" });
-    setError(""); setSlot(next);
+    setError(""); setConfirmTarget(null); setSlot(next);
   };
   const close = () => { if (!disabled && !guestLock.current) { if (continuous) onCancel?.(); else setSlot(null); } };
   const choose = (value: string) => {
     if (slot === null || disabled || guestLock.current || (value && duplicate(value))) return;
-    onSelect(slot, value);
-    if (!continuous) setSlot(null);
-    else if (value) {
-      const nextValues = values.map((previous, index) => index === slot ? value : previous);
-      setSlot(nextValues.every(Boolean) ? null : slot < 3 ? (slot + 1) as Slot : nextValues.findIndex(previous => !previous) as Slot);
-    }
+    if (!continuous) { onSelect(slot, value); setSlot(null); return; }
+    const nextValue = value === values[slot] ? "" : value;
+    const nextValues = values.map((previous, index) => index === slot ? nextValue : previous);
+    onSelect(slot, nextValue);
+    setConfirmTarget(null);
+    if (!nextValue) return; // 解除した枠に留まり、そのまま再選択できる。
+    if (nextValues.every(Boolean)) { setSlot(null); return; }
+    const partner = (slot ^ 1) as Slot;
+    if (!nextValues[partner]) { setSlot(partner); return; }
+    if (values[slot]) return; // 選択済み枠の変更だけでは相手チームへ移動しない。
+    const otherStart = (team === 0 ? 2 : 0) as 0 | 2;
+    if (!nextValues[otherStart] && !nextValues[otherStart + 1]) {
+      setSlot(null);
+      if (!promptedTeams.current.has(team)) {
+        promptedTeams.current.add(team);
+        setConfirmTarget(otherStart);
+      }
+    } else setSlot((!nextValues[otherStart] ? otherStart : otherStart + 1) as Slot);
   };
   const addGuest = async () => {
     const name = guestDraft[side].trim();
@@ -83,13 +100,13 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
   const options = [...choices[team]].sort((a, b) => Number(b.value === recentValue) - Number(a.value === recentValue));
   const freeName = slot === null ? "" : (freeDraft[slot] ?? "").trim();
 
-  const selections = <div className="space-y-3">
+  const selections = <div className="space-y-2">
       {([0, 1] as const).map(index => <section key={index} className={`team-player-picker team-side-${index === 0 ? "a" : "b"} min-w-0 space-y-1.5`}>
         <h4 className="team-player-heading flex min-w-0 items-center gap-2 text-sm font-semibold"><span aria-hidden="true" className="team-player-dot h-2 w-2 shrink-0 rounded-full" /><span className="min-w-0 break-words">{teamNames[index]}</span></h4>
         <div className="grid grid-cols-2 gap-2">{([0, 1] as const).map(position => {
           const key = (index * 2 + position) as Slot, value = values[key];
           return <button key={key} data-player-slot={key} data-active={continuous && slot === key} type="button" disabled={disabled || guestBusy} aria-haspopup={continuous ? undefined : "dialog"} aria-pressed={continuous ? slot === key : undefined} aria-label={`${teamNames[index]}の選手${position + 1}を選択：${value ? labels[key] : "未選択"}`} title={value ? labels[key] : undefined}
-            data-selected={!!value} className="team-player-slot flex min-h-12 min-w-0 items-center rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-40" onClick={() => open(key)}>
+            data-selected={!!value} className="team-player-slot flex min-h-11 min-w-0 items-center rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-40" onClick={() => open(key)}>
             <span className="min-w-0 flex-1">{value ? <GuestName name={labels[key]} guest={value.startsWith("guest:")} compact /> : "＋ 選手を選択"}</span>
           </button>;
         })}</div>
@@ -99,23 +116,24 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
     {!continuous && selections}
     <AppDialog open={continuous || slot !== null} title={continuous ? "試合カードを追加" : teamNames[team]} busy={locked} onClose={close}>
       <div data-team-player-pop className={`team-player-picker team-side-${team === 0 ? "a" : "b"} flex min-h-0 flex-col`}>
-        <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4">
-          {continuous && <><p role="status" className="text-xs text-zinc-400">{values.filter(Boolean).length}/4名{slot === null ? " · 追加してください" : ""}</p>{selections}</>}
-          {slot !== null && <>
-          <p className="team-player-heading text-sm font-semibold">{continuous ? `${teamNames[team]} · 選手${slot % 2 + 1}を選択` : "選手を選択"}</p>
-          <div ref={candidateList} data-player-candidates role="group" aria-label={`${teamNames[team]}の選手候補`} className={`grid ${continuous ? "max-h-[28dvh]" : "max-h-[40dvh]"} min-h-0 grid-cols-2 gap-2 overflow-y-auto overscroll-contain p-0.5`}>
+        <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain">
+          {continuous && <div className="shrink-0 space-y-2 p-3"><p role="status" className="text-xs text-zinc-400">{values.filter(Boolean).length}/4名{values.every(Boolean) && slot === null ? " · 追加してください" : ""}</p>{selections}</div>}
+          {continuous && confirmationValid && <div role="group" aria-label="相手チームの選択確認" className="space-y-2 border-t border-zinc-700 p-3"><p className="text-sm">相手チームの選手も選択しますか？</p><div className="grid grid-cols-2 gap-2"><button type="button" disabled={locked} className="min-h-11 rounded-xl bg-accent px-3 text-sm font-bold text-black" onClick={() => { if (confirmTarget !== null && confirmationValid) open(confirmTarget); }}>選択する</button><button type="button" disabled={locked} className="min-h-11 rounded-xl border border-zinc-600 px-3 text-sm" onClick={() => setConfirmTarget(null)}>あとで</button></div></div>}
+          {slot !== null && <div data-player-panel className={`flex min-h-0 flex-col gap-2 p-3 ${continuous ? "border-t border-zinc-700 pt-0" : ""}`}>
+          <div className="flex shrink-0 items-center gap-2"><p className="team-player-heading min-w-0 flex-1 break-words text-sm font-semibold">{continuous ? `${teamNames[team]} · 選手${slot % 2 + 1}` : "選手を選択"}</p>{continuous && <button type="button" disabled={locked} aria-label="選手候補を閉じる" className="min-h-11 min-w-11 shrink-0 rounded-xl text-zinc-400" onClick={() => setSlot(null)}>×</button>}</div>
+          <div ref={candidateList} data-player-candidates role="group" aria-label={`${teamNames[team]}の選手候補`} className={`grid ${continuous ? "max-h-[28dvh] min-h-12" : "max-h-[40dvh] min-h-0"} grid-cols-2 gap-2 overflow-y-auto overscroll-contain p-0.5`}>
             {options.map(choice => {
               const selected = values.includes(choice.value), blocked = duplicate(choice.value), current = slot !== null && values[slot] === choice.value;
               return <button ref={choice.value === recentValue ? recentButton : undefined} key={choice.value} type="button" disabled={locked || blocked} aria-pressed={selected}
                 aria-label={`${teamNames[team]}の${choice.label}を選択`} data-selected={selected} title={blocked ? "他の枠で選択済み" : undefined}
                 className="team-player-option flex min-h-12 min-w-0 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-40" onClick={() => choose(choice.value)}>
                 <GuestName name={choice.label} guest={choice.kind === "guest"} />
-                {selected ? <span className="text-[10px]">✓ {current ? "選択中" : "他の枠で選択済み"}</span> : choice.value === recentValue && <span className="text-[10px]">追加したゲスト</span>}
+                {selected ? <span className="text-[10px]">{current ? "選択中" : "他の枠で選択済み"}</span> : choice.value === recentValue && <span className="text-[10px]">追加したゲスト</span>}
               </button>;
             })}
           </div>
           {!options.length && <p className="text-sm text-zinc-400">参加候補がありません</p>}
-          <details open={guestOpen[side]} onToggle={e => { const expanded = e.currentTarget.open; setGuestOpen(previous => previous[side] === expanded ? previous : { ...previous, [side]: expanded }); }}>
+          <div className="grid shrink-0 grid-cols-2 gap-2"><details open={guestOpen[side]} onToggle={e => { const expanded = e.currentTarget.open; setGuestOpen(previous => previous[side] === expanded ? previous : { ...previous, [side]: expanded }); }}>
             <summary className="team-player-heading flex min-h-11 cursor-pointer list-none items-center text-sm [&::-webkit-details-marker]:hidden">＋ ゲストを追加</summary>
             <div className="space-y-2"><input disabled={locked} className={inputClass} aria-label={`${teamNames[team]}のゲスト名`} placeholder="ゲスト名" value={guestDraft[side]} onChange={e => setGuestDraft(previous => ({ ...previous, [side]: e.target.value }))} />
               <button type="button" disabled={locked || !guestDraft[side].trim()} className="team-player-option min-h-11 w-full rounded-xl border px-3 text-sm disabled:opacity-40" onClick={() => void addGuest()}>{guestBusy ? "追加中…" : "候補に追加"}</button></div>
@@ -125,13 +143,13 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
             <div className="space-y-2"><input disabled={locked} className={inputClass} aria-label={`${teamNames[team]}の自由入力`} placeholder="自由入力" value={slot === null ? "" : freeDraft[slot] ?? ""} onChange={e => { if (slot !== null) setFreeDraft(previous => ({ ...previous, [slot]: e.target.value })); }} />
               {freeName && duplicate(`guest:${freeName}`) && <p role="status" className="text-xs text-amber-300">別の枠で選択済みです</p>}
               <button type="button" disabled={locked || !freeName || duplicate(`guest:${freeName}`)} className="team-player-option min-h-11 w-full rounded-xl border px-3 text-sm disabled:opacity-40" onClick={() => choose(`guest:${freeName}`)}>この名前を選択</button></div>
-          </details>
-          </>}
-          {children}
-          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
-          {saveError && <p role="alert" className="text-sm text-red-400">{saveError}</p>}
+          </details></div>
+          </div>}
+          <div hidden={continuous && (slot !== null || confirmationValid)} className="shrink-0 px-3">{children}</div>
+          {error && <p role="alert" className="shrink-0 p-3 text-sm text-red-400">{error}</p>}
+          {saveError && <p role="alert" className="shrink-0 p-3 text-sm text-red-400">{saveError}</p>}
         </div>
-        <div className="shrink-0 space-y-2 border-t border-zinc-700 p-3">{(!continuous || slot !== null) && <button type="button" disabled={locked || slot === null || !values[slot]} className="min-h-11 w-full rounded-xl border border-zinc-600 text-sm disabled:opacity-40" onClick={() => choose("")}>選択を解除</button>}
+        <div className="shrink-0 space-y-2 border-t border-zinc-700 p-3">{!continuous && <button type="button" disabled={locked || slot === null || !values[slot]} className="min-h-11 w-full rounded-xl border border-zinc-600 text-sm disabled:opacity-40" onClick={() => choose("")}>選択を解除</button>}
           {continuous && <div className="grid grid-cols-2 gap-2"><button type="button" disabled={locked || saveDisabled} className="min-h-11 rounded-xl bg-accent px-3 font-bold text-black disabled:opacity-40" onClick={onAdd}>{disabled ? "追加中…" : "追加"}</button><button type="button" disabled={locked} className="min-h-11 rounded-xl border border-zinc-600 px-3 text-sm disabled:opacity-40" onClick={close}>キャンセル</button></div>}
         </div>
       </div>

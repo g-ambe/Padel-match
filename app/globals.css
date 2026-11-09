@@ -260,7 +260,7 @@ body {
 .team-player-heading { color:var(--team-picker-text); }
 .team-player-dot { background:var(--team-picker-border); }
 .team-player-slot, .team-player-option { background:var(--app-card); color:var(--app-text); border-color:var(--app-border); }
-.team-player-slot { border-color:var(--team-picker-border); }
-.team-player-slot[data-selected="true"], .team-player-option[data-selected="true"] { background:var(--team-picker-bg); color:var(--team-picker-text); border-color:var(--team-picker-border); }
+.team-player-slot[data-selected="true"] { color:var(--team-picker-text); }
+.team-player-option[data-selected="true"] { background:var(--team-picker-bg); color:var(--team-picker-text); border-color:var(--team-picker-border); }
 .team-player-slot:focus-visible, .team-player-option:focus-visible { outline:2px solid var(--team-picker-border); outline-offset:2px; }
-.team-player-slot[data-active="true"] { outline:2px solid var(--team-picker-border); outline-offset:2px; }
+.team-player-slot[data-active="true"] { background:var(--team-picker-bg); color:var(--team-picker-text); border-color:var(--team-picker-border); }

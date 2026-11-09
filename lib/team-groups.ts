@@ -15,5 +15,5 @@ export async function readTeamGroups(s: SupabaseClient) {
   const clubs = await s.from("clubs").select("id,name,visibility").eq("is_active",true).eq("is_deleted",false);
   if (clubs.error) throw clubs.error;
   const groups = [...new Map((clubs.data ?? []).filter(g=>roles.has(g.id)||g.visibility==="public").map(g=>[g.id,{id:g.id,name:g.name,role:roles.get(g.id) ?? "member"} as OfficialGroup])).values()];
-  return { groups, memberIds: [...roles.keys()] as string[] };
+  return { uid: auth.user.id, groups, memberIds: [...roles.keys()] as string[] };
 }

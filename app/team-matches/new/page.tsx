@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
 import { getOfficialAccess, officialStatusLabel, type OfficialGroup } from "@/lib/official-matches";
-import { getSupabaseClient } from "@/lib/supabase";
+import { getSupabaseClient, getSupabaseEnvErrorMessage } from "@/lib/supabase";
 import { useMatchGroupReturn } from "@/components/use-match-group-return";
 
 type SideMode = "group" | "free";
@@ -44,6 +44,9 @@ export default function NewFriendlyTeamMatchPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [groupLoading, setGroupLoading] = useState(true);
+  const [groupError, setGroupError] = useState("");
+  const [historyError, setHistoryError] = useState("");
   const [ready, setReady] = useState(false);
   const groupReturn = useMatchGroupReturn({
     kind: "friendly_team", ownerId, ready,
@@ -62,24 +65,33 @@ export default function NewFriendlyTeamMatchPage() {
 
 
   const loadInitialData = async () => {
+    setGroupLoading(true); setGroupError(""); setReady(false);
     const supabase = getSupabaseClient();
-    if (!supabase) return;
-    const access = await getOfficialAccess(supabase);
-    const available = await readTeamGroups(supabase);
+    if (!supabase) { setGroupLoading(false); setGroupError(getSupabaseEnvErrorMessage() || "接続を確認できません"); return; }
+    let available: Awaited<ReturnType<typeof readTeamGroups>>;
+    try { available = await readTeamGroups(supabase); }
+    catch { setGroupError("グループ一覧を取得できませんでした。再取得してください。"); return; }
+    finally { setGroupLoading(false); }
     setGroups(available.groups); setMemberGroupIds(available.memberIds);
-    setOwnerId(access.uid || null); setReady(true);
+    setOwnerId(available.uid); setReady(true);
+    // 開催履歴の取得失敗・遅延でグループ選択を止めない。
+    try {
+    const access = await getOfficialAccess(supabase);
+    setHistoryError("");
 
-    const { data: eventRows } = await supabase
+    const { data: eventRows, error: eventError } = await supabase
       .from("events")
       .select("id,name,status,created_at,club_id,created_by_auth_user_id")
       .eq("event_mode", "team")
       .eq("is_deleted", false)
       .order("created_at", { ascending: false });
+    if (eventError) throw eventError;
     const rawEvents = (eventRows ?? []) as TeamEventRow[];
     if (!rawEvents.length) return setEvents([]);
 
     const eventIds = rawEvents.map((event) => event.id);
-    const { data: sideRows } = await supabase.from("event_team_sides").select("event_id,side,club_id,team_name").in("event_id", eventIds);
+    const { data: sideRows, error: sideError } = await supabase.from("event_team_sides").select("event_id,side,club_id,team_name").in("event_id", eventIds);
+    if (sideError) throw sideError;
     const sides = (sideRows ?? []) as TeamSideRow[];
     const sidesByEvent = new Map<string, TeamSideRow[]>();
     for (const side of sides) sidesByEvent.set(side.event_id, [...(sidesByEvent.get(side.event_id) ?? []), side]);
@@ -100,9 +112,10 @@ export default function NewFriendlyTeamMatchPage() {
         teamBName: eventSides.find((side) => side.side === "team_b")?.team_name || "チームB"
       };
     }));
+    } catch { setHistoryError("開催一覧を取得できませんでした。"); }
   };
 
-  useEffect(() => { void loadInitialData().catch(() => { setReady(false); setError("グループ一覧を取得できませんでした。再読み込みしてください。"); }); }, []);
+  useEffect(() => { void loadInitialData(); }, []);
 
   const createEvent = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -145,8 +158,11 @@ export default function NewFriendlyTeamMatchPage() {
       <label className="block text-sm text-zinc-300">イベント名<input className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={name} onChange={(e)=>setName(e.target.value)} /></label>
       <label className="block text-sm text-zinc-300">説明<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={description} onChange={(e)=>setDescription(e.target.value)} /></label>
       <label className="block text-sm text-zinc-300">メモ<textarea className="mt-1 w-full rounded-xl bg-zinc-800 p-3 text-white" value={memo} onChange={(e)=>setMemo(e.target.value)} /></label>
-      <TeamSetup title="チームA" mode={teamAMode} setMode={setTeamAMode} clubId={teamAClubId} setClubId={id=>chooseGroup("a",id)} teamName={teamAName} setTeamName={value=>{editedNames.current.a=true;setTeamAName(value);}} groups={groups} canCreateGroup={groupReturn.canCreate} busy={loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_a")} />
-      <TeamSetup title="チームB" mode={teamBMode} setMode={setTeamBMode} clubId={teamBClubId} setClubId={id=>chooseGroup("b",id)} teamName={teamBName} setTeamName={value=>{editedNames.current.b=true;setTeamBName(value);}} groups={groups} canCreateGroup={groupReturn.canCreate} busy={loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_b")} />
+      {groupLoading && <p role="status" className="text-sm text-zinc-300">所属・公開グループを取得中…</p>}
+      {groupError && <div role="alert" className="space-y-2 text-sm text-red-400"><p>{groupError}</p><button type="button" className="min-h-11 rounded-xl border border-zinc-600 px-3" onClick={()=>void loadInitialData()}>グループを再取得</button></div>}
+      {ready && groups.length === 0 && <p role="status" className="text-sm text-zinc-300">選択できる所属・公開グループがありません。グループなしでも作成できます。</p>}
+      <TeamSetup title="チームA" mode={teamAMode} setMode={setTeamAMode} clubId={teamAClubId} setClubId={id=>chooseGroup("a",id)} teamName={teamAName} setTeamName={value=>{editedNames.current.a=true;setTeamAName(value);}} groups={groups} canCreateGroup={groupReturn.canCreate} busy={!ready || groupLoading || loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_a")} />
+      <TeamSetup title="チームB" mode={teamBMode} setMode={setTeamBMode} clubId={teamBClubId} setClubId={id=>chooseGroup("b",id)} teamName={teamBName} setTeamName={value=>{editedNames.current.b=true;setTeamBName(value);}} groups={groups} canCreateGroup={groupReturn.canCreate} busy={!ready || groupLoading || loading || groupReturn.opening} onCreateGroup={() => void groupReturn.begin("team_b")} />
       {error && <p className="text-sm text-red-400">{error}</p>}
       {groupReturn.message && <p role="status" className="text-sm text-accent">{groupReturn.message}</p>}
       {groupReturn.error && <p role="alert" className="text-sm text-red-400">{groupReturn.error}</p>}
@@ -154,7 +170,8 @@ export default function NewFriendlyTeamMatchPage() {
     </form></Card>
     <Card title="フレンドリーチームマッチ一覧">
       <div className="space-y-3 text-sm">
-        {events.length === 0 && <p className="text-zinc-400">フレンドリーチームマッチはまだありません</p>}
+        {historyError && <p role="alert">{historyError}</p>}
+        {!historyError && events.length === 0 && <p className="text-zinc-400">フレンドリーチームマッチはまだありません</p>}
         {events.map((event) => <div key={event.id} className="space-y-2 rounded-2xl border border-zinc-700 bg-zinc-900/70 p-3">
           <p className="font-bold">{event.name}</p>
           <p>{event.teamAName} vs {event.teamBName}</p>
@@ -169,8 +186,7 @@ export default function NewFriendlyTeamMatchPage() {
 
 function TeamSetup({ title, mode, setMode, clubId, setClubId, teamName, setTeamName, groups, canCreateGroup, busy, onCreateGroup }: { title: string; mode: SideMode; setMode: (v: SideMode)=>void; clubId: string; setClubId: (v:string)=>void; teamName: string; setTeamName: (v:string)=>void; groups: OfficialGroup[]; canCreateGroup: boolean; busy: boolean; onCreateGroup: () => void }) {
   return <section className="space-y-2 rounded-2xl border border-zinc-700 p-3"><p className="font-bold">{title}</p>
-    <select className="w-full rounded-xl bg-zinc-800 p-3" value={mode} onChange={(e)=>{ const next = e.target.value as SideMode; setMode(next); if (next === "free") setClubId(""); }}><option value="group">グループを選択する</option><option value="free">グループなしで入力する</option></select>
-    {mode === "group" && <select className="w-full rounded-xl bg-zinc-800 p-3" value={clubId} onChange={(e)=>setClubId(e.target.value)}><option value="">グループを選択する</option>{groups.map((g)=><option key={g.id} value={g.id}>{g.name}</option>)}</select>}
+    <label className="block text-sm text-zinc-300">{title}のグループ<select aria-label={`${title}のグループ`} disabled={busy} className="mt-1 min-h-11 w-full rounded-xl bg-zinc-800 p-3 disabled:opacity-50" value={mode === "group" ? clubId : ""} onChange={(e)=>{const id=e.target.value;setMode(id?"group":"free");setClubId(id);}}><option value="">グループなしで入力する</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
     {canCreateGroup && <button type="button" disabled={busy} className="min-h-11 text-sm text-accent underline" onClick={onCreateGroup}>＋ 新しいグループを作成</button>}
     <label className="block text-sm text-zinc-300">チーム名<input className="mt-1 w-full rounded-xl bg-zinc-800 p-3" value={teamName} onChange={(e)=>setTeamName(e.target.value)} /></label>
   </section>;

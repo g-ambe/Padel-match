@@ -39,8 +39,6 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
-      - name: 既存package.jsonどおり依存パッケージを取得
-        run: npm install --package-lock=false
       - name: 単体テスト・TypeScript・Cloudflare互換ビルド
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
@@ -49,7 +47,7 @@ jobs:
         run: |
           python3 -B - <<'PY'
           import re, subprocess, sys
-          for cmd in [['npm','test'],['npx','tsc','--noEmit'],['npm','run','cf:build']]:
+          for cmd in [['npm','install','--package-lock=false'],['npm','test'],['npx','tsc','--noEmit'],['npm','run','cf:build']]:
               result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
               print(result.stdout, flush=True)
               if result.returncode:

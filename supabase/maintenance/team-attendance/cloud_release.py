@@ -23,6 +23,12 @@ MIGRATION = ROOT / 'supabase/migrations/0044_friendly_team_attendance.sql'
 MIGRATION_SHA = 'd329bcb1ea4fa43f6c513b4805a601210a5706d665a6c7c2c4653d67890ba4ca'
 MAIN_SHA = '59e9032744c930936598c7bed5424146ba8d4721'
 BACKUP_SHA = '39f749a8319706fb03f0b1ec89c757477885e3a9c725716e5e62231d8d00b954'
+DEFAULT_ACL = """SELECT coalesce(json_agg(json_build_object(
+ 'owner',pg_get_userbyid(d.defaclrole),'schema',coalesce(n.nspname,''),'kind',d.defaclobjtype,
+ 'acl',coalesce((SELECT json_agg(json_build_array(CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,pg_get_userbyid(a.grantor),a.privilege_type,a.is_grantable)
+ ORDER BY CASE WHEN a.grantee=0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee) END,pg_get_userbyid(a.grantor),a.privilege_type,a.is_grantable)
+ FROM aclexplode(d.defaclacl) a),'[]'::json)) ORDER BY pg_get_userbyid(d.defaclrole),coalesce(n.nspname,''),d.defaclobjtype),'[]'::json)
+ FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace"""
 
 
 def require(value, phase):
@@ -55,6 +61,7 @@ def probes(target, manifest):
               (['team_attendance_private'] if target.query("SELECT to_json(to_regnamespace('team_attendance_private') IS NOT NULL)") else []))
     capture(b.ROLE_METADATA)
     capture("SELECT coalesce(json_agg(json_build_array(pg_get_userbyid(d.defaclrole),coalesce(n.nspname,''),d.defaclobjtype,d.defaclacl::text) ORDER BY pg_get_userbyid(d.defaclrole),coalesce(n.nspname,''),d.defaclobjtype),'[]') FROM pg_default_acl d LEFT JOIN pg_namespace n ON n.oid=d.defaclnamespace")
+    capture(DEFAULT_ACL)
     return result
 
 
@@ -238,6 +245,8 @@ def diagnose():
     authority()
     proof = json.loads((b.workdir() / 'team187-proof.json').read_text())
     def label(index, sql):
+        if sql == DEFAULT_ACL:
+            return 'default_acl_semantic'
         table = re.search(r"c\.oid='\"([a-z0-9_]+)\"\.\"([a-z0-9_]+)\"'::regclass", sql)
         if table:
             return 'table:' + '.'.join(table.groups())
@@ -258,7 +267,19 @@ def diagnose():
            "'catalog_mismatches',(SELECT coalesce(json_agg(name),'[]') FROM (" + ' UNION ALL '.join(catalog_parts) + ") c)," +
            "'changed_tables',(SELECT coalesce(json_agg(name),'[]') FROM (" + ' UNION ALL '.join(row_parts) + ") r)," +
            "'production_mutations',false);ROLLBACK;")
-    return json.loads(common.source_sql(sql, phase='0044_readonly_diagnostics_failed'))
+    result = json.loads(common.source_sql(sql, phase='0044_readonly_diagnostics_failed'))
+    actual = json.loads(common.source_sql('BEGIN READ ONLY;' + b.SQL_SETTINGS + DEFAULT_ACL + ';ROLLBACK;', phase='0044_default_acl_readonly_failed'))
+    expected = next(p['value'] for p in proof['before'] if p['sql'] == DEFAULT_ACL)
+    def key(value):
+        return (value['owner'], value['schema'], value['kind'])
+    old, new = {key(v):v['acl'] for v in expected}, {key(v):v['acl'] for v in actual}
+    known = {'postgres','supabase_admin','supabase_auth_admin','supabase_storage_admin','authenticated','anon','service_role','authenticator','dashboard_user','PUBLIC'}
+    def redact(values):
+        return [[role if role in known else 'other_role',grantor if grantor in known else 'other_role',privilege,grantable]
+                for role,grantor,privilege,grantable in values]
+    result['default_acl_differences'] = [{'owner':k[0] if k[0] in known else 'other_role','schema':k[1] if re.fullmatch(r'[a-z0-9_]*',k[1]) else 'other_schema','kind':k[2],
+        'isolated':redact(old.get(k,[])),'production':redact(new.get(k,[]))} for k in sorted(old.keys()|new.keys()) if old.get(k)!=new.get(k)]
+    return result
 
 
 if __name__ == '__main__':

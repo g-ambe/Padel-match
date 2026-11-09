@@ -5,7 +5,7 @@ on:
     types: [labeled]
 
 concurrency:
-  group: padel-database-backup
+  group: padel-team187-release
   cancel-in-progress: false
 
 permissions:

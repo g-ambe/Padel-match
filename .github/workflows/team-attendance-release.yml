@@ -21,7 +21,7 @@ jobs:
       github.event.pull_request.state == 'open' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.head.ref == 'codex/team-roster-ui' &&
-      (github.event.label.name == '187隔離リハーサル' || github.event.label.name == '187本番適用')
+      (github.event.label.name == '187隔離リハーサル' || github.event.label.name == '187本番適用' || github.event.label.name == '187本番照合')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -38,13 +38,16 @@ jobs:
       - name: リリースガードの単体試験
         run: python3 -B -m unittest discover -s supabase/maintenance/team-attendance -p 'test_cloud_release.py' -v
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: github.event.label.name != '187本番照合'
         with:
           node-version: '24'
       - name: Cloudflareと同じBunを検証用ディレクトリへ準備
+        if: github.event.label.name != '187本番照合'
         run: |
           npm install --prefix "$RUNNER_TEMP/bun-tool" --no-package-lock --no-audit --no-fund bun@1.2.15
           echo "$RUNNER_TEMP/bun-tool/node_modules/.bin" >> "$GITHUB_PATH"
       - name: 単体テスト・TypeScript・Cloudflare互換ビルド
+        if: github.event.label.name != '187本番照合'
         env:
           NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-test-key
@@ -63,6 +66,7 @@ jobs:
                   sys.exit(result.returncode)
           PY
       - name: PostgreSQL 17の複数接続試験
+        if: github.event.label.name != '187本番照合'
         run: python3 -B tests/integration/team-attendance-postgres.py
       - name: 保管済みの暗号化実ファイルを取得・照合
         env:
@@ -77,10 +81,17 @@ jobs:
           SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
         run: python3 -B supabase/maintenance/team-attendance/cloud_release.py rehearse
       - name: 公式CAを照合
-        if: github.event.label.name == '187本番適用'
+        if: github.event.label.name == '187本番適用' || github.event.label.name == '187本番照合'
         env:
           PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 本番はSELECTだけで差異の分類と0044未適用を確認
+        if: github.event.label.name == '187本番照合'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/team-attendance/cloud_release.py diagnose
       - name: 承認済み0044のみを原子的に本番適用・再検証
         if: github.event.label.name == '187本番適用'
         env:

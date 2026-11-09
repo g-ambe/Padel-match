@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -232,10 +233,38 @@ def apply():
     return result
 
 
+def diagnose():
+    """本番はSELECTだけ。行の値・ID・得点・定義本文をログへ出さない。"""
+    authority()
+    proof = json.loads((b.workdir() / 'team187-proof.json').read_text())
+    def label(index, sql):
+        table = re.search(r"c\.oid='\"([a-z0-9_]+)\"\.\"([a-z0-9_]+)\"'::regclass", sql)
+        if table:
+            return 'table:' + '.'.join(table.groups())
+        schema = re.search(r"n\.nspname='([a-z0-9_]+)'", sql)
+        if schema:
+            return ('functions:' if 'pg_proc p' in sql else 'schema:') + schema.group(1)
+        return 'default_acl' if 'pg_default_acl' in sql else 'roles' if 'pg_catalog.pg_roles' in sql else 'catalog_' + str(index)
+    catalog_parts = []
+    for index, probe in enumerate(proof['before']):
+        catalog_parts.append('SELECT ' + b.literal(label(index, probe['sql'])) + "::text name WHERE (" + probe['sql'] + ')::jsonb IS DISTINCT FROM ' + b.literal(json.dumps(probe['value'], ensure_ascii=False)) + '::jsonb')
+    row_parts = []
+    for row in proof['rows']:
+        relation = b.ident(row['schema']) + '.' + b.ident(row['name'])
+        expected = json.dumps({'rows': row['rows'], 'sha256': row['sha256']})
+        row_parts.append('SELECT ' + b.literal(row['schema'] + '.' + row['name']) + '::text name WHERE ' + common.row_expression(relation) + ' IS DISTINCT FROM ' + b.literal(expected) + '::jsonb')
+    sql = ("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;" + b.SQL_SETTINGS +
+           "SELECT json_build_object('attendance_present',to_regclass('public.event_team_attendance') IS NOT NULL," +
+           "'catalog_mismatches',(SELECT coalesce(json_agg(name),'[]') FROM (" + ' UNION ALL '.join(catalog_parts) + ") c)," +
+           "'changed_tables',(SELECT coalesce(json_agg(name),'[]') FROM (" + ' UNION ALL '.join(row_parts) + ") r)," +
+           "'production_mutations',false);ROLLBACK;")
+    return json.loads(common.source_sql(sql, phase='0044_readonly_diagnostics_failed'))
+
+
 if __name__ == '__main__':
     os.umask(0o077)
     try:
-        action = {'rehearse': rehearse, 'apply': apply}[sys.argv[1]]
+        action = {'rehearse': rehearse, 'apply': apply, 'diagnose': diagnose}[sys.argv[1]]
         result = action()
         print('::notice title=PR187 DB確認::' + json.dumps(result, ensure_ascii=False), flush=True)
     except b.BackupError as exc:

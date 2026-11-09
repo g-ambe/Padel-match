@@ -58,7 +58,8 @@ def probes(target, manifest):
 
 
 def catalog_guard(values):
-    return ''.join("DO $catalog$ BEGIN IF (" + v['sql'] + ")::jsonb IS DISTINCT FROM " +
+    # pg_get_*の修飾名表示も、バックアップ・隔離照合と同じ探索パスへ固定する。
+    return "SET search_path='';" + ''.join("DO $catalog$ BEGIN IF (" + v['sql'] + ")::jsonb IS DISTINCT FROM " +
                    b.literal(json.dumps(v['value'], ensure_ascii=False)) +
                    "::jsonb THEN RAISE EXCEPTION '0044_catalog_changed' USING ERRCODE='40001'; END IF; END $catalog$;" for v in values)
 

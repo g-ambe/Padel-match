@@ -2,6 +2,22 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {fixedPairDatabase,id}=require('./fixtures/fixed-pair-db.cjs');
+test('退会後に閲覧権限を失った作成者は出欠RPCも更新できない',async()=>{
+ const {db,as,event,rpc}=await fixedPairDatabase(false);
+ try{
+  await db.exec(fs.readFileSync('supabase/migrations/0044_friendly_team_attendance.sql','utf8'));
+  const a=await event(951,0,{mode:'team'});
+  await db.query('update events set created_by_auth_user_id=$1 where id=$2',[id(3),a.eid]);
+  await db.query("insert into event_team_sides(event_id,side,club_id,team_name) values($1,'team_a',$2,'相手側')",[a.eid,id(601)]);
+  const cm=(await db.query('select id from club_members where player_profile_id=$1',[id(104)])).rows[0].id;
+  await db.query('update club_members set is_active=false where player_profile_id=$1',[id(103)]);
+  await as(3);
+  assert.equal((await db.query('select id from events where id=$1',[a.eid])).rows.length,0);
+  await assert.rejects(()=>rpc('set_friendly_team_attendance',[a.eid,'team_a',cm,null,'absent']),/権限/);
+  await db.exec('reset role');
+  assert.equal((await db.query('select count(*)::int n from event_team_attendance')).rows[0].n,0);
+ }finally{await db.close();}
+});
 test('チーム戦の出欠は所属IDで保持し、欠席・未完了カード・権限・過去スコアをDBで保護する',async()=>{
  const {db,as,event,rpc}=await fixedPairDatabase(false);
  try{

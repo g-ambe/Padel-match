@@ -28,6 +28,7 @@ BEGIN
  SELECT * INTO e FROM public.events WHERE id=p_event FOR UPDATE;
  IF NOT FOUND OR e.event_mode<>'team' OR e.is_deleted OR e.status<>'active'
  OR NOT coalesce(public.can_manage_friendly_team_event_by_sides(e.id,e.created_by_auth_user_id),false)
+ OR NOT coalesce(public.can_view_friendly_team_event_by_sides(e.id,e.created_by_auth_user_id),false)
  THEN RAISE EXCEPTION '開催の出欠を変更する権限がありません' USING ERRCODE='42501'; END IF;
  IF p_side NOT IN ('team_a','team_b') OR p_side IS NULL OR p_status NOT IN ('active','absent') OR p_status IS NULL
  OR num_nonnulls(p_member,p_guest)<>1 THEN RAISE EXCEPTION '出欠の指定が不正です'; END IF;

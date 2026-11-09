@@ -48,7 +48,7 @@ jobs:
           python3 -B - <<'PY'
           import re, subprocess, sys
           # 既存Cloudflareと同じBun。アプリの依存指定・Next.jsを変更しない。
-          for cmd in [['npx','--yes','bun@1.2.15','install'],['npm','test'],['npx','tsc','--noEmit'],['npm','run','cf:build']]:
+          for cmd in [['npx','--yes','--package=bun@1.2.15','--call','bun install && npm test && npx tsc --noEmit && npm run cf:build']]:
               result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
               print(result.stdout, flush=True)
               if result.returncode:

@@ -10,6 +10,7 @@ const eventCourts = require('../../lib/event-courts.ts');
 const { fetchBalancePastStats } = require('../../lib/friendly-balance-history.ts');
 const fixedPairs = require('../../lib/event-fixed-pairs.ts');
 const roundLineup = require('../../lib/round-lineup.ts');
+const teamRounds = require('../../lib/friendly-team-rounds.ts');
 
 // Reactを偽装せず、画面が実行する関数そのものをASTから取り出して検証する。
 function expression(source, name) {
@@ -28,7 +29,7 @@ function expression(source, name) {
 }
 function evaluate(source, name, bindings = {}) {
   const code = ts.transpileModule(`module.exports = (${expression(source, name)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, ...roundLineup, generationBusy:false,teamSlots:["team_a_player1","team_a_player2","team_b_player1","team_b_player2"],eventMode:"manual", fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, setEventTab:()=>{}, initializeEventTab:()=>{}, participantStatusRevision:{current:0}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
+  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, ...roundLineup, ...teamRounds,generationBusy:false,eventMode:"manual", fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, setEventTab:()=>{}, initializeEventTab:()=>{}, participantStatusRevision:{current:0}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
   const module = { exports: {} };
   new Function('module', ...Object.keys(values), code)(module, ...Object.values(values));
   return module.exports;

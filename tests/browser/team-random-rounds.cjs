@@ -22,12 +22,12 @@ const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3047',remote='http
    if(b.p_revision!==String(revision))return {error:'出欠・試合履歴が更新されています。再度生成してください'};
    const rid=id(seq++),rn=rounds.length+1;
    rounds.push({id:rid,round_number:rn,mode:b.p_mode,court_count:b.p_cards.length,eligible:roster()});
-   for(const c of b.p_cards){const m={id:id(seq++),event_id:team,match_order:f.tables.event_team_matches.length+1,round_id:rid,round_number:rn,court_number:c.court,generation_mode:b.p_mode,team_a_score:null,team_b_score:null,result:'undecided',score_detail:null,memo:null,youtube_url:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};c.pairs.flat().forEach((p,i)=>{const slot=['team_a_player1','team_a_player2','team_b_player1','team_b_player2'][i];m[slot+'_profile_id']=p.profile_id;m[slot+'_guest_id']=p.guest_id;m[slot+'_guest_name']=p.guest_id?p.name:null;m[slot+'_source_side']=p.source;});f.tables.event_team_matches.push(m);}
+   for(const c of b.p_cards){const m={id:id(seq++),event_id:team,match_order:f.tables.event_team_matches.length+1,round_id:rid,round_number:rn,court_number:c.court,generation_mode:b.p_mode,team_a_score:null,team_b_score:null,result:'undecided',score_detail:null,memo:null,youtube_url:null,created_at:new Date().toISOString(),updated_at:new Date().toISOString()};c.pairs.flat().forEach((p,i)=>{const slot=['team_a_player1','team_a_player2','team_b_player1','team_b_player2'][i];m[slot+'_profile_id']=p.profile_id;m[slot+'_guest_id']=p.guest_id;m[slot+'_guest_name']=p.guest_id?p.name:null;m[slot+'_source_side']=p.source;});if(b.p_mode==='mixed'){m.pair_1_score=null;m.pair_2_score=null;m.pair_result='undecided';}f.tables.event_team_matches.push(m);}
    revision++;const value={round_id:rid,round_number:rn};requests.set(b.p_request,value);if(loseReply){loseReply=false;return {error:'応答を受信できませんでした。再試行してください'};}return {data:value};
   }
   if(name==='update_friendly_team_round_card'){
    const m=f.tables.event_team_matches.find(m=>m.id===b.p_match);if(!m||m.updated_at!==b.p_expected.updated_at)return {error:'他の端末で変更されています'};
-   Object.assign(m,b.p_patch,{updated_at:new Date(Date.now()+revision++).toISOString()});return {data:m};
+   const patch={...b.p_patch};if(m.generation_mode==='mixed'){patch.pair_1_score=patch.team_a_score;patch.pair_2_score=patch.team_b_score;patch.pair_result=patch.result;patch.team_a_score=patch.team_b_score=null;patch.result='undecided';}Object.assign(m,patch,{updated_at:new Date(Date.now()+revision++).toISOString()});return {data:m};
   }
   if(name==='delete_friendly_team_round_card'){f.tables.event_team_matches=f.tables.event_team_matches.filter(m=>m.id!==b.p_match);revision++;return {data:null};}
  };
@@ -50,7 +50,7 @@ const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3047',remote='http
  const unique=await p.locator('[data-score-key]').evaluateAll(es=>es.map(e=>e.dataset.scoreKey));assert.equal(unique.length,new Set(unique).size);
  const mixed=p.locator('[data-team-match-mount]').filter({has:p.locator('[data-score-key][data-mixed=true]')});
  const first=mixed.first();await first.getByRole('button',{name:'カード編集',exact:true}).click();await first.getByText('詳細スコア・メモ・動画',{exact:true}).click();await first.getByPlaceholder('メモ',{exact:true}).fill('混合カードのメモ');await first.getByRole('button',{name:'保存',exact:true}).click();await first.getByText('メモ: 混合カードのメモ',{exact:true}).waitFor();assert.equal(await first.locator('[data-score-key]').count(),1);
- await score(first,4,2);await score(mixed.last(),0,0);
+ await score(first,4,2);await score(mixed.last(),0,0);assert(f.tables.event_team_matches.filter(m=>m.generation_mode==='mixed').every(m=>m.team_a_score===null&&m.team_b_score===null&&m.result==='undecided'),'旧画面向けチーム得点へ混合結果を入れない');
  p.once('dialog',d=>d.accept());await p.locator('summary').filter({hasText:'開催管理'}).click();await p.getByRole('button',{name:'フレンドリーチームマッチ終了',exact:true}).click();await p.getByRole('tab',{name:'結果',exact:true}).waitFor();
  await p.getByRole('button',{name:/チーム戦績（対決のみ）/}).click();await p.getByText('2勝0敗0分 / 勝点6 / 勝率100.0% / 得失点差+4',{exact:true}).waitFor();
  const shared=f.tables.events.find(e=>e.id===team);shared.share_enabled=true;shared.share_token='synthetic-team-round-share';await p.goto(base+'/share/events/'+shared.share_token);await p.getByText(/チーム混合（ペア1対ペア2）/).first().waitFor();assert.equal(await p.locator('[data-score-key]').count(),0,'共有ページは読み取り専用');assert((await p.locator('main').innerText()).includes('（Aチーム）'),'共有結果も元所属を表示');

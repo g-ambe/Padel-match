@@ -1,4 +1,4 @@
-import { countableTeamCard, teamCardPlayers, type TeamCard, type TeamSource } from "./friendly-team-rounds";
+import { countableTeamCard, teamCardScores, teamCardPlayers, type TeamCard, type TeamSource } from "./friendly-team-rounds";
 export type TeamStatsRow = { name: string; matches: number; wins: number; losses: number; draws: number; points: number; scored: number; conceded: number; diff: number; winRate: number };
 const empty = (name: string): TeamStatsRow => ({ name, matches: 0, wins: 0, losses: 0, draws: 0, points: 0, scored: 0, conceded: 0, diff: 0, winRate: 0 });
 const apply = (row: TeamStatsRow, scored: number, conceded: number) => { row.matches++; row.scored += scored; row.conceded += conceded; if (scored > conceded) { row.wins++; row.points += 3; } else if (scored < conceded) row.losses++; else { row.draws++; row.points++; } row.diff = row.scored - row.conceded; row.winRate = row.matches ? Math.round((row.wins / row.matches) * 1000) / 10 : 0; };
@@ -9,7 +9,7 @@ export function friendlyTeamStats(matches: readonly TeamCard[], teamNames: [stri
   for (const match of matches) {
     if (!countableTeamCard(match)) continue;
     allCountedMatches++;
-    const a = match.team_a_score!, b = match.team_b_score!;
+    const a = teamCardScores(match).a!, b = teamCardScores(match).b!;
     if (match.generation_mode !== "mixed") { apply(teams[0],a,b); apply(teams[1],b,a); }
     const people = teamCardPlayers(match).map(p => ({ ...p, key: !p.profile_id && !p.guest_id && p.name ? guestKey?.(p.source,p.name) ?? p.key : p.key, label: name(p.source,p.profile_id,p.name||null) }));
     for (const pair of [0,1]) {

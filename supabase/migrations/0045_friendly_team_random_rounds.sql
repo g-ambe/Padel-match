@@ -20,6 +20,9 @@ ALTER TABLE public.event_team_matches
  ADD COLUMN round_id uuid REFERENCES public.event_team_rounds(id) DEFERRABLE INITIALLY DEFERRED,
  ADD COLUMN round_number integer,
  ADD COLUMN court_number integer,
+ ADD COLUMN pair_1_score integer CHECK(pair_1_score>=0),
+ ADD COLUMN pair_2_score integer CHECK(pair_2_score>=0),
+ ADD COLUMN pair_result text CHECK(pair_result IN ('win','lose','draw','undecided')),
  ADD COLUMN generation_mode text CHECK(generation_mode IN ('confrontation','mixed')),
  ADD COLUMN team_a_player1_source_side text CHECK(team_a_player1_source_side IN ('team_a','team_b')),
  ADD COLUMN team_a_player1_guest_id uuid REFERENCES public.event_team_guests(id) DEFERRABLE INITIALLY DEFERRED,
@@ -33,6 +36,7 @@ ALTER TABLE public.event_team_matches ADD CONSTRAINT team_round_metadata CHECK (
  (round_id IS NULL AND round_number IS NULL AND court_number IS NULL AND generation_mode IS NULL)
  OR (round_id IS NOT NULL AND round_number IS NOT NULL AND court_number IS NOT NULL AND round_number>0 AND court_number BETWEEN 1 AND 5 AND generation_mode IS NOT NULL));
 ALTER TABLE public.event_team_matches ADD CONSTRAINT team_round_sources CHECK ((round_id IS NULL AND team_a_player1_source_side IS NULL AND team_a_player1_guest_id IS NULL AND team_a_player2_source_side IS NULL AND team_a_player2_guest_id IS NULL AND team_b_player1_source_side IS NULL AND team_b_player1_guest_id IS NULL AND team_b_player2_source_side IS NULL AND team_b_player2_guest_id IS NULL) OR (round_id IS NOT NULL AND team_a_player1_source_side IS NOT NULL AND team_a_player2_source_side IS NOT NULL AND team_b_player1_source_side IS NOT NULL AND team_b_player2_source_side IS NOT NULL));
+ALTER TABLE public.event_team_matches ADD CONSTRAINT team_round_scores CHECK ((generation_mode='mixed' AND team_a_score IS NULL AND team_b_score IS NULL AND result='undecided' AND pair_result IS NOT NULL) OR (coalesce(generation_mode,'confrontation')='confrontation' AND pair_1_score IS NULL AND pair_2_score IS NULL AND pair_result IS NULL));
 CREATE UNIQUE INDEX team_round_court_unique ON public.event_team_matches(round_id,court_number) WHERE round_id IS NOT NULL;
 CREATE FUNCTION team_rounds_private.players(m public.event_team_matches)
 RETURNS TABLE(pair integer,slot_index integer,source text,profile_id uuid,guest_id uuid,guest_name text)
@@ -96,7 +100,7 @@ BEGIN
      (m.team_b_player1_profile_id,m.team_b_player1_guest_name,coalesce(m.team_b_player1_source_side,'team_b')),
      (m.team_b_player2_profile_id,m.team_b_player2_guest_name,coalesce(m.team_b_player2_source_side,'team_b'))
     ) p(profile_id,guest_name,source) WHERE m.event_id=NEW.event_id AND m.round_id IS NOT NULL AND m.id<>NEW.id
-    AND (m.result='undecided' OR m.team_a_score IS NULL OR m.team_b_score IS NULL)
+    AND (CASE WHEN m.generation_mode='mixed' THEN m.pair_result='undecided' OR m.pair_1_score IS NULL OR m.pair_2_score IS NULL ELSE m.result='undecided' OR m.team_a_score IS NULL OR m.team_b_score IS NULL END)
     AND ((pid IS NOT NULL AND p.profile_id=pid) OR (pid IS NULL AND nullif(btrim(guest_label),'') IS NOT NULL AND p.source=v_source AND p.guest_name=guest_label)))
     THEN RAISE EXCEPTION '未完了ラウンドに出場中の選手は重複登録できません'; END IF;
    END LOOP;
@@ -154,7 +158,7 @@ BEGIN
  s:=team_rounds_private.snapshot(p_event);
  IF EXISTS(SELECT 1 FROM jsonb_array_elements(s->'roster') GROUP BY value->>'source',value->>'key' HAVING count(*)>1) THEN RAISE EXCEPTION '所属データが重複しています。グループ管理者へ確認してください'; END IF;
  IF md5(s::text)<>p_revision THEN RAISE EXCEPTION '出欠・試合履歴が更新されています。再度生成してください' USING ERRCODE='40001'; END IF;
- IF EXISTS(SELECT 1 FROM public.event_team_matches WHERE event_id=p_event AND (result='undecided' OR team_a_score IS NULL OR team_b_score IS NULL)) THEN RAISE EXCEPTION '未完了の試合カードを確認してください'; END IF;
+ IF EXISTS(SELECT 1 FROM public.event_team_matches WHERE event_id=p_event AND (CASE WHEN generation_mode='mixed' THEN pair_result='undecided' OR pair_1_score IS NULL OR pair_2_score IS NULL ELSE result='undecided' OR team_a_score IS NULL OR team_b_score IS NULL END)) THEN RAISE EXCEPTION '未完了の試合カードを確認してください'; END IF;
  SELECT coalesce(max(round_number),0)+1 INTO rn FROM public.event_team_rounds WHERE event_id=p_event;
  SELECT coalesce(max(match_order),0) INTO order_start FROM public.event_team_matches WHERE event_id=p_event;
  INSERT INTO public.event_team_rounds(event_id,round_number,mode,court_count,eligible,request_id,request_fingerprint,created_by)
@@ -163,7 +167,7 @@ BEGIN
   n:=n+1;
   IF (c->>'court')::integer IS DISTINCT FROM n OR jsonb_typeof(c->'pairs') IS DISTINCT FROM 'array' OR jsonb_array_length(c->'pairs')<>2
   OR jsonb_array_length(c->'pairs'->0)<>2 OR jsonb_array_length(c->'pairs'->1)<>2 THEN RAISE EXCEPTION 'コート・ペアの指定が不正です'; END IF;
-  j:=jsonb_build_object('id',gen_random_uuid(),'event_id',p_event,'match_order',order_start+n,'round_id',rid,'round_number',rn,'court_number',n,'generation_mode',p_mode,'result','undecided','created_at',now(),'updated_at',now());
+  j:=jsonb_build_object('id',gen_random_uuid(),'event_id',p_event,'match_order',order_start+n,'round_id',rid,'round_number',rn,'court_number',n,'generation_mode',p_mode,'pair_result',CASE WHEN p_mode='mixed' THEN 'undecided' END,'result','undecided','created_at',now(),'updated_at',now());
   FOR i IN 0..3 LOOP
    x:=c->'pairs'->(i/2)->(i%2);
    SELECT value INTO person FROM jsonb_array_elements(s->'roster') WHERE value->>'key'=x->>'key' AND value->>'source'=x->>'source';
@@ -180,7 +184,7 @@ BEGIN
 END $$;
 CREATE FUNCTION public.update_friendly_team_round_card(p_event uuid,p_match uuid,p_expected jsonb,p_patch jsonb) RETURNS jsonb
 LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE m public.event_team_matches; expected public.event_team_matches; proposed public.event_team_matches; j jsonb; old_j jsonb; person jsonb; slot text; pid uuid; gid uuid; source text; guest_label text; s jsonb;
+DECLARE m public.event_team_matches; expected public.event_team_matches; proposed public.event_team_matches; patch jsonb; j jsonb; old_j jsonb; person jsonb; slot text; pid uuid; gid uuid; source text; guest_label text; s jsonb;
 BEGIN
  -- プロフィール統合の参照テーブルロックと同じ順序。通常の別開催同士は直列化しない。
  LOCK TABLE public.club_members IN ROW EXCLUSIVE MODE;
@@ -191,10 +195,14 @@ BEGIN
  IF p_expected IS NULL OR p_patch IS NULL OR jsonb_typeof(p_patch)<>'object'
  OR EXISTS(SELECT 1 FROM jsonb_object_keys(p_patch) k WHERE k<>ALL(ARRAY['team_a_player1_profile_id','team_a_player1_guest_name','team_a_player1_guest_id','team_a_player1_source_side','team_a_player2_profile_id','team_a_player2_guest_name','team_a_player2_guest_id','team_a_player2_source_side','team_b_player1_profile_id','team_b_player1_guest_name','team_b_player1_guest_id','team_b_player1_source_side','team_b_player2_profile_id','team_b_player2_guest_name','team_b_player2_guest_id','team_b_player2_source_side','team_a_score','team_b_score','result','score_detail','memo','youtube_url','updated_at'])) THEN RAISE EXCEPTION '変更項目が不正です'; END IF;
  expected:=jsonb_populate_record(NULL::public.event_team_matches,p_expected);
- proposed:=jsonb_populate_record(expected,p_patch-'updated_at');
+ patch:=p_patch-'updated_at';
+ IF expected.generation_mode='mixed' THEN
+  patch:=(patch-ARRAY['team_a_score','team_b_score','result'])||jsonb_build_object('pair_1_score',CASE WHEN patch?'team_a_score' THEN patch->'team_a_score' ELSE to_jsonb(expected.pair_1_score) END,'pair_2_score',CASE WHEN patch?'team_b_score' THEN patch->'team_b_score' ELSE to_jsonb(expected.pair_2_score) END,'pair_result',CASE WHEN patch?'result' THEN patch->'result' ELSE to_jsonb(expected.pair_result) END);
+ END IF;
+ proposed:=jsonb_populate_record(expected,patch);
  j:=to_jsonb(proposed); old_j:=to_jsonb(expected);
  -- スコア・動画だけの更新は、過去の在籍・出欠を再解釈しない。
- IF (j-ARRAY['team_a_score','team_b_score','result','score_detail','memo','youtube_url','updated_at']) IS DISTINCT FROM (old_j-ARRAY['team_a_score','team_b_score','result','score_detail','memo','youtube_url','updated_at']) THEN
+ IF (j-ARRAY['team_a_score','team_b_score','result','score_detail','memo','youtube_url','updated_at','pair_1_score','pair_2_score','pair_result']) IS DISTINCT FROM (old_j-ARRAY['team_a_score','team_b_score','result','score_detail','memo','youtube_url','updated_at','pair_1_score','pair_2_score','pair_result']) THEN
   PERFORM 1 FROM public.event_team_sides s JOIN public.club_members cm ON cm.club_id=s.club_id JOIN public.player_profiles pp ON pp.id=coalesce(cm.player_profile_id,cm.profile_id) WHERE s.event_id=p_event ORDER BY cm.id FOR SHARE OF cm,pp;
   PERFORM 1 FROM public.event_team_guests WHERE event_id=p_event ORDER BY id FOR SHARE;
   FOREACH slot IN ARRAY ARRAY['team_a_player1','team_a_player2','team_b_player1','team_b_player2'] LOOP
@@ -242,6 +250,9 @@ BEGIN
  team_b_player2_guest_name=proposed.team_b_player2_guest_name,
  team_b_player2_guest_id=proposed.team_b_player2_guest_id,
  team_b_player2_source_side=proposed.team_b_player2_source_side,
+ pair_1_score=proposed.pair_1_score,
+ pair_2_score=proposed.pair_2_score,
+ pair_result=proposed.pair_result,
  team_a_score=proposed.team_a_score,
  team_b_score=proposed.team_b_score,
  result=proposed.result,
@@ -291,7 +302,7 @@ BEGIN
  IF NOT FOUND THEN RAISE EXCEPTION '現在のゲストを確認してください'; END IF;
  END IF;
  IF p_status='absent' AND EXISTS(SELECT 1 FROM public.event_team_matches m CROSS JOIN LATERAL team_rounds_private.players(m) p
- WHERE m.event_id=p_event AND (m.result='undecided' OR m.team_a_score IS NULL OR m.team_b_score IS NULL)
+ WHERE m.event_id=p_event AND (CASE WHEN m.generation_mode='mixed' THEN m.pair_result='undecided' OR m.pair_1_score IS NULL OR m.pair_2_score IS NULL ELSE m.result='undecided' OR m.team_a_score IS NULL OR m.team_b_score IS NULL END)
  AND p.source=p_side AND ((player_id IS NOT NULL AND p.profile_id=player_id) OR (p_guest IS NOT NULL AND (p.guest_id=p_guest OR (p.guest_id IS NULL AND p.guest_name=g.guest_name)))))
  THEN RAISE EXCEPTION '未完了カードに登録されています。カードを確認してから欠席に変更してください'; END IF;
  SELECT id INTO row_id FROM public.event_team_attendance WHERE event_id=p_event AND side=p_side

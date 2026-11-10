@@ -9,7 +9,7 @@ export type TeamRoundMode = "confrontation" | "mixed";
 export type TeamRoundPlayer = { key: string; source: TeamSource; profile_id: string | null; guest_id: string | null; member_id: string | null; name: string };
 export type TeamSlot = `team_${"a" | "b"}_player${1 | 2}`;
 export const teamSlots: TeamSlot[] = ["team_a_player1", "team_a_player2", "team_b_player1", "team_b_player2"];
-export type TeamCard = { id: string; match_order: number; team_a_score: number | null; team_b_score: number | null; result: "win" | "lose" | "draw" | "undecided"; round_id?: string | null; round_number?: number | null; court_number?: number | null; generation_mode?: TeamRoundMode | null; updated_at?: string | null }
+export type TeamCard = { id: string; match_order: number; team_a_score: number | null; team_b_score: number | null; result: "win" | "lose" | "draw" | "undecided"; round_id?: string | null; round_number?: number | null; court_number?: number | null; generation_mode?: TeamRoundMode | null; updated_at?: string | null; pair_1_score?:number|null;pair_2_score?:number|null;pair_result?:"win"|"lose"|"draw"|"undecided"|null }
   & Record<`${TeamSlot}_profile_id` | `${TeamSlot}_guest_name`, string | null>
   & Partial<Record<`${TeamSlot}_guest_id`, string | null> & Record<`${TeamSlot}_source_side`, TeamSource | null>>;
 export type TeamRoundRecord = { id: string; round_number: number; mode: TeamRoundMode; court_count: number; eligible: TeamRoundPlayer[] };
@@ -22,7 +22,11 @@ export function teamCardPlayers(card: TeamCard, known: readonly TeamRoundPlayer[
     return { pair: index < 2 ? 0 : 1, source, profile_id, guest_id, name, key: profile_id ? `profile:${profile_id}` : guest_id ? `guest:${guest_id}` : name ? (known.find(p=>p.source===source&&p.guest_id&&p.name===name)?.key ?? `legacy:${source}:${name}`) : "" };
   });
 }
-export const countableTeamCard = (card: Pick<TeamCard, "team_a_score" | "team_b_score">) => typeof card.team_a_score === "number" && typeof card.team_b_score === "number" && !(card.team_a_score === 0 && card.team_b_score === 0);
+export function teamCardScores(card: Pick<TeamCard,"team_a_score"|"team_b_score"> & Partial<TeamCard>) {
+  return card.generation_mode === "mixed" ? {a:card.pair_1_score??null,b:card.pair_2_score??null,result:card.pair_result??"undecided"} : {a:card.team_a_score,b:card.team_b_score,result:card.result??"undecided"};
+}
+export const pendingTeamCard = (card:TeamCard) => {const s=teamCardScores(card);return s.result==="undecided"||s.a===null||s.b===null;};
+export const countableTeamCard = (card:TeamCard) => {const s=teamCardScores(card);return typeof s.a==="number"&&typeof s.b==="number"&&!(s.a===0&&s.b===0);};
 const shuffle = <T,>(items: readonly T[], random: () => number) => {
   const result = [...items]; for (let i = result.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [result[i], result[j]] = [result[j], result[i]]; } return result;
 };
@@ -33,7 +37,7 @@ export function teamRoundCapacity(roster: readonly TeamRoundPlayer[], courts: nu
 }
 export function generateTeamRound(context: TeamRoundContext, mode: TeamRoundMode, courtCount: number, random: () => number = Math.random): TeamRoundDraft {
   if (!["confrontation", "mixed"].includes(mode) || !Number.isInteger(courtCount) || courtCount < 1 || courtCount > 5) throw new Error("編成モード・コート数を確認してください");
-  if (context.matches.some(m => m.result === "undecided" || m.team_a_score === null || m.team_b_score === null)) throw new Error("未完了の試合カードのスコアを保存してください");
+  if (context.matches.some(pendingTeamCard)) throw new Error("未完了の試合カードのスコアを保存してください");
   const roster = context.roster;
   if (roster.some(p => !p.key || !["team_a", "team_b"].includes(p.source) || (!!p.profile_id === !!p.guest_id)) || new Set(roster.map(p => `${p.source}:${p.key}`)).size !== roster.length) throw new Error("参加候補の識別情報が不整合です");
   const courtTotal = teamRoundCapacity(roster, courtCount);
@@ -50,7 +54,7 @@ export function generateTeamRound(context: TeamRoundContext, mode: TeamRoundMode
     const present = new Set<string>();
     for (const card of group) {
       const players = teamCardPlayers(card, roster);
-      if (countableTeamCard(card)) for (const p of players) if (p.key) { const stat = form.get(p.key) ?? {wins:0,draws:0,played:0,diff:0}; const delta = p.pair === 0 ? card.team_a_score! - card.team_b_score! : card.team_b_score! - card.team_a_score!; stat.played++; stat.diff += delta; stat.wins += Number(delta>0); stat.draws += Number(delta===0); form.set(p.key,stat); }
+      if (countableTeamCard(card)) for (const p of players) if (p.key) { const stat = form.get(p.key) ?? {wins:0,draws:0,played:0,diff:0}; const delta = p.pair === 0 ? teamCardScores(card).a! - teamCardScores(card).b! : teamCardScores(card).b! - teamCardScores(card).a!; stat.played++; stat.diff += delta; stat.wins += Number(delta>0); stat.draws += Number(delta===0); form.set(p.key,stat); }
       for (const p of players) if (p.key) { const key = `${p.source}:${p.key}`; played.set(key, (played.get(key) ?? 0) + 1); present.add(p.key); }
       for (let i = 0; i < 4; i++) for (let j = i + 1; j < 4; j++) {
         if (!players[i].key || !players[j].key || players[i].key === players[j].key) continue;

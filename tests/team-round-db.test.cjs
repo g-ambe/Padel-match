@@ -25,7 +25,7 @@ test('0045：移行・RLS・2面原子保存・再試行・出欠・混合元所
  await assert.rejects(()=>db.query("update event_team_matches set team_a_score=4 where id=$1",[card.id]),/画面を更新/);
  await assert.rejects(()=>rpc('set_friendly_team_attendance',[eid,'team_b',null,b[0].guest_id,'absent']),/未完了/);
  const update=patch=>rpc('update_friendly_team_round_card',[eid,card.id,JSON.stringify(card),JSON.stringify(patch)]);
- const scored=await update({team_a_score:4,team_b_score:2,result:'win'});assert.deepEqual(await update({team_a_score:4,team_b_score:2,result:'win'}),scored);
+ const scored=await update({team_a_score:4,team_b_score:2,result:'win'});assert.equal(scored.team_a_score,null);assert.equal(scored.team_b_score,null);assert.equal(scored.result,'undecided');assert.equal(scored.pair_1_score,4);assert.equal(scored.pair_result,'win');assert.deepEqual(await update({team_a_score:4,team_b_score:2,result:'win'}),scored);
  await assert.rejects(()=>update({team_a_score:5,team_b_score:2,result:'win'}),/他の端末/);
  await rpc('set_friendly_team_attendance',[eid,'team_b',null,b[0].guest_id,'absent']);
  const now=await rpc('get_friendly_team_round_context',[eid]);assert(!now.roster.some(p=>p.guest_id===b[0].guest_id));

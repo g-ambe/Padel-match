@@ -2,6 +2,21 @@
 import { useEffect, useState, type RefObject } from "react";
 import styles from "./tutorial-demo.module.css";
 
+// Lucide mouse-pointer-2: https://lucide.dev/icons/mouse-pointer-2
+const pointerLicense = `ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`;
+
 // デモ内の案内のみ。操作対象は覆わず、スクロール後も同じ対象に追従する。
 export function TutorialGuide({ root, scroller, target, label, id }: {
   root: RefObject<HTMLDivElement | null>; scroller: RefObject<HTMLDivElement | null>;
@@ -38,5 +53,5 @@ export function TutorialGuide({ root, scroller, target, label, id }: {
     container.addEventListener("scroll", schedule, true); window.addEventListener("resize", schedule); window.visualViewport?.addEventListener("resize", schedule);
     return () => { cancelAnimationFrame(frame); mutations.disconnect(); observer.disconnect(); container.removeEventListener("scroll", schedule, true); window.removeEventListener("resize", schedule); window.visualViewport?.removeEventListener("resize", schedule); };
   }, [root, scroller, target, label]);
-  return <p id={id} role="status" className={styles.guide} style={{ position: point?.fallback ? "relative" : "absolute", flexShrink: 0, margin: point?.fallback ? "4px 12px 8px" : 0, top: point?.top, left: point?.left, visibility: point?.target === target && target && point.visible !== false ? "visible" : "hidden" }}><span aria-hidden="true">☝ </span>{label}</p>;
+  return <p id={id} role="status" className={styles.guide} style={{ position: point?.fallback ? "relative" : "absolute", flexShrink: 0, margin: point?.fallback ? "4px 12px 8px" : 0, top: point?.top, left: point?.left, visibility: point?.target === target && target && point.visible !== false ? "visible" : "hidden" }}><svg data-lucide="mouse-pointer-2" className={styles.pointer} aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><metadata>{pointerLicense}</metadata><path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z" /></svg>{label}</p>;
 }

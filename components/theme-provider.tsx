@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase";
+import { savePreference } from "@/lib/user-preferences";
+import { useSessionAccount } from "./use-session-account";
 
 type ThemeMode = "dark" | "light";
 
@@ -27,12 +29,14 @@ function applyTheme(theme: ThemeMode) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const account = useSessionAccount();
   const isSharePage = pathname.startsWith("/share/");
   const [theme, setThemeState] = useState<ThemeMode>("dark");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    let active = true;
     if (isSharePage) {
       applyTheme("dark");
       setThemeState("dark");
@@ -47,20 +51,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
     if (!supabase) return;
 
-    void supabase.auth.getSession().then(async ({ data }) => {
-      const user = data.session?.user;
-      if (!user) return;
+    if (account.ready && account.id) void (async () => {
       const { data: preference } = await supabase
         .from("user_preferences")
         .select("theme_mode")
-        .eq("auth_user_id", user.id)
+        .eq("auth_user_id", account.id)
         .maybeSingle();
+      if (!active) return;
       const remoteTheme = isThemeMode(preference?.theme_mode) ? preference.theme_mode : "dark";
       setThemeState(remoteTheme);
       applyTheme(remoteTheme);
       window.localStorage.setItem(STORAGE_KEY, remoteTheme);
-    });
-  }, [isSharePage]);
+    })();
+    return () => { active = false; };
+  }, [isSharePage, account.ready, account.id]);
 
   const setTheme = async (nextTheme: ThemeMode) => {
     if (isSharePage) return;
@@ -72,17 +76,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
     if (!supabase) return;
     setSaving(true);
-    const { data } = await supabase.auth.getSession();
-    const user = data.session?.user;
-    if (user) {
-      const { error } = await supabase.from("user_preferences").upsert({
-        auth_user_id: user.id,
-        theme_mode: nextTheme,
-        updated_at: new Date().toISOString()
-      });
-      if (!error) setMessage("保存しました");
-    }
-    setSaving(false);
+    try { if (account.id) { await savePreference(supabase, account.id, "theme_mode", nextTheme); setMessage("保存しました"); } }
+    catch { setMessage("設定を保存できませんでした。再度お試しください。"); }
+    finally { setSaving(false); }
   };
 
   const value = useMemo(() => ({ theme, saving, message, setTheme }), [theme, saving, message]);

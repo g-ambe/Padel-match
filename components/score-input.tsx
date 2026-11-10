@@ -13,20 +13,21 @@ type Props = {
   saved?: boolean;
   result?: "A" | "B" | "draw" | null;
   saveKey: string;
-  names?: readonly [readonly { name: string; guest?: boolean }[], readonly { name: string; guest?: boolean }[]];
+  names?: readonly [readonly { name: string; guest?: boolean; source?: "team_a"|"team_b" }[], readonly { name: string; guest?: boolean; source?: "team_a"|"team_b" }[]];
+  mixed?: boolean;
   pairLabels?: readonly [string,string];
   labels?: readonly [string, string]; title?: string; disabled?: boolean; kind?: ScoreInputKind; compact?: boolean; captureCommit?: boolean;
 };
 const numbers = Array.from({ length: 13 }, (_, score) => score);
 const buttonClass = "min-h-12 rounded-xl border border-zinc-600 bg-zinc-800 px-2 py-1 font-bold disabled:opacity-40";
-export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, pairLabels, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer", compact = false, captureCommit = false }: Props) {
+export function ScoreInput({ value, onChange, onCommit, saved = false, result, saveKey, names, pairLabels, labels = ["チームA", "チームB"], title = "スコア入力", disabled = false, kind = "non-negative-integer", compact = false, captureCommit = false, mixed = false }: Props) {
   const [open, setOpen] = useState(false), [draft, setDraft] = useState<ScorePair>(value), [activeTeam, setActiveTeam] = useState<"a" | "b">("a"), [keyboard, setKeyboard] = useState(false);
   const editCommit = useRef(onCommit);
   const [chosen, setChosen] = useState({ a: false, b: false });
   const { queue, snapshot } = useScoreSaves(), job = snapshot[saveKey], saving = job?.status === "saving";
   const inputRefs = useRef<Partial<Record<"a" | "b", HTMLInputElement | null>>>({}), statusId = useId();
   const teamLabel = (index: 0 | 1) => names?.[index].map(player => player.name.trim() || "選手名未設定").join(" / ") || labels[index];
-  const teamNames = (index: 0 | 1, expanded = false) => names?.[index].length ? <span className={`flex min-w-0 flex-col items-stretch ${compact ? "gap-0" : "gap-1"} ${compact && expanded ? "max-h-24 overflow-y-auto" : ""}`}>{names[index].map((player, i) => <GuestName key={i} name={player.name.trim() || "選手名未設定"} guest={player.guest} compact={!(compact && expanded)} />)}</span> : labels[index];
+  const teamNames = (index: 0 | 1, expanded = false) => names?.[index].length ? <span className={`flex min-w-0 flex-col items-stretch ${compact ? "gap-0" : "gap-1"} ${compact && expanded ? "max-h-24 overflow-y-auto" : ""}`}>{names[index].map((player, i) => player.source ? <span key={i} className={`team-player-picker team-side-${player.source === "team_a" ? "a" : "b"}`}><span className="team-player-heading"><GuestName name={player.name.trim() || "選手名未設定"} guest={player.guest} compact={!(compact && expanded)} /></span></span> : <GuestName key={i} name={player.name.trim() || "選手名未設定"} guest={player.guest} compact={!(compact && expanded)} />)}</span> : labels[index];
   const error = scoreInputError(draft, kind), complete = draft.a.trim() !== "" && draft.b.trim() !== "";
   const close = () => setOpen(false);
   const commit = (scores: ScorePair) => {
@@ -50,7 +51,7 @@ export function ScoreInput({ value, onChange, onCommit, saved = false, result, s
   };
   useEffect(() => { if (disabled || saving) setOpen(false); }, [disabled, saving]);
   useEffect(() => { if (open && keyboard) inputRefs.current[activeTeam]?.focus(); }, [open, keyboard, activeTeam]);
-  return <div data-score-key={saveKey} className={`min-w-0 flex-1 ${compact ? "friendly-scoreboard-input" : ""}`} aria-busy={saving}>
+  return <div data-score-key={saveKey} data-mixed={mixed||undefined} className={`min-w-0 flex-1 ${compact ? "friendly-scoreboard-input" : ""}`} aria-busy={saving}>
     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
       {(["a", "b"] as const).map((team, index) => <div key={team} className="contents">{index === 1 && <span aria-hidden="true">:</span>}
         <button type="button" className={`${buttonClass} min-w-0 w-full ${compact ? `friendly-scoreboard-pair pair-${team}` : ""} ${result === (team === "a" ? "A" : "B") ? "score-winner" : ""}`} disabled={disabled || saving} aria-label={`${teamLabel(index as 0 | 1)}の得点を入力：${value[team] || "未入力"}`} aria-describedby={job ? statusId : undefined} aria-haspopup="dialog" onClick={() => begin(team)}>

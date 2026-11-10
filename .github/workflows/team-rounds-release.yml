@@ -1,0 +1,132 @@
+name: PR191の実バックアップ検証・0045適用
+on:
+  pull_request:
+    types: [labeled]
+concurrency:
+  group: padel-team191-release
+  cancel-in-progress: false
+permissions:
+  contents: write
+  pull-requests: read
+  checks: read
+  actions: read
+jobs:
+  verify-and-apply:
+    if: >-
+      github.event.pull_request.number == 191 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/friendly-team-random-rounds' &&
+      (github.event.label.name == '191隔離リハーサル' || github.event.label.name == '191本番適用')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      BACKUP_RUN_ID: '42751986377'
+      BACKUP_RELEASE_ID: '439932720'
+      BACKUP_ASSET_ID: '730037736'
+      BACKUP_SHA256: 0158e3551ac1decf0ccac07a39bcd3b7682b3891648fd21534bf4da6f66271df
+      PADEL_BACKUP_WORKDIR: /tmp/padel-team191-${{ github.run_id }}-${{ github.run_attempt }}
+      PADEL_BACKUP_CA_FILE: /tmp/padel-team191-ca.crt
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: リリースガードを確認
+        run: python3 -B -m unittest discover -s supabase/maintenance/team-rounds -p test_cloud_release.py -v
+      - name: 公式CAを照合
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 最新本番を読み取り専用で確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+        run: python3 -B supabase/maintenance/team-rounds/cloud_release.py preflight
+      - name: 固定バックアップrunの復元成功と非公開保管を確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/team-rounds/cloud_release.py select-backup
+      - name: 保管済み暗号化実ファイルを取得・ハッシュ照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 隔離実データ復元・0045・既存データ権限・復旧を検証
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/team-rounds/cloud_release.py rehearse
+      - name: 承認済み0045のみ原子的に適用・再検証
+        if: github.event.label.name == '191本番適用'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_RELEASE_AUTHORIZED: PR191-0045-20261110
+        run: python3 -B supabase/maintenance/team-rounds/cloud_release.py apply
+
+  dedicated-production-event:
+    if: >-
+      github.event.pull_request.number == 191 &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.label.name == '191本番検証'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      PADEL_BACKUP_CA_FILE: /tmp/padel-team191-ca.crt
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: 公式CAを照合
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 専用テスト開催のみで対決・混合・得点・戦績分離を確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+        run: python3 -B supabase/maintenance/team-rounds/cloud_release.py smoke
+
+  readonly-diagnosis:
+    if: >-
+      github.event.pull_request.number == 191 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/friendly-team-random-rounds' &&
+      github.event.label.name == '191本番照合'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      BACKUP_RELEASE_ID: '439932720'
+      BACKUP_ASSET_ID: '730037736'
+      BACKUP_SHA256: 0158e3551ac1decf0ccac07a39bcd3b7682b3891648fd21534bf4da6f66271df
+      PADEL_BACKUP_WORKDIR: /tmp/padel-team191-diagnose-${{ github.run_id }}-${{ github.run_attempt }}
+      PADEL_BACKUP_CA_FILE: /tmp/padel-team191-ca.crt
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: 公式CAを照合
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 固定済み暗号化バックアップを取得
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: SELECTのみで適用状態と差異テーブル名を確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+        run: python3 -B supabase/maintenance/team-rounds/cloud_release.py diagnose

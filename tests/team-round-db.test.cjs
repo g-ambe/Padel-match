@@ -1,0 +1,52 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs');
+const {fixedPairDatabase,id}=require('./fixtures/fixed-pair-db.cjs');
+test('0045：移行・RLS・2面原子保存・再試行・出欠・混合元所属・期待値更新を実SQLで確認',async()=>{
+ const {db,as,event,rpc}=await fixedPairDatabase(false);
+ try{
+ await db.exec(fs.readFileSync('supabase/migrations/0044_friendly_team_attendance.sql','utf8'));
+ const policies=JSON.stringify((await db.query("select tablename,policyname,qual,with_check from pg_policies where schemaname='public' order by tablename,policyname")).rows);
+ await db.exec(fs.readFileSync('supabase/migrations/0045_friendly_team_random_rounds.sql','utf8'));
+ await db.exec('select profile_link_private.check_reference_schema()');
+ assert.equal(JSON.stringify((await db.query("select tablename,policyname,qual,with_check from pg_policies where schemaname='public' and tablename<>'event_team_rounds' order by tablename,policyname")).rows),policies);
+ const {eid}=await event(990,0,{mode:'team',courts:2});
+ await db.query("insert into event_team_sides(event_id,side,club_id,team_name) values($1,'team_a',$2,'A'),($1,'team_b',$3,'B')",[eid,id(600),id(601)]);
+ for(const side of ['team_a','team_b'])for(let n=0;n<4;n++)await db.query('insert into event_team_guests(event_id,side,guest_name) values($1,$2,$3)',[eid,side,'ゲスト'+n]);
+ await as(3);await assert.rejects(()=>rpc('get_friendly_team_round_context',[eid]),/権限/);
+ await as(1);let ctx=await rpc('get_friendly_team_round_context',[eid]);
+ const a=ctx.roster.filter(p=>p.source==='team_a'&&p.guest_id),b=ctx.roster.filter(p=>p.source==='team_b'&&p.guest_id);
+ const cards=[0,1].map(i=>({court:i+1,pairs:[[a[i*2],b[i*2]],[a[i*2+1],b[i*2+1]]]}));
+ const create=(request,revision=ctx.revision,data=cards)=>rpc('create_friendly_team_round',[eid,request,revision,'mixed',2,JSON.stringify(data)]);
+ const broken=structuredClone(cards);broken[1].pairs[0][0]=a[0];await assert.rejects(()=>create(id(9001),ctx.revision,broken),/重複/);
+ assert.equal((await db.query('select count(*)::int n from event_team_rounds')).rows[0].n,0);
+ const result=await create(id(9000));assert.deepEqual(await create(id(9000)),result);
+ assert.equal((await db.query('select count(*)::int n from event_team_matches')).rows[0].n,2);
+ await assert.rejects(()=>create(id(9002)),/更新|未完了/);
+ const card=(await db.query('select * from event_team_matches order by court_number')).rows[0];
+ await assert.rejects(()=>db.query("update event_team_matches set team_a_score=4 where id=$1",[card.id]),/画面を更新/);
+ await assert.rejects(()=>rpc('set_friendly_team_attendance',[eid,'team_b',null,b[0].guest_id,'absent']),/未完了/);
+ const update=patch=>rpc('update_friendly_team_round_card',[eid,card.id,JSON.stringify(card),JSON.stringify(patch)]);
+ const scored=await update({team_a_score:4,team_b_score:2,result:'win'});assert.equal(scored.team_a_score,null);assert.equal(scored.team_b_score,null);assert.equal(scored.result,'undecided');assert.equal(scored.pair_1_score,4);assert.equal(scored.pair_result,'win');assert.deepEqual(await update({team_a_score:4,team_b_score:2,result:'win'}),scored);
+ await assert.rejects(()=>update({team_a_score:5,team_b_score:2,result:'win'}),/他の端末/);
+ await rpc('set_friendly_team_attendance',[eid,'team_b',null,b[0].guest_id,'absent']);
+ const now=await rpc('get_friendly_team_round_context',[eid]);assert(!now.roster.some(p=>p.guest_id===b[0].guest_id));
+
+ await rpc('set_friendly_team_attendance',[eid,'team_b',null,b[0].guest_id,'active']);
+ const current=(await db.query('select * from event_team_matches where id=$1',[card.id])).rows[0];
+ const duplicatePatch={team_a_player1_guest_id:a[2].guest_id,team_a_player1_guest_name:a[2].name};
+ await assert.rejects(()=>rpc('update_friendly_team_round_card',[eid,current.id,JSON.stringify(current),JSON.stringify(duplicatePatch)]),/重複/);
+ assert.equal((await db.query('select team_a_player1_guest_id from event_team_matches where id=$1',[card.id])).rows[0].team_a_player1_guest_id,a[0].guest_id);
+ await rpc('set_friendly_team_attendance',[eid,'team_b',null,b[0].guest_id,'absent']);
+ await rpc('update_friendly_team_round_card',[eid,current.id,JSON.stringify(current),JSON.stringify({memo:'出欠を再解釈しないメモ更新'})]);
+ assert.equal((await db.query("select has_table_privilege('authenticated','event_team_rounds','INSERT') p,has_function_privilege('anon','create_friendly_team_round(uuid,uuid,text,text,integer,jsonb)','EXECUTE') f")).rows[0].p,false);
+ assert.equal((await db.query("select has_function_privilege('anon','create_friendly_team_round(uuid,uuid,text,text,integer,jsonb)','EXECUTE') f")).rows[0].f,false);
+ const second=await event(991,0,{mode:'team'});await db.query("insert into event_team_sides(event_id,side,club_id,team_name) values($1,'team_a',$2,'A'),($1,'team_b',$3,'B')",[second.eid,id(600),id(601)]);
+ for(const side of ['team_a','team_b'])for(let i=0;i<2;i++)await db.query('insert into event_team_guests(event_id,side,guest_name) values($1,$2,$3)',[second.eid,side,'同名'+i]);
+ await as(1);const ctx2=await rpc('get_friendly_team_round_context',[second.eid]),aa=ctx2.roster.filter(p=>p.source==='team_a'&&p.guest_id),bb=ctx2.roster.filter(p=>p.source==='team_b'&&p.guest_id);
+ await assert.rejects(()=>rpc('create_friendly_team_round',[second.eid,id(9010),ctx2.revision,'confrontation',1,JSON.stringify([{court:1,pairs:[[aa[0],bb[0]],[aa[1],bb[1]]]}])]),/モード/);
+ const normal=await rpc('create_friendly_team_round',[second.eid,id(9011),ctx2.revision,'confrontation',1,JSON.stringify([{court:1,pairs:[aa,bb]}])]);
+ let nc=(await db.query('select * from event_team_matches where round_id=$1',[normal.round_id])).rows[0];
+ nc=await rpc('update_friendly_team_round_card',[second.eid,nc.id,JSON.stringify(nc),JSON.stringify({team_a_score:4,team_b_score:2,result:'win'})]);
+ const changed=await rpc('update_friendly_team_round_card',[second.eid,nc.id,JSON.stringify(nc),JSON.stringify({team_a_player1_guest_id:null,team_a_player1_guest_name:'新しい自由入力ゲスト'})]);
+ assert(changed.team_a_player1_guest_id);assert.equal(changed.team_a_score,4);
+ }catch(error){throw new Error(error.message);}finally{await db.close();}
+});

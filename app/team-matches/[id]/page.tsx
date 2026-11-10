@@ -1,5 +1,8 @@
 "use client";
 
+import { TeamRoundGenerator } from "@/components/team-round-generator";
+import { friendlyTeamRoundError, teamCardScores, pendingTeamCard, teamCardPlayers, teamSlots, type TeamCard, type TeamSource } from "@/lib/friendly-team-rounds";
+import { friendlyTeamStats, type TeamStatsRow } from "@/lib/friendly-team-results";
 import { readTeamAttendance, teamAbsent, type TeamAttendance } from "@/lib/team-attendance";
 import { TeamPlayerPicker, type TeamPlayerChoice } from "@/components/team-player-picker";
 import { TeamMatchCards } from "@/components/team-match-cards";
@@ -24,22 +27,18 @@ type TeamSideKey = "team_a" | "team_b";
 type MemberOption = { membershipId?: string; playerProfileId: string; displayName: string | null };
 type GuestOption = { id: string; side: TeamSideKey; guest_name: string };
 type PlayerChoice = TeamPlayerChoice;
-type EventRow = { id: string; name: string; status: string; club_id: string | null; description: string | null; memo: string | null; stats_mode: string; share_enabled?: boolean | null; share_token?: string | null; created_by_auth_user_id?: string | null; is_deleted?: boolean | null };
+type EventRow = { court_count: number; id: string; name: string; status: string; club_id: string | null; description: string | null; memo: string | null; stats_mode: string; share_enabled?: boolean | null; share_token?: string | null; created_by_auth_user_id?: string | null; is_deleted?: boolean | null };
 type Side = { id: string; side: TeamSideKey; club_id: string | null; team_name: string | null };
-type Match = { id: string; match_order: number; team_a_player1_profile_id: string | null; team_a_player1_guest_name: string | null; team_a_player2_profile_id: string | null; team_a_player2_guest_name: string | null; team_b_player1_profile_id: string | null; team_b_player1_guest_name: string | null; team_b_player2_profile_id: string | null; team_b_player2_guest_name: string | null; team_a_score: number | null; team_b_score: number | null; result: ResultValue; score_detail: string | null; memo: string | null; youtube_url: string | null; created_at?: string | null };
+type Match = TeamCard & {score_detail:string|null;memo:string|null;youtube_url:string|null;created_at?:string|null};
 type Form = { a1ProfileId: string; a1GuestName: string; a2ProfileId: string; a2GuestName: string; b1ProfileId: string; b1GuestName: string; b2ProfileId: string; b2GuestName: string; aScore: string; bScore: string; result: ResultValue; scoreDetail: string; memo: string; youtubeUrl: string };
 type StatsSectionKey = "teams" | "players" | "pairs";
-type StatsRow = { name: string; matches: number; wins: number; losses: number; draws: number; points: number; scored: number; conceded: number; diff: number; winRate: number };
+type StatsRow = TeamStatsRow;
 
 const emptyForm = (): Form => ({ a1ProfileId:"",a1GuestName:"",a2ProfileId:"",a2GuestName:"",b1ProfileId:"",b1GuestName:"",b2ProfileId:"",b2GuestName:"",aScore:"",bScore:"",result:"undecided",scoreDetail:"",memo:"",youtubeUrl:"" });
 const autoResult = (a: string, b: string): ResultValue => { if (a.trim()==="" || b.trim()==="") return "undecided"; const x=Number(a), y=Number(b); if (!Number.isInteger(x)||!Number.isInteger(y)) return "undecided"; if (x>y) return "win"; if (x<y) return "lose"; return "draw"; };
 const isYoutubeUrl = (v: string) => /^https:\/\/(www\.)?youtube\.com\/watch\?v=/.test(v) || /^https:\/\/youtu\.be\//.test(v) || /^https:\/\/(www\.)?youtube\.com\/shorts\//.test(v);
 const guestChoiceValue = (name: string) => `guest:${name}`;
 const selectedChoiceValue = (profileId: string, guestName: string) => profileId || (guestName ? guestChoiceValue(guestName) : "");
-const emptyStatsRow = (name: string): StatsRow => ({ name, matches: 0, wins: 0, losses: 0, draws: 0, points: 0, scored: 0, conceded: 0, diff: 0, winRate: 0 });
-const applyStatsResult = (row: StatsRow, scored: number, conceded: number) => { row.matches += 1; row.scored += scored; row.conceded += conceded; if (scored > conceded) { row.wins += 1; row.points += 3; } else if (scored < conceded) { row.losses += 1; } else { row.draws += 1; row.points += 1; } row.diff = row.scored - row.conceded; row.winRate = row.matches ? Math.round((row.wins / row.matches) * 1000) / 10 : 0; };
-const sortStatsRows = (rows: StatsRow[]) => [...rows].sort((a, b) => b.points - a.points || b.wins - a.wins || b.winRate - a.winRate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.matches - b.matches || a.name.localeCompare(b.name, "ja"));
-const hasCountableTeamScore = (match: Match) => typeof match.team_a_score === "number" && typeof match.team_b_score === "number" && !(match.team_a_score === 0 && match.team_b_score === 0);
 
 export default function FriendlyTeamMatchDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -53,7 +52,7 @@ export default function FriendlyTeamMatchDetailPage() {
   const [attendanceBusy,setAttendanceBusy]=useState(false);
   const attendanceLock=useRef(false);
   const changeAttendance=async(side:TeamSideKey,player:string|null,guest:string|null,status:"active"|"absent")=>{
-    if(attendanceLock.current||!canManage||event?.status!=="active"||scoreQueue.hasUnsaved(scoreScope)||cardBusy||videoBusy)return;
+    if(generationBusy||attendanceLock.current||!canManage||event?.status!=="active"||scoreQueue.hasUnsaved(scoreScope)||cardBusy||videoBusy)return;
     const db=getSupabaseClient();if(!db)return;
     attendanceLock.current=true;setAttendanceBusy(true);setError("");
     try{const result=await db.rpc("set_friendly_team_attendance",{p_event:id,p_side:side,p_member:player,p_guest:guest,p_status:status});
@@ -103,6 +102,7 @@ export default function FriendlyTeamMatchDetailPage() {
 
   const [tab,setTab]=useState("matches");
   const [historyOpen,setHistoryOpen]=useState(false);
+  const [generationBusy,setGenerationBusy]=useState(false);
   const latestHost=useRef<HTMLDivElement>(null),pastHost=useRef<HTMLDivElement>(null),expandedHost=useRef<HTMLDivElement>(null);
   const selectTab=(next:string)=>{
     if(document.querySelector('dialog[open]')) return;
@@ -120,7 +120,7 @@ export default function FriendlyTeamMatchDetailPage() {
     if(!supabase) return;
     const access=await getOfficialAccess(supabase);
     setGroups(access.groups.filter((g)=>access.superUser||g.role!=="member"));
-    const { data:e }=await supabase.from("events").select("id,name,status,club_id,description,memo,stats_mode,share_enabled,share_token,created_by_auth_user_id,is_deleted,event_mode").eq("id",id).eq("event_mode","team").maybeSingle();
+    const { data:e }=await supabase.from("events").select("id,name,status,court_count,club_id,description,memo,stats_mode,share_enabled,share_token,created_by_auth_user_id,is_deleted,event_mode").eq("id",id).eq("event_mode","team").maybeSingle();
     if(scoreRevision!==scoreQueue.getRevision(scoreScope)){await load();return;}
     const row=e as any as EventRow|null;
     if(!row || row.is_deleted){ setEvent(null); setMatches([]); setError("フレンドリーチームマッチが見つかりません"); return; }
@@ -156,7 +156,7 @@ export default function FriendlyTeamMatchDetailPage() {
     setMatches(previous => matchRows.filter(row => ![...cardWrites.current.newIds.values()].includes(row.id)).map(row => {
       if (!scoreQueue.has(`${scoreScope}${row.id}`)) return row;
       const confirmed = previous.find(match => match.id === row.id);
-      return { ...row, team_a_score: confirmed?.team_a_score ?? null, team_b_score: confirmed?.team_b_score ?? null, result: confirmed?.result ?? "undecided" };
+      return { ...row, team_a_score: confirmed?.team_a_score ?? null, team_b_score: confirmed?.team_b_score ?? null, result: confirmed?.result ?? "undecided",pair_1_score:confirmed?.pair_1_score??null,pair_2_score:confirmed?.pair_2_score??null,pair_result:confirmed?.pair_result??null };
     }));
     try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,matchRows.flatMap(match=>[match.team_a_player1_profile_id,match.team_a_player2_profile_id,match.team_b_player1_profile_id,match.team_b_player2_profile_id]))); }
     catch { setError("過去の試合の選手名を取得できませんでした"); }
@@ -173,32 +173,12 @@ export default function FriendlyTeamMatchDetailPage() {
   ];
   const memberName=(side:TeamSideKey, pid:string|null, guest:string|null)=>historicalPlayerName(pid,guest,historicalNames,members[side].find((m)=>m.playerProfileId===pid)?.displayName);
   const applyChoice = (choice: string, profileKey: keyof Form, guestKey: keyof Form) => choice.startsWith("guest:") ? { [profileKey]: "", [guestKey]: choice.slice(6) } as Partial<Form> : { [profileKey]: choice, [guestKey]: "" } as Partial<Form>;
-  const teamMatchStats = useMemo(() => {
-    const teamRows = { team_a: emptyStatsRow(teamAName), team_b: emptyStatsRow(teamBName) };
-    const playerRows = new Map<string, StatsRow>();
-    const pairRows = new Map<string, StatsRow>();
-    const playerInfo = (side: TeamSideKey, profileId: string | null, guestName: string | null) => ({ key: profileId ? `profile:${profileId}` : guestName ? `guest:${side}:${guestName}` : "", name: memberName(side, profileId, guestName) });
-    const ensureRow = (map: Map<string, StatsRow>, key: string, name: string) => { if (!map.has(key)) map.set(key, emptyStatsRow(name)); return map.get(key)!; };
-    const applyPlayers = (players: { key: string; name: string }[], scored: number, conceded: number) => { for (const player of players.filter((p) => p.key)) applyStatsResult(ensureRow(playerRows, player.key, player.name), scored, conceded); };
-    const applyPair = (players: { key: string; name: string }[], scored: number, conceded: number) => { const valid = players.filter((p) => p.key); if (valid.length !== 2) return; const sorted = [...valid].sort((a, b) => a.key.localeCompare(b.key)); const key = sorted.map((p) => p.key).join("|"); const name = sorted.map((p) => p.name).join(" / "); applyStatsResult(ensureRow(pairRows, key, name), scored, conceded); };
-    for (const match of matches) {
-      if (!hasCountableTeamScore(match)) continue;
-      const aScore = match.team_a_score!;
-      const bScore = match.team_b_score!;
-      applyStatsResult(teamRows.team_a, aScore, bScore);
-      applyStatsResult(teamRows.team_b, bScore, aScore);
-      const teamAPlayers = [playerInfo("team_a", match.team_a_player1_profile_id, match.team_a_player1_guest_name), playerInfo("team_a", match.team_a_player2_profile_id, match.team_a_player2_guest_name)];
-      const teamBPlayers = [playerInfo("team_b", match.team_b_player1_profile_id, match.team_b_player1_guest_name), playerInfo("team_b", match.team_b_player2_profile_id, match.team_b_player2_guest_name)];
-      applyPlayers(teamAPlayers, aScore, bScore);
-      applyPlayers(teamBPlayers, bScore, aScore);
-      applyPair(teamAPlayers, aScore, bScore);
-      applyPair(teamBPlayers, bScore, aScore);
-    }
-    return { countedMatches: teamRows.team_a.matches, teams: [teamRows.team_a, teamRows.team_b], players: sortStatsRows([...playerRows.values()]), pairs: sortStatsRows([...pairRows.values()]) };
-  }, [matches, members, historicalNames, teamAName, teamBName]);
+  const teamMatchStats = useMemo(() => friendlyTeamStats(matches,[teamAName,teamBName],memberName,(source,name)=>{const guest=guests[source].find(g=>g.guest_name===name);return guest?`guest:${guest.id}`:undefined;}), [matches, members, guests, historicalNames, teamAName, teamBName]);
+  const cardScoreNames=(m:Match)=>{const players=teamCardPlayers(m).map(p=>({name:memberName(p.source,p.profile_id,p.name||null)+(m.generation_mode==="mixed"?` (${p.source==="team_a"?teamAName:teamBName})`:""),guest:!!p.name&&!p.profile_id,...(m.generation_mode==="mixed"?{source:p.source}:{})}));return [players.slice(0,2),players.slice(2,4)] as [typeof players,typeof players];};
   const toggleStatsSection = (key: StatsSectionKey) => setOpenStatsSections((prev) => ({ ...prev, [key]: !prev[key] }));
-  const validate=(f:Form)=>{
-    const vals=[f.a1ProfileId||f.a1GuestName.trim(),f.a2ProfileId||f.a2GuestName.trim(),f.b1ProfileId||f.b1GuestName.trim(),f.b2ProfileId||f.b2GuestName.trim()].filter(Boolean);
+  const validate=(f:Form,existing?:Match)=>{
+    const pids=[f.a1ProfileId,f.a2ProfileId,f.b1ProfileId,f.b2ProfileId],names=[f.a1GuestName,f.a2GuestName,f.b1GuestName,f.b2GuestName];
+    const vals=pids.map((pid,index)=>existing?.round_id?(pid?`profile:${pid}`:names[index].trim()?`guest:${existing[`${teamSlots[index]}_source_side`]}:${names[index].trim()}`:""):pid||names[index].trim()).filter(Boolean);
     if(new Set(vals).size!==vals.length) return "同一試合内で同じ選手は選択できません";
     if([f.a1ProfileId&&f.a1GuestName.trim(),f.a2ProfileId&&f.a2GuestName.trim(),f.b1ProfileId&&f.b1GuestName.trim(),f.b2ProfileId&&f.b2GuestName.trim()].some(Boolean)) return "選手は選択または自由入力のどちらかにしてください";
     if((f.aScore&&(!Number.isInteger(Number(f.aScore))||Number(f.aScore)<0))||(f.bScore&&(!Number.isInteger(Number(f.bScore))||Number(f.bScore)<0))) return "得点は0以上の整数で入力してください";
@@ -206,7 +186,7 @@ export default function FriendlyTeamMatchDetailPage() {
     return "";
   };
   const payload=(f:Form)=>({ team_a_player1_profile_id:f.a1ProfileId||null, team_a_player1_guest_name:f.a1GuestName.trim()||null, team_a_player2_profile_id:f.a2ProfileId||null, team_a_player2_guest_name:f.a2GuestName.trim()||null, team_b_player1_profile_id:f.b1ProfileId||null, team_b_player1_guest_name:f.b1GuestName.trim()||null, team_b_player2_profile_id:f.b2ProfileId||null, team_b_player2_guest_name:f.b2GuestName.trim()||null, team_a_score:f.aScore.trim()===""?null:Number(f.aScore), team_b_score:f.bScore.trim()===""?null:Number(f.bScore), result:f.result, score_detail:f.scoreDetail.trim()||null, memo:f.memo.trim()||null, youtube_url:f.youtubeUrl.trim()||null, updated_at:new Date().toISOString() });
-  const toForm=(m:Match):Form=>({ a1ProfileId:m.team_a_player1_profile_id??"",a1GuestName:m.team_a_player1_guest_name??"",a2ProfileId:m.team_a_player2_profile_id??"",a2GuestName:m.team_a_player2_guest_name??"",b1ProfileId:m.team_b_player1_profile_id??"",b1GuestName:m.team_b_player1_guest_name??"",b2ProfileId:m.team_b_player2_profile_id??"",b2GuestName:m.team_b_player2_guest_name??"",aScore:m.team_a_score===null?"":String(m.team_a_score),bScore:m.team_b_score===null?"":String(m.team_b_score),result:m.result,scoreDetail:m.score_detail??"",memo:m.memo??"",youtubeUrl:m.youtube_url??""});
+  const toForm=(m:Match):Form=>({ a1ProfileId:m.team_a_player1_profile_id??"",a1GuestName:m.team_a_player1_guest_name??"",a2ProfileId:m.team_a_player2_profile_id??"",a2GuestName:m.team_a_player2_guest_name??"",b1ProfileId:m.team_b_player1_profile_id??"",b1GuestName:m.team_b_player1_guest_name??"",b2ProfileId:m.team_b_player2_profile_id??"",b2GuestName:m.team_b_player2_guest_name??"",aScore:teamCardScores(m).a===null?"":String(teamCardScores(m).a),bScore:teamCardScores(m).b===null?"":String(teamCardScores(m).b),result:teamCardScores(m).result,scoreDetail:m.score_detail??"",memo:m.memo??"",youtubeUrl:m.youtube_url??""});
 
   const saveMatch=async(edit=false, supplied?:Form, suppliedId?:string)=>{
     const targetId=suppliedId??editingId;
@@ -217,14 +197,17 @@ export default function FriendlyTeamMatchDetailPage() {
     if(closingEvent.current)return fail("イベントの終了処理中です");
     if(!event)return fail("イベント情報を取得できていません");
     if(!canManage||event.status==="closed")return fail("この操作を行う権限がありません");
-    const f=supplied??(edit?editingForm:form), v=validate(f); if(v)return fail(v);
+    const f=supplied??(edit?editingForm:form),previous=edit?matches.find(m=>m.id===targetId):undefined;
+    const v=validate(f,previous);if(v)return fail(v);
     const supabase=getSupabaseClient(); if(!supabase)return fail("保存の準備ができませんでした");
-    const previous=edit?matches.find(m=>m.id===targetId):undefined;
     const lineup=(value:Form)=>[value.a1ProfileId,value.a1GuestName,value.a2ProfileId,value.a2GuestName,value.b1ProfileId,value.b1GuestName,value.b2ProfileId,value.b2GuestName];
     if(!previous||JSON.stringify(lineup(f))!==JSON.stringify(lineup(toForm(previous)))){
       try{const rows=await readTeamAttendance(supabase,id);setAttendance(rows);
-        for(const [side,pids,names] of [["team_a",[f.a1ProfileId,f.a2ProfileId],[f.a1GuestName,f.a2GuestName]],["team_b",[f.b1ProfileId,f.b2ProfileId],[f.b1GuestName,f.b2GuestName]]] as const){
-          if(pids.some(pid=>!!pid&&teamAbsent(rows,side,members[side].find(m=>m.playerProfileId===pid)?.membershipId??null,null))||names.some(name=>{const guest=guests[side].find(g=>g.guest_name===name.trim());return !!guest&&teamAbsent(rows,side,null,guest.id);}))return fail("欠席者は選択できません。参加状態を確認してください。");
+        const pids=[f.a1ProfileId,f.a2ProfileId,f.b1ProfileId,f.b2ProfileId],names=[f.a1GuestName,f.a2GuestName,f.b1GuestName,f.b2GuestName];
+        for(const [index,slot] of teamSlots.entries()){
+          const source=previous?.[`${slot}_source_side`]??(index<2?"team_a":"team_b");
+          const member=members[source].find(m=>m.playerProfileId===pids[index]),guest=guests[source].find(g=>g.guest_name===names[index].trim());
+          if(teamAbsent(rows,source,member?.membershipId??null,guest?.id??null))return fail("欠席者は選択できません。参加状態を確認してください。");
         }
       }catch{return fail("参加状態を取得できないため保存していません。再読み込みしてください。");}
     }
@@ -234,11 +217,18 @@ export default function FriendlyTeamMatchDetailPage() {
       if(!newId)return fail("試合カードを確認できません");
       if(!edit)cardWrites.current.newIds.set(key,newId);
       const patch=payload(f);
-      let response=edit?await supabase.from("event_team_matches").update(patch).eq("id",newId).select("id").single():await supabase.from("event_team_matches").insert({id:newId,event_id:id,match_order:Math.max(0,...matches.map(m=>m.match_order))+1,...patch}).select("id").single();
+      let response;
+      if(previous?.round_id){
+        const generatedPatch:Record<string,unknown>={...patch};
+        for(const slot of teamSlots){const source=previous[`${slot}_source_side`]!;generatedPatch[`${slot}_guest_id`]=generatedPatch[`${slot}_profile_id`]?null:previous[`${slot}_guest_name`]===generatedPatch[`${slot}_guest_name`]?previous[`${slot}_guest_id`]??null:guests[source].find(g=>g.guest_name===generatedPatch[`${slot}_guest_name`])?.id??null;}
+        response=await supabase.rpc("update_friendly_team_round_card",{p_event:id,p_match:newId,p_expected:previous,p_patch:generatedPatch});
+      }else response=edit?await supabase.from("event_team_matches").update(patch).eq("id",newId).select("id").single():await supabase.from("event_team_matches").insert({id:newId,event_id:id,match_order:Math.max(0,...matches.map(m=>m.match_order))+1,...patch}).select("id").single();
       // 通信結果を受け取れなかった新規登録の再試行でも同じIDを利用する。
       if(!edit&&response.error?.code==="23505")response=await supabase.from("event_team_matches").update(patch).eq("id",newId).eq("event_id",id).select("id").single();
-      if(response.error||!response.data)return fail("試合カードの保存に失敗しました");
-      setMatches(previous=>edit?previous.map(m=>m.id===newId?{...m,...patch}:m):[...previous,{id:newId,match_order:Math.max(0,...previous.map(m=>m.match_order))+1,...patch}]);
+      if(response.error||!response.data)return fail(previous?.round_id?friendlyTeamRoundError(response.error,"試合カードの保存に失敗しました"):"試合カードの保存に失敗しました");
+      const applied=previous?.round_id?response.data as Match:patch;
+      if(previous?.round_id&&edit&&suppliedId&&targetId===editingId)setEditingForm(toForm(applied as Match));
+      setMatches(previous=>edit?previous.map(m=>m.id===newId?{...m,...applied}:m):[...previous,{id:newId,match_order:Math.max(0,...previous.map(m=>m.match_order))+1,...patch}]);
       cardWrites.current.newIds.delete(key);
       if(!edit){setForm(emptyForm());setShowForm(false);}
       if(edit&&!suppliedId&&targetId===editingId){setEditingId(null);setEditingForm(emptyForm());}
@@ -252,11 +242,11 @@ export default function FriendlyTeamMatchDetailPage() {
     const f=m?toForm(m):form;
     if(!await saveMatch(!!m,{...f,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)},m?.id))throw new Error(cardWrites.current.error||"試合カードを保存できませんでした。再試行してください");
   };
-  const deleteMatch=async(mid:string)=>{ if(scoreQueue.has(`${scoreScope}${mid}`)||closingEvent.current)return setError("スコアの保存完了・再試行後に削除してください"); if(!window.confirm("試合カードを削除しますか？"))return; const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("event_team_matches").delete().eq("id",mid); if(e)return setError("試合カードの削除に失敗しました"); setNotice("試合カードを削除しました"); await load(); };
+  const deleteMatch=async(mid:string)=>{ if(generationBusy||scoreQueue.has(`${scoreScope}${mid}`)||closingEvent.current)return setError("スコアの保存完了・再試行後に削除してください"); if(!window.confirm("試合カードを削除しますか？"))return; const supabase=getSupabaseClient(); if(!supabase)return; const card=matches.find(m=>m.id===mid);const {error:e}=card?.round_id?await supabase.rpc("delete_friendly_team_round_card",{p_event:id,p_match:mid,p_expected:card}):await supabase.from("event_team_matches").delete().eq("id",mid); if(e)return setError("試合カードの削除に失敗しました"); setNotice("試合カードを削除しました"); await load(); };
   const updateSide=async(side:Side,name:string)=>{if(!canManage||event?.status!=="active")return;const db=getSupabaseClient();if(!db)return;const result=await db.from("event_team_sides").update({team_name:name.trim()||null,updated_at:new Date().toISOString()}).eq("id",side.id).eq("event_id",id);if(result.error)return setError("チーム名を保存できませんでした");await load();};
   const addGuest=async(side:TeamSideKey,suppliedName?:string)=>{ setError(""); setNotice(""); if(!event) return setError("イベント情報を取得できていません"); if(!canManage||event.status==="closed") return setError("この操作を行う権限がありません"); const guestName=(suppliedName??guestNames[side]).trim(); if(!guestName) return setError("ゲスト名を入力してください"); const supabase=getSupabaseClient(); if(!supabase)return; const { error:e }=await supabase.from("event_team_guests").insert({ event_id:id, side, guest_name:guestName }); if(e) return setError("ゲストの追加に失敗しました"); if(suppliedName===undefined)setGuestNames((prev)=>({...prev,[side]:""})); setNotice("ゲストを追加しました"); await load(); return true; };
   const closeOrReopen=async(status:"active"|"closed")=>{
-    if(closingEvent.current)return;
+    if(closingEvent.current||generationBusy)return;
     if(status==="closed"&&(scoreQueue.hasUnsaved(scoreScope)||cardWrites.current.saving.size))return setError("保存中・保存失敗のスコアがあります。保存完了・再試行後に終了してください");
     closingEvent.current=true;setIsClosingEvent(true);
     try {
@@ -283,6 +273,9 @@ export default function FriendlyTeamMatchDetailPage() {
 
   if(!event) return <main className="mx-auto min-h-screen w-full max-w-md p-4 text-zinc-100">{error||"読み込み中..."}</main>;
   const knownNames=Object.fromEntries([...historicalNames,...[...members.team_a,...members.team_b].map(m=>[m.playerProfileId,m.displayName??"名称未設定"] as const),...[...guests.team_a,...guests.team_b].map(g=>[guestChoiceValue(g.guest_name),g.guest_name] as const)]);
+  const reverseMatches=[...matches].reverse();
+  const focusRoundId=reverseMatches[0]?.round_id??reverseMatches.find(m=>m.round_id&&pendingTeamCard(m))?.round_id;
+  const latestCount=focusRoundId?Math.max(2,reverseMatches.findLastIndex(m=>m.round_id===focusRoundId)+1):2;
   const eventSides = [teamA, teamB].filter((side): side is Side => Boolean(side));
   return <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
     <EditableEventTitle label="開催" name={event.name} canEdit={canManage} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={()=>void saveEventName()} onCancel={cancelEventNameEdit} />
@@ -294,40 +287,35 @@ export default function FriendlyTeamMatchDetailPage() {
     {error&&<p className="rounded-xl border border-red-500/60 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
     {notice&&<p className="rounded-xl border border-emerald-500/60 bg-emerald-950/40 p-3 text-sm text-emerald-200">{notice}</p>}
     <section id="team-panel-matches" role="tabpanel" aria-labelledby="team-tab-matches" hidden={tab!=="matches"} className="space-y-3">
-    {canManage&&event.status!=="closed"&&(showForm?<MatchFormView knownNames={knownNames} teamNames={[teamAName,teamBName]} onAddGuest={(side,name)=>addGuest(side,name)} saveKey={`${scoreScope}new:${id}`} disabled={isClosingEvent||cardBusy||attendanceBusy} title="試合カードを追加" newCard saveError={error} form={form} setForm={(p,s)=>setForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={scores=>commitCardScore(scores)} onSave={()=>void runFormSave(false)} onCancel={()=>setShowForm(false)}/>:<ActionButton disabled={cardBusy||attendanceBusy||attendance===null} onClick={()=>setShowForm(true)}>試合カードを追加</ActionButton>)}    <div ref={latestHost} className="space-y-2" />
-    <details className="group/history rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none items-center gap-2 px-3 [&::-webkit-details-marker]:hidden"><span className="event-disclosure-icon"><span className="group-open/history:hidden">▶</span><span className="hidden group-open/history:inline">▼</span></span>過去の試合 · {Math.max(0,matches.length-2)}件</summary><div ref={pastHost} className="max-h-[50dvh] space-y-2 overflow-y-auto p-2" /></details>
+    {canManage&&event.status!=="closed"&&<TeamRoundGenerator eventId={id} teamNames={[teamAName,teamBName]} counts={[choices("team_a").length,choices("team_b").length]} courtCount={event.court_count||1} disabled={showForm||!!editingId||isClosingEvent||cardBusy||attendanceBusy||!!videoBusy||unsavedScoreCount>0||attendance===null} onBusyChange={setGenerationBusy} onSaved={async()=>{scoreQueue.invalidateReads(scoreScope);await load();}}/>}
+    {canManage&&event.status!=="closed"&&(showForm?<MatchFormView knownNames={knownNames} teamNames={[teamAName,teamBName]} onAddGuest={(side,name)=>addGuest(side,name)} saveKey={`${scoreScope}new:${id}`} disabled={generationBusy||isClosingEvent||cardBusy||attendanceBusy} title="試合カードを追加" newCard saveError={error} form={form} setForm={(p,s)=>setForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={scores=>commitCardScore(scores)} onSave={()=>void runFormSave(false)} onCancel={()=>setShowForm(false)}/>:<ActionButton disabled={generationBusy||cardBusy||attendanceBusy||attendance===null} onClick={()=>setShowForm(true)}>試合カードを追加</ActionButton>)}    <div ref={latestHost} className="space-y-2" />
+    <details className="group/history rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none items-center gap-2 px-3 [&::-webkit-details-marker]:hidden"><span className="event-disclosure-icon"><span className="group-open/history:hidden">▶</span><span className="hidden group-open/history:inline">▼</span></span>過去の試合 · {Math.max(0,matches.length-latestCount)}件</summary><div ref={pastHost} className="max-h-[50dvh] space-y-2 overflow-y-auto p-2" /></details>
     <button type="button" aria-label="全試合履歴を拡大" className="min-h-11 min-w-11 rounded-xl border border-zinc-600 px-3 text-sm text-zinc-200" onClick={()=>setHistoryOpen(true)}>全試合を表示</button>
     <details className="group/manage rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none items-center gap-2 px-3 [&::-webkit-details-marker]:hidden"><span className="event-disclosure-icon"><span className="group-open/manage:hidden">▶</span><span className="hidden group-open/manage:inline">▼</span></span>開催管理</summary><div className="space-y-3 p-2">    <Card title="イベント情報"><dl className="space-y-2 text-sm"><div><dt className="text-zinc-400">ステータス</dt><dd>{officialStatusLabel(event.status)}</dd></div><div><dt className="text-zinc-400">説明</dt><dd className="whitespace-pre-wrap">{event.description||"未入力"}</dd></div><div><dt className="text-zinc-400">メモ</dt><dd className="whitespace-pre-wrap">{event.memo||"未入力"}</dd></div></dl></Card>
-    <Card title="開催操作"><div className="space-y-3 text-sm">{unsavedScoreCount>0&&<p role="status" className="text-xs text-amber-300">保存中・保存失敗のスコアが{unsavedScoreCount}件あります。保存完了・再試行後に終了できます。</p>}{event.status==="active"&&canManage&&<><select className="w-full rounded-xl bg-zinc-800 p-3" value={closeMode} onChange={(e)=>setCloseMode(e.target.value as any)}><option value="official">戦績に反映する</option><option value="record_only">記録用にする</option></select><button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" disabled={isClosingEvent||unsavedScoreCount>0} onClick={()=>void closeOrReopen("closed")}>フレンドリーチームマッチ終了</button></>}{event.status==="closed"&&<><p>フレンドリーチームマッチ終了済み（{event.stats_mode==="record_only"?"記録用":"戦績に反映する"}）</p>{canManage&&<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void closeOrReopen("active")}>フレンドリーチームマッチ再開</button>}{canManage&&(showDelete?<div className="space-y-2 rounded-xl border border-red-500/60 p-3"><label className="flex gap-2 text-xs"><input type="checkbox" checked={deleteOk} onChange={(e)=>setDeleteOk(e.target.checked)}/>削除すると元に戻せません</label><button className="w-full rounded bg-red-600 py-2 font-bold" onClick={()=>void deleteEvent()}>フレンドリーチームマッチ削除</button></div>:<button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>setShowDelete(true)}>フレンドリーチームマッチ削除</button>)}</>}</div></Card>
+    <Card title="開催操作"><div className="space-y-3 text-sm">{unsavedScoreCount>0&&<p role="status" className="text-xs text-amber-300">保存中・保存失敗のスコアが{unsavedScoreCount}件あります。保存完了・再試行後に終了できます。</p>}{event.status==="active"&&canManage&&<><select className="w-full rounded-xl bg-zinc-800 p-3" value={closeMode} onChange={(e)=>setCloseMode(e.target.value as any)}><option value="official">戦績に反映する</option><option value="record_only">記録用にする</option></select><button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" disabled={generationBusy||isClosingEvent||unsavedScoreCount>0} onClick={()=>void closeOrReopen("closed")}>フレンドリーチームマッチ終了</button></>}{event.status==="closed"&&<><p>フレンドリーチームマッチ終了済み（{event.stats_mode==="record_only"?"記録用":"戦績に反映する"}）</p>{canManage&&<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void closeOrReopen("active")}>フレンドリーチームマッチ再開</button>}{canManage&&(showDelete?<div className="space-y-2 rounded-xl border border-red-500/60 p-3"><label className="flex gap-2 text-xs"><input type="checkbox" checked={deleteOk} onChange={(e)=>setDeleteOk(e.target.checked)}/>削除すると元に戻せません</label><button className="w-full rounded bg-red-600 py-2 font-bold" onClick={()=>void deleteEvent()}>フレンドリーチームマッチ削除</button></div>:<button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>setShowDelete(true)}>フレンドリーチームマッチ削除</button>)}</>}</div></Card>
 </div></details>
     </section>
-    <section id="team-panel-teams" role="tabpanel" aria-labelledby="team-tab-teams" hidden={tab!=="teams"} className="space-y-3">    <Card title="チーム設定"><div className="space-y-3">{eventSides.map((side)=><SideEditor key={side.id} side={side} title={side.team_name||(side.side==="team_a"?"チームA":"チームB")} roster={members[side.side]} guests={guests[side.side]} guestName={guestNames[side.side]} setGuestName={(value)=>setGuestNames((prev)=>({...prev,[side.side]:value}))} groups={groups} attendance={attendance} busy={attendanceBusy||cardBusy||!!videoBusy||unsavedScoreCount>0} onAttendance={(pid,gid,status)=>void changeAttendance(side.side,pid,gid,status)} canManage={canManage&&event.status!=="closed"} onSave={updateSide} onAddGuest={()=>void addGuest(side.side)}/>)}</div></Card>
+    <section id="team-panel-teams" role="tabpanel" aria-labelledby="team-tab-teams" hidden={tab!=="teams"} className="space-y-3">    <Card title="チーム設定"><div className="space-y-3">{eventSides.map((side)=><SideEditor key={side.id} side={side} title={side.team_name||(side.side==="team_a"?"チームA":"チームB")} roster={members[side.side]} guests={guests[side.side]} guestName={guestNames[side.side]} setGuestName={(value)=>setGuestNames((prev)=>({...prev,[side.side]:value}))} groups={groups} attendance={attendance} busy={generationBusy||attendanceBusy||cardBusy||!!videoBusy||unsavedScoreCount>0} onAttendance={(pid,gid,status)=>void changeAttendance(side.side,pid,gid,status)} canManage={canManage&&event.status!=="closed"} onSave={updateSide} onAddGuest={()=>void addGuest(side.side)}/>)}</div></Card>
 </section>
     <section id="team-panel-results" role="tabpanel" aria-labelledby="team-tab-results" hidden={tab!=="results"} className="space-y-3">    {event.status==="closed"&&<TeamMatchStatsCard stats={teamMatchStats} openSections={openStatsSections} onToggle={toggleStatsSection} />}
     {event.status==="closed"&&<Card title="共有リンク"><div className="space-y-2 text-sm">{shareUrl?<><p className="break-all rounded-xl bg-zinc-800 p-3 text-xs">{shareUrl}</p><button className="w-full rounded-xl border border-zinc-500 py-2" onClick={()=>navigator.clipboard.writeText(shareUrl)}>共有リンクをコピー</button></>:canManage?<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void share()}>共有リンクを作成</button>:<p>共有されていません</p>}
       <MatchShareButtons event={event} eventName={event.name} kind="events" getMatches={() => matches.map(match => ({
-        teamA: [
-          match.team_a_player1_profile_id || match.team_a_player1_guest_name ? memberName("team_a", match.team_a_player1_profile_id, match.team_a_player1_guest_name) : null,
-          match.team_a_player2_profile_id || match.team_a_player2_guest_name ? memberName("team_a", match.team_a_player2_profile_id, match.team_a_player2_guest_name) : null,
-        ],
-        teamB: [
-          match.team_b_player1_profile_id || match.team_b_player1_guest_name ? memberName("team_b", match.team_b_player1_profile_id, match.team_b_player1_guest_name) : null,
-          match.team_b_player2_profile_id || match.team_b_player2_guest_name ? memberName("team_b", match.team_b_player2_profile_id, match.team_b_player2_guest_name) : null,
-        ],
-        score: storedTeamShareScore(match.team_a_score, match.team_b_score, match.result),
+        teamA: cardScoreNames(match)[0].map((p,i)=>teamCardPlayers(match)[i].key?p.name:null),
+        teamB: cardScoreNames(match)[1].map((p,i)=>teamCardPlayers(match)[i+2].key?p.name:null),
+        score: storedTeamShareScore(teamCardScores(match).a, teamCardScores(match).b, teamCardScores(match).result),
         youtubeUrl: match.youtube_url,
       }))} />
     </div></Card>}
 {event.status!=="closed"&&<p className="text-sm text-zinc-400">戦績は開催終了後に表示されます。</p>}</section>
     <AppDialog open={historyOpen} title="全試合履歴" wide onClose={()=>setHistoryOpen(false)}><div ref={expandedHost} className="min-h-0 space-y-2 overflow-y-auto p-3" /></AppDialog>
     <TeamMatchCards cards={[...matches].reverse().map(m=>({id:m.id,content:(<div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
-      <p className="text-xs font-bold">第{m.match_order}試合</p>
-      <ScoreInput compact pairLabels={[teamAName,teamBName]} saveKey={`${scoreScope}${m.id}`} names={[[{name:memberName("team_a",m.team_a_player1_profile_id,m.team_a_player1_guest_name),guest:!m.team_a_player1_profile_id&&!!m.team_a_player1_guest_name},{name:memberName("team_a",m.team_a_player2_profile_id,m.team_a_player2_guest_name),guest:!m.team_a_player2_profile_id&&!!m.team_a_player2_guest_name}],[{name:memberName("team_b",m.team_b_player1_profile_id,m.team_b_player1_guest_name),guest:!m.team_b_player1_profile_id&&!!m.team_b_player1_guest_name},{name:memberName("team_b",m.team_b_player2_profile_id,m.team_b_player2_guest_name),guest:!m.team_b_player2_profile_id&&!!m.team_b_player2_guest_name}]]} value={{a:m.team_a_score===null?"":String(m.team_a_score),b:m.team_b_score===null?"":String(m.team_b_score)}} saved={m.result!=="undecided"&&m.team_a_score!==null&&m.team_b_score!==null} result={m.team_a_score===null||m.team_b_score===null?null:m.result==="win"?"A":m.result==="lose"?"B":m.result==="draw"?"draw":null} disabled={!canManage||event.status==="closed"||isClosingEvent||videoBusy!==null} onCommit={async scores=>{if(editingId===m.id){if(!await saveMatch(true,{...editingForm,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)},m.id))throw new Error(cardWrites.current.error||"保存できませんでした");}else await commitCardScore(scores,m);}} />
+      <p className="text-xs font-bold">{m.round_id?`第${m.round_number}ラウンド · コート${m.court_number} · ${m.generation_mode==="mixed"?"チーム混合":"チーム対決"}`:`第${m.match_order}試合`}</p>
+      <ScoreInput compact mixed={m.generation_mode==="mixed"} pairLabels={m.generation_mode==="mixed"?["ペア1","ペア2"]:[teamAName,teamBName]} saveKey={`${scoreScope}${m.id}`} names={cardScoreNames(m)} value={{a:teamCardScores(m).a===null?"":String(teamCardScores(m).a),b:teamCardScores(m).b===null?"":String(teamCardScores(m).b)}} saved={!pendingTeamCard(m)} result={pendingTeamCard(m)?null:teamCardScores(m).result==="win"?"A":teamCardScores(m).result==="lose"?"B":teamCardScores(m).result==="draw"?"draw":null} disabled={generationBusy||!canManage||event.status==="closed"||isClosingEvent||videoBusy!==null} onCommit={async scores=>{if(editingId===m.id){if(!await saveMatch(true,{...editingForm,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)},m.id))throw new Error(cardWrites.current.error||"保存できませんでした");}else await commitCardScore(scores,m);}} />
       {m.score_detail&&<p>詳細スコア: {m.score_detail}</p>}{m.memo&&<p className="whitespace-pre-wrap">メモ: {m.memo}</p>}
-      <YoutubeDisclosure compact closable busy={videoBusy===m.id||isClosingEvent||scoreJobs[`${scoreScope}${m.id}`]?.status==="saving"||cardWrites.current.saving.has(m.id)} registered={!!m.youtube_url}>{m.youtube_url&&<a href={m.youtube_url} target="_blank" rel="noreferrer" className="underline">動画視聴</a>}{canManage&&event.status!=="closed"&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[m.id]??m.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[m.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs disabled:opacity-40" disabled={cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,()=>saveMatch(true,{...toForm(m),youtubeUrl:urlDrafts[m.id]??m.youtube_url??""},m.id))}>URLを保存</button>{m.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300 disabled:opacity-40" disabled={cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,async()=>{if(await saveMatch(true,{...toForm(m),youtubeUrl:""},m.id))setUrlDrafts(previous=>({...previous,[m.id]:""}));})}>URLを削除</button>}</div></>}</YoutubeDisclosure>
-      {canManage&&event.status!=="closed"&&<div className="mt-2 flex gap-2"><button className="min-h-11 flex-1 rounded border border-zinc-500 py-2 text-xs text-zinc-200" disabled={cardBusy||videoBusy!==null||scoreJobs[`${scoreScope}${m.id}`]?.status==="saving"||isClosingEvent} onClick={()=>{setEditingId(m.id);setEditingForm(toForm(m));}}>カード編集</button><button className="min-h-11 rounded border border-red-500/70 px-3 py-2 text-xs text-red-200" disabled={cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void deleteMatch(m.id)}>削除</button></div>}
-      {editingId===m.id&&<MatchFormView knownNames={knownNames} teamNames={[teamAName,teamBName]} onAddGuest={(side,name)=>addGuest(side,name)} showScore={false} saveKey={`${scoreScope}${m.id}`} disabled={isClosingEvent||cardBusy||attendanceBusy} title="試合カードを編集" form={editingForm} setForm={(p,s)=>setEditingForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={async scores=>{if(!await saveMatch(true,{...editingForm,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={()=>void runFormSave(true)} onCancel={()=>setEditingId(null)} />}
-    </div>)}))} latestHost={latestHost} pastHost={pastHost} expandedHost={expandedHost} expanded={historyOpen} />
+      <YoutubeDisclosure compact closable busy={videoBusy===m.id||isClosingEvent||scoreJobs[`${scoreScope}${m.id}`]?.status==="saving"||cardWrites.current.saving.has(m.id)} registered={!!m.youtube_url}>{m.youtube_url&&<a href={m.youtube_url} target="_blank" rel="noreferrer" className="underline">動画視聴</a>}{canManage&&event.status!=="closed"&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[m.id]??m.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[m.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs disabled:opacity-40" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,()=>saveMatch(true,{...toForm(m),youtubeUrl:urlDrafts[m.id]??m.youtube_url??""},m.id))}>URLを保存</button>{m.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300 disabled:opacity-40" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,async()=>{if(await saveMatch(true,{...toForm(m),youtubeUrl:""},m.id))setUrlDrafts(previous=>({...previous,[m.id]:""}));})}>URLを削除</button>}</div></>}</YoutubeDisclosure>
+      {canManage&&event.status!=="closed"&&<div className="mt-2 flex gap-2"><button className="min-h-11 flex-1 rounded border border-zinc-500 py-2 text-xs text-zinc-200" disabled={generationBusy||cardBusy||videoBusy!==null||scoreJobs[`${scoreScope}${m.id}`]?.status==="saving"||isClosingEvent} onClick={()=>{setEditingId(m.id);setEditingForm(toForm(m));}}>カード編集</button><button className="min-h-11 rounded border border-red-500/70 px-3 py-2 text-xs text-red-200" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void deleteMatch(m.id)}>削除</button></div>}
+      {editingId===m.id&&<MatchFormView knownNames={knownNames} teamNames={[teamAName,teamBName]} onAddGuest={(side,name)=>addGuest(side,name)} showScore={false} saveKey={`${scoreScope}${m.id}`} disabled={generationBusy||isClosingEvent||cardBusy||attendanceBusy} title="試合カードを編集" slotSources={m.round_id?teamCardPlayers(m).map(p=>p.source):undefined} mixed={m.generation_mode==="mixed"} form={editingForm} setForm={(p,s)=>setEditingForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={async scores=>{if(!await saveMatch(true,{...editingForm,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={()=>void runFormSave(true)} onCancel={()=>setEditingId(null)} />}
+    </div>)}))} latestCount={latestCount} latestHost={latestHost} pastHost={pastHost} expandedHost={expandedHost} expanded={historyOpen} />
     <Link href="/team-matches/new" className="text-center text-sm underline">フレンドリーチームマッチへ戻る</Link>
   </main>;
 }
@@ -347,7 +335,7 @@ function SideEditor({side,title,groups,roster,guests,guestName,setGuestName,canM
   </section>;
 }
 
-function MatchFormView({knownNames,teamNames,onAddGuest,showScore=true,saveKey,disabled=false,title,form,setForm,applyChoice,teamAChoices,teamBChoices,onSave,onCancel,onScoreCommit,newCard=false,saveError}:{knownNames:Record<string,string>;teamNames:[string,string];onAddGuest:(side:TeamSideKey,name:string)=>Promise<unknown>;showScore?:boolean;saveKey:string;disabled?:boolean;newCard?:boolean;saveError?:string;onScoreCommit:(scores:ScorePair)=>Promise<void>;title:string;form:Form;setForm:(p:Partial<Form>,sync?:boolean)=>void;applyChoice:(choice:string,profileKey:keyof Form,guestKey:keyof Form)=>Partial<Form>;teamAChoices:PlayerChoice[];teamBChoices:PlayerChoice[];onSave:()=>void;onCancel:()=>void}){
+function MatchFormView({knownNames,teamNames,onAddGuest,showScore=true,saveKey,disabled=false,title,form,setForm,applyChoice,teamAChoices,teamBChoices,onSave,onCancel,onScoreCommit,newCard=false,saveError,slotSources,mixed=false}:{knownNames:Record<string,string>;teamNames:[string,string];onAddGuest:(side:TeamSideKey,name:string)=>Promise<unknown>;showScore?:boolean;saveKey:string;disabled?:boolean;newCard?:boolean;saveError?:string;slotSources?:TeamSource[];mixed?:boolean;onScoreCommit:(scores:ScorePair)=>Promise<void>;title:string;form:Form;setForm:(p:Partial<Form>,sync?:boolean)=>void;applyChoice:(choice:string,profileKey:keyof Form,guestKey:keyof Form)=>Partial<Form>;teamAChoices:PlayerChoice[];teamBChoices:PlayerChoice[];onSave:()=>void;onCancel:()=>void}){
   const autoSaveReady=!newCard||canAutoCreateCard([form.a1ProfileId||form.a1GuestName,form.a2ProfileId||form.a2GuestName,form.b1ProfileId||form.b1GuestName,form.b2ProfileId||form.b2GuestName]);
   const {queue,snapshot}=useScoreSaves(), job=snapshot[saveKey];
   const names=(side:"a"|"b",choices:PlayerChoice[])=>[1,2].map(index=>{const pid=form[`${side}${index}ProfileId` as keyof Form],guest=form[`${side}${index}GuestName` as keyof Form];return {name:choices.find(choice=>choice.value===pid)?.label||knownNames[String(pid)]||guest||"選手名未設定",guest:!pid&&!!guest};});
@@ -355,10 +343,10 @@ function MatchFormView({knownNames,teamNames,onAddGuest,showScore=true,saveKey,d
   const values=[selectedChoiceValue(form.a1ProfileId,form.a1GuestName),selectedChoiceValue(form.a2ProfileId,form.a2GuestName),selectedChoiceValue(form.b1ProfileId,form.b1GuestName),selectedChoiceValue(form.b2ProfileId,form.b2GuestName)];
   const selected=values.filter(Boolean);
   const playerKeys=[["a1ProfileId","a1GuestName"],["a2ProfileId","a2GuestName"],["b1ProfileId","b1GuestName"],["b2ProfileId","b2GuestName"]] as const;
-  const details=<details><summary className="flex min-h-11 list-none cursor-pointer items-center text-xs">{newCard?"メモ・動画":"詳細スコア・メモ・動画"}</summary>{!newCard&&<><select className={cls} value={form.result} onChange={(e)=>setForm({result:e.target.value as ResultValue})}><option value="win">{teamNames[0]}勝ち</option><option value="lose">{teamNames[1]}勝ち</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><input className={cls} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e)=>setForm({scoreDetail:e.target.value})}/></>}<textarea className={cls} placeholder="メモ" value={form.memo} onChange={(e)=>setForm({memo:e.target.value})}/><YoutubeDisclosure compact closable busy={disabled||job?.status==="saving"} registered={!!form.youtubeUrl}><input className={cls} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e)=>setForm({youtubeUrl:e.target.value})}/><button type="button" className="text-xs text-red-300" onClick={()=>setForm({youtubeUrl:""})}>URLを削除</button></YoutubeDisclosure></details>;
+  const details=<details><summary className="flex min-h-11 list-none cursor-pointer items-center text-xs">{newCard?"メモ・動画":"詳細スコア・メモ・動画"}</summary>{!newCard&&<><select className={cls} value={form.result} onChange={(e)=>setForm({result:e.target.value as ResultValue})}><option value="win">{mixed?"ペア1":teamNames[0]}勝ち</option><option value="lose">{mixed?"ペア2":teamNames[1]}勝ち</option><option value="draw">引き分け</option><option value="undecided">未定</option></select><input className={cls} placeholder="詳細スコア" value={form.scoreDetail} onChange={(e)=>setForm({scoreDetail:e.target.value})}/></>}<textarea className={cls} placeholder="メモ" value={form.memo} onChange={(e)=>setForm({memo:e.target.value})}/><YoutubeDisclosure compact closable busy={disabled||job?.status==="saving"} registered={!!form.youtubeUrl}><input className={cls} placeholder="YouTubeリンク" value={form.youtubeUrl} onChange={(e)=>setForm({youtubeUrl:e.target.value})}/><button type="button" className="text-xs text-red-300" onClick={()=>setForm({youtubeUrl:""})}>URLを削除</button></YoutubeDisclosure></details>;
   return <fieldset disabled={disabled||job?.status==="saving"} className={newCard?"contents":"min-w-0 space-y-3 rounded-2xl border border-zinc-700 p-3"}>
     {!newCard&&<><div className="flex items-center justify-between gap-2 pr-12 sm:pr-0"><h4 className="text-sm font-bold">{title}</h4><span role="status" aria-label={`${selected.length}/4名選択済み`} className="shrink-0 text-xs text-zinc-400">{selected.length}/4名</span></div>{selected.some(value=>![...teamAChoices,...teamBChoices].some(c=>c.value===value))&&<p role="status" className="text-xs text-amber-300">参加候補外の選手が含まれています。編成を変更するときは選び直してください。</p>}</>}
-    <TeamPlayerPicker teamNames={teamNames} choices={[teamAChoices,teamBChoices]} values={values} labels={[...names("a",teamAChoices),...names("b",teamBChoices)].map(player=>player.name)} disabled={disabled||job?.status==="saving"} onSelect={(slot,value)=>setForm(applyChoice(value,playerKeys[slot][0],playerKeys[slot][1]))} onAddGuest={onAddGuest} continuous={newCard} onAdd={onSave} onCancel={onCancel} saveDisabled={queue.has(saveKey)} saveError={newCard?saveError:undefined}>{newCard?details:null}</TeamPlayerPicker>
+    <TeamPlayerPicker teamNames={teamNames} slotSources={slotSources} groupNames={mixed?["ペア1","ペア2"]:undefined} choices={[teamAChoices,teamBChoices]} values={values} labels={[...names("a",teamAChoices),...names("b",teamBChoices)].map(player=>player.name)} disabled={disabled||job?.status==="saving"} onSelect={(slot,value)=>setForm(applyChoice(value,playerKeys[slot][0],playerKeys[slot][1]))} onAddGuest={onAddGuest} continuous={newCard} onAdd={onSave} onCancel={onCancel} saveDisabled={queue.has(saveKey)} saveError={newCard?saveError:undefined}>{newCard?details:null}</TeamPlayerPicker>
     {!newCard&&<><div className="grid grid-cols-2 gap-2"><button className="min-h-11 rounded-xl bg-accent py-2 font-bold text-black" disabled={queue.has(saveKey)} onClick={onSave}>保存</button><button className="min-h-11 rounded-xl border border-zinc-500 py-2 text-zinc-200" onClick={onCancel}>キャンセル</button></div>{showScore&&<ScoreInput compact pairLabels={teamNames} saveKey={saveKey} names={[names("a",teamAChoices),names("b",teamBChoices)]} value={{a:form.aScore,b:form.bScore}} saved={title==="試合カードを編集"&&form.result!=="undecided"&&form.aScore!==""&&form.bScore!==""} onCommit={autoSaveReady?onScoreCommit:undefined} onChange={scores=>setForm({aScore:scores.a,bScore:scores.b},true)} />}{!autoSaveReady&&<p role="status" className="text-xs text-amber-300">選手情報が未設定のため自動登録しません。得点を決定した後、カードの「保存」で登録してください。</p>}{details}</>}
   </fieldset>;
 }
@@ -375,9 +363,9 @@ function StatsRowsView({ rows }: { rows: StatsRow[] }) {
   return <div className="space-y-2">{rows.map((row) => <div key={row.name} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{row.name}</p><p className="text-zinc-300">{row.wins}勝{row.losses}敗{row.draws}分 / 勝点{row.points} / 勝率{row.winRate.toFixed(1)}% / 得失点差{row.diff >= 0 ? `+${row.diff}` : row.diff}</p><p className="text-xs text-zinc-400">{row.matches}試合 / 得点{row.scored} / 失点{row.conceded}</p></div>)}</div>;
 }
 
-function TeamMatchStatsCard({ stats, openSections, onToggle }: { stats: { countedMatches: number; teams: StatsRow[]; players: StatsRow[]; pairs: StatsRow[] }; openSections: Record<StatsSectionKey, boolean>; onToggle: (key: StatsSectionKey) => void }) {
+function TeamMatchStatsCard({ stats, openSections, onToggle }: { stats: { countedMatches: number; allCountedMatches?:number; teams: StatsRow[]; players: StatsRow[]; pairs: StatsRow[] }; openSections: Record<StatsSectionKey, boolean>; onToggle: (key: StatsSectionKey) => void }) {
   const emptyRows: StatsRow[] = [];
-  return <Card title="戦績"><div className="space-y-3"><TeamStatsSection title="チーム戦績" isOpen={openSections.teams} onToggle={() => onToggle("teams")}><StatsRowsView rows={stats.countedMatches > 0 ? stats.teams : emptyRows} /></TeamStatsSection><TeamStatsSection title="個人戦績" isOpen={openSections.players} onToggle={() => onToggle("players")}><StatsRowsView rows={stats.players} /></TeamStatsSection><TeamStatsSection title="ペア戦績" isOpen={openSections.pairs} onToggle={() => onToggle("pairs")}><StatsRowsView rows={stats.pairs} /></TeamStatsSection></div></Card>;
+  return <Card title="戦績"><div className="space-y-3"><TeamStatsSection title={stats.allCountedMatches!==undefined&&stats.allCountedMatches!==stats.countedMatches?"チーム戦績（対決のみ）":"チーム戦績"} isOpen={openSections.teams} onToggle={() => onToggle("teams")}><StatsRowsView rows={stats.countedMatches > 0 ? stats.teams : emptyRows} /></TeamStatsSection><TeamStatsSection title={stats.allCountedMatches!==undefined&&stats.allCountedMatches!==stats.countedMatches?"個人戦績（全試合）":"個人戦績"} isOpen={openSections.players} onToggle={() => onToggle("players")}><StatsRowsView rows={stats.players} /></TeamStatsSection><TeamStatsSection title={stats.allCountedMatches!==undefined&&stats.allCountedMatches!==stats.countedMatches?"ペア戦績（全試合）":"ペア戦績"} isOpen={openSections.pairs} onToggle={() => onToggle("pairs")}><StatsRowsView rows={stats.pairs} /></TeamStatsSection></div></Card>;
 }
 
 

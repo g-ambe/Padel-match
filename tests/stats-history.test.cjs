@@ -253,8 +253,9 @@ test('フレンドリーチーム戦の集計区分・計算・0-0扱いと順�
   ].map(m=>({...m,team_a_player1_profile_id:'a',team_a_player2_guest_name:'ゲスト',team_b_player1_profile_id:'b',team_b_player2_profile_id:'c'}));
   function calc(legacy) {
     const b={teamAName:'チームA',teamBName:'チームB',memberName,matches};
-    for(const n of ['emptyStatsRow','applyStatsResult','sortStatsRows','hasCountableTeamScore']) b[n]=legacy?evaluate(legacySource(),n):handler(page,n);
-    return legacy?evaluate(legacySource(),'teamMatchStats',b)():handler(page,'teamMatchStats',b)();
+    if(!legacy){const {friendlyTeamStats}=require('../lib/friendly-team-results.ts');const {allCountedMatches,...stats}=handler(page,'teamMatchStats',{...b,friendlyTeamStats,guests:{team_a:[],team_b:[]}})();assert.equal(allCountedMatches,stats.countedMatches);return stats;}
+    for(const n of ['emptyStatsRow','applyStatsResult','sortStatsRows','hasCountableTeamScore']) b[n]=evaluate(legacySource(),n);
+    return evaluate(legacySource(),'teamMatchStats',b)();
   }
   const result=calc(false);
   assert.deepEqual(result,calc(true));assert.equal(result.countedMatches,2);

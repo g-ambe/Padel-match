@@ -25,6 +25,14 @@
 - Use dark sports-app style.
 - Prefer short Japanese labels.
 
+## Tutorial and help synchronization
+
+- When changing UI, routes, button labels, interactions, or feature behavior, check the related tutorial and 「使い方・ヘルプ」 for impact.
+- If affected, update the relevant screens, interactions, and explanations in the same PR so they match the production UI. Check both the first-use tutorial and topic-specific manual.
+- Update related content without an extra confirmation request unless the user's instructions require approval. Limit inspection and changes to the relevant parts to conserve Codex credits.
+- Preserve isolated demo data; tutorial operations must not create or change real app data.
+- Do not change unrelated content. Changes without UI or tutorial/help impact do not require tutorial edits.
+
 ## Product rules
 
 - This is a realtime padel club operation app.

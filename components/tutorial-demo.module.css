@@ -1,0 +1,27 @@
+.demo { position: relative; color: var(--app-text); }
+.demo [data-tutorial-current="true"] {
+  outline: 2px solid var(--app-accent);
+  outline-offset: 3px;
+  scroll-margin-block: 3rem;
+  animation: nudge 1.8s ease-in-out 2;
+}
+.guide {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  width: max-content;
+  max-width: min(288px, calc(100% - 24px));
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--app-accent);
+  border-radius: 8px;
+  background: var(--app-card);
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+@keyframes nudge { 50% { outline-offset: 5px; } }
+@media (prefers-reduced-motion: reduce) {
+  .demo [data-tutorial-current="true"] { animation: none; }
+}

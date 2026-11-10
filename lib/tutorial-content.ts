@@ -14,7 +14,7 @@ export const stepPhases: Record<DemoStep, number> = {
 };
 export const manualTopics: { id: string; title: string; kind: ExperienceKind; steps: readonly DemoStep[]; text: string[] }[] = [
   { id: "intro", title: "はじめての方へ", kind: "full", steps: tutorialSteps, text: [
-    "目安4〜6分。試合TOPから、グループとメンバーの準備、開催、2Roundの記録、終了、結果共有まで操作します。すべて体験用データです。実際の登録や共有は行いません。グループ作成はスキップできます。",
+    "強調された場所をタップして学べます。試合TOPから、グループとメンバーの準備、開催、2Roundの記録、終了、結果共有まで操作します。すべて体験用データです。実際の登録や共有は行いません。グループ作成はスキップできます。",
     "詳しい設定や応用機能は、項目別マニュアルを必要なときに確認してください。体験はいつでも終了・再開できます（途中の体験入力は保存しません）。"
   ] },
   { id: "groups", title: "グループ・メンバー管理", kind: "topic", steps: ["group", "members"], text: [

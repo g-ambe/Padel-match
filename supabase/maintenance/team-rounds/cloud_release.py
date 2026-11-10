@@ -203,6 +203,7 @@ def rehearse():
     target=b.start_isolated_database(root)
     restored=b.restore_files(target,files,manifest)
     attendance.align_isolated_defaults(target)
+    print('::notice title=PR191隔離確認::actual_file_restore_and_security_PASS',flush=True)
     target.sql('SET ROLE postgres;'+(HERE/'01_preflight.sql').read_text())
     before=probes(target,manifest)
     statistics=statistics_fingerprint(target)
@@ -213,12 +214,17 @@ def rehearse():
     target.sql('SET ROLE postgres;'+(HERE/'02_verify.sql').read_text())
     after=probes(target,manifest);old_catalog_unchanged(before,after)
     require(statistics_fingerprint(target)==statistics,'0045_existing_statistics_changed')
+    print('::notice title=PR191隔離確認::0045_existing_rows_catalog_and_statistics_PASS',flush=True)
     result=functional(target)
     target.sql('SET ROLE postgres;'+rows_guard(rows))
+    print('::notice title=PR191隔離確認::functional_checks_and_cleanup_PASS',flush=True)
     # ロールバックは外部ネットワークのない隔離コンテナだけ。
     target.sql('SET ROLE postgres;'+(HERE/'04_rollback_empty.sql').read_text().replace('ROLLBACK;','COMMIT;'))
     target.sql(guard(before))
-    target.sql(MIGRATION.read_text()+verify_sql()+rows_guard(rows)+guard(after))
+    print('::notice title=PR191隔離確認::empty_rollback_catalog_PASS',flush=True)
+    # Supabaseの接続初期ロールではなく、初回・本番と同じDDL所有者で再適用。
+    target.sql('SET ROLE postgres;'+MIGRATION.read_text()+verify_sql()+rows_guard(rows)+guard(after))
+    print('::notice title=PR191隔離確認::reapply_same_owner_catalog_and_rows_PASS',flush=True)
     b.json_file(root/'team191-proof.json',{'head':os.environ['BACKUP_SOURCE_SHA'],'main':MAIN_SHA,'migration':MIGRATION_SHA,'backup':os.environ['BACKUP_SHA256'],'before':before,'after':after,'manifest':manifest,'rows':rows,'statistics':statistics})
     return dict(restored,**result,existing_rows_and_security_unchanged=True,empty_rollback_reapply=True)
 

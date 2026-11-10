@@ -24,7 +24,8 @@ export function GlobalMenu() {
   const [practice, setPractice] = useState<readonly DemoStep[]>(tutorialSteps);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const busyRef = useRef(false), contentRef = useRef<HTMLElement>(null), backRef = useRef<HTMLButtonElement>(null);
-  const [isSuperUser, setIsSuperUser] = useState(false);
+  const [superOwner, setSuperOwner] = useState<string | null>(null);
+  const isSuperUser = !!account.id && superOwner === account.id;
 
   const panelRef = useRef<HTMLElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -36,13 +37,13 @@ export function GlobalMenu() {
 
   useEffect(() => {
     let active=true;
-    setIsSuperUser(false);setOpen(false);setUnreadCount(0);
+    setSuperOwner(null);setOpen(false);setUnreadCount(0);
     const supabase=getSupabaseClient(), owner=account.id;
     if(supabase&&owner)void supabase.auth.getUser().then(async({data})=>{
       if(!active||data.user?.id!==owner)return;
-      if(data.user.email?.toLowerCase()==="testuser01@example.com"){setIsSuperUser(true);return;}
+      if(data.user.email?.toLowerCase()==="testuser01@example.com"){setSuperOwner(owner);return;}
       const {data:admin}=await supabase.from("app_admins").select("id").eq("profile_id",owner).eq("is_active",true).maybeSingle();
-      if(active)setIsSuperUser(!!admin);
+      if(active)setSuperOwner(admin?owner:null);
     });
     return()=>{active=false;};
   },[account.id]);

@@ -1,5 +1,6 @@
 "use client";
 
+import { TeamMatchShortcut } from "@/components/team-match-shortcut";
 import { TeamRoundGenerator } from "@/components/team-round-generator";
 import { friendlyTeamRoundError, teamCardScores, pendingTeamCard, teamCardPlayers, teamSlots, type TeamCard, type TeamSource } from "@/lib/friendly-team-rounds";
 import { friendlyTeamStats, type TeamStatsRow } from "@/lib/friendly-team-results";
@@ -103,6 +104,19 @@ export default function FriendlyTeamMatchDetailPage() {
   const [tab,setTab]=useState("matches");
   const [historyOpen,setHistoryOpen]=useState(false);
   const [generationBusy,setGenerationBusy]=useState(false);
+  const [generationOpen,setGenerationOpen]=useState(false);
+  const addArea=useRef<HTMLDivElement>(null), manualButton=useRef<HTMLButtonElement>(null), randomButton=useRef<HTMLButtonElement>(null);
+  const pendingLatestScroll=useRef(false);
+  useEffect(()=>{
+    if(!pendingLatestScroll.current||showForm||generationOpen||generationBusy)return;
+    let second=0;
+    const first=requestAnimationFrame(()=>{second=requestAnimationFrame(()=>{
+      if(document.querySelector('dialog[open]')||!latestHost.current?.children.length)return;
+      pendingLatestScroll.current=false;
+      latestHost.current.scrollIntoView({block:"start",behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?"auto":"smooth"});
+    });});
+    return()=>{cancelAnimationFrame(first);cancelAnimationFrame(second);};
+  },[matches,showForm,generationOpen,generationBusy]);
   const latestHost=useRef<HTMLDivElement>(null),pastHost=useRef<HTMLDivElement>(null),expandedHost=useRef<HTMLDivElement>(null);
   const selectTab=(next:string)=>{
     if(document.querySelector('dialog[open]')) return;
@@ -230,7 +244,7 @@ export default function FriendlyTeamMatchDetailPage() {
       if(previous?.round_id&&edit&&suppliedId&&targetId===editingId)setEditingForm(toForm(applied as Match));
       setMatches(previous=>edit?previous.map(m=>m.id===newId?{...m,...applied}:m):[...previous,{id:newId,match_order:Math.max(0,...previous.map(m=>m.match_order))+1,...patch}]);
       cardWrites.current.newIds.delete(key);
-      if(!edit){setForm(emptyForm());setShowForm(false);}
+      if(!edit){pendingLatestScroll.current=true;setForm(emptyForm());setShowForm(false);}
       if(edit&&!suppliedId&&targetId===editingId){setEditingId(null);setEditingForm(emptyForm());}
       setNotice("試合カードを保存しました");
       try{await load();}catch{setError("保存後の再読み込みに失敗しました");}
@@ -277,7 +291,8 @@ export default function FriendlyTeamMatchDetailPage() {
   const focusRoundId=reverseMatches[0]?.round_id??reverseMatches.find(m=>m.round_id&&pendingTeamCard(m))?.round_id;
   const latestCount=focusRoundId?Math.max(2,reverseMatches.findLastIndex(m=>m.round_id===focusRoundId)+1):2;
   const eventSides = [teamA, teamB].filter((side): side is Side => Boolean(side));
-  return <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
+  return <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20 text-zinc-100">
+    <TeamMatchShortcut enabled={tab==="matches"&&canManage&&event.status!=="closed"} buttons={[manualButton,randomButton]} onClick={()=>addArea.current?.scrollIntoView({block:"center",behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?"auto":"smooth"})}/>
     <EditableEventTitle label="開催" name={event.name} canEdit={canManage} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={()=>void saveEventName()} onCancel={cancelEventNameEdit} />
     <p className="text-xs text-zinc-400">{officialStatusLabel(event.status)} · フレンドリーチーム戦</p>
     <div className="grid grid-cols-2 gap-2 text-sm"><p className="rounded-xl border border-emerald-700 p-2">{teamAName}</p><p className="rounded-xl border border-blue-700 p-2">{teamBName}</p></div>
@@ -287,8 +302,15 @@ export default function FriendlyTeamMatchDetailPage() {
     {error&&<p className="rounded-xl border border-red-500/60 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
     {notice&&<p className="rounded-xl border border-emerald-500/60 bg-emerald-950/40 p-3 text-sm text-emerald-200">{notice}</p>}
     <section id="team-panel-matches" role="tabpanel" aria-labelledby="team-tab-matches" hidden={tab!=="matches"} className="space-y-3">
-    {canManage&&event.status!=="closed"&&<TeamRoundGenerator eventId={id} teamNames={[teamAName,teamBName]} counts={[choices("team_a").length,choices("team_b").length]} courtCount={event.court_count||1} disabled={showForm||!!editingId||isClosingEvent||cardBusy||attendanceBusy||!!videoBusy||unsavedScoreCount>0||attendance===null} onBusyChange={setGenerationBusy} onSaved={async()=>{scoreQueue.invalidateReads(scoreScope);await load();}}/>}
-    {canManage&&event.status!=="closed"&&(showForm?<MatchFormView knownNames={knownNames} teamNames={[teamAName,teamBName]} onAddGuest={(side,name)=>addGuest(side,name)} saveKey={`${scoreScope}new:${id}`} disabled={generationBusy||isClosingEvent||cardBusy||attendanceBusy} title="試合カードを追加" newCard saveError={error} form={form} setForm={(p,s)=>setForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={scores=>commitCardScore(scores)} onSave={()=>void runFormSave(false)} onCancel={()=>setShowForm(false)}/>:<ActionButton disabled={generationBusy||cardBusy||attendanceBusy||attendance===null} onClick={()=>setShowForm(true)}>試合カードを追加</ActionButton>)}    <div ref={latestHost} className="space-y-2" />
+    {canManage&&event.status!=="closed"&&<div ref={addArea} className="space-y-2 rounded-xl border border-zinc-700 p-3">
+      <h2 className="text-sm font-bold">試合を追加</h2>
+      <div className="grid grid-cols-2 gap-2">{([["manual","手動で追加","選手4名を選ぶ"],["random","乱数で生成","対決・混合を編成"]] as const).map(([kind,label,detail])=><button key={kind} ref={kind==="manual"?manualButton:randomButton} type="button" disabled={generationBusy||cardBusy||attendanceBusy||attendance===null||isClosingEvent||!!videoBusy||!!editingId||(kind==="random"&&unsavedScoreCount>0)} className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-zinc-600 bg-zinc-800 p-2 text-left disabled:opacity-40" onClick={()=>kind==="manual"?setShowForm(true):setGenerationOpen(true)}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5 shrink-0 text-accent">{kind==="manual"?<path d="M12 4v16M4 12h16"/>:<><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01" strokeLinecap="round" strokeWidth="3"/></>}</svg><span className="min-w-0"><span className="block text-sm font-bold">{label}</span><span className="block text-[10px] text-zinc-400">{detail}</span></span>
+      </button>)}</div>
+    </div>}
+    {canManage&&event.status!=="closed"&&<TeamRoundGenerator open={generationOpen} onClose={()=>setGenerationOpen(false)} eventId={id} teamNames={[teamAName,teamBName]} counts={[choices("team_a").length,choices("team_b").length]} courtCount={event.court_count||1} disabled={showForm||!!editingId||isClosingEvent||cardBusy||attendanceBusy||!!videoBusy||unsavedScoreCount>0||attendance===null} onBusyChange={setGenerationBusy} onSaved={async()=>{scoreQueue.invalidateReads(scoreScope);await load();pendingLatestScroll.current=true;}}/>}
+    {canManage&&event.status!=="closed"&&showForm&&<MatchFormView knownNames={knownNames} teamNames={[teamAName,teamBName]} onAddGuest={(side,name)=>addGuest(side,name)} saveKey={`${scoreScope}new:${id}`} disabled={generationBusy||isClosingEvent||cardBusy||attendanceBusy} title="試合カードを追加" newCard saveError={error} form={form} setForm={(p,s)=>setForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={scores=>commitCardScore(scores)} onSave={()=>void runFormSave(false)} onCancel={()=>setShowForm(false)}/>}
+    <div ref={latestHost} className="scroll-mt-4 space-y-2" />
     <details className="group/history rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none items-center gap-2 px-3 [&::-webkit-details-marker]:hidden"><span className="event-disclosure-icon"><span className="group-open/history:hidden">▶</span><span className="hidden group-open/history:inline">▼</span></span>過去の試合 · {Math.max(0,matches.length-latestCount)}件</summary><div ref={pastHost} className="max-h-[50dvh] space-y-2 overflow-y-auto p-2" /></details>
     <button type="button" aria-label="全試合履歴を拡大" className="min-h-11 min-w-11 rounded-xl border border-zinc-600 px-3 text-sm text-zinc-200" onClick={()=>setHistoryOpen(true)}>全試合を表示</button>
     <details className="group/manage rounded-xl border border-zinc-700"><summary className="flex min-h-11 list-none items-center gap-2 px-3 [&::-webkit-details-marker]:hidden"><span className="event-disclosure-icon"><span className="group-open/manage:hidden">▶</span><span className="hidden group-open/manage:inline">▼</span></span>開催管理</summary><div className="space-y-3 p-2">    <Card title="イベント情報"><dl className="space-y-2 text-sm"><div><dt className="text-zinc-400">ステータス</dt><dd>{officialStatusLabel(event.status)}</dd></div><div><dt className="text-zinc-400">説明</dt><dd className="whitespace-pre-wrap">{event.description||"未入力"}</dd></div><div><dt className="text-zinc-400">メモ</dt><dd className="whitespace-pre-wrap">{event.memo||"未入力"}</dd></div></dl></Card>

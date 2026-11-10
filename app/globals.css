@@ -266,3 +266,8 @@ body {
 .team-player-slot[data-active="true"] { background:var(--team-picker-bg); color:var(--team-picker-text); border-color:var(--team-picker-border); }
 /* 混合ではペアの左右と元所属の色を混同しない。元所属の色は選手名にのみ付ける。 */
 .friendly-scoreboard-input[data-mixed="true"] .friendly-scoreboard-pair { background:var(--app-card); color:var(--app-text); border-color:var(--app-border); }
+
+/* チーム戦の操作中は、観測コールバックを待たずショートカットを隠す。 */
+body:has(dialog[open], [aria-modal="true"], input:focus, textarea:focus, select:focus, [data-score-key] button:focus) .team-match-shortcut { display: none; }
+
+.team-match-shortcut > .team-match-shortcut-button { background-color: theme('colors.zinc.900') !important; color: theme('colors.white') !important; }

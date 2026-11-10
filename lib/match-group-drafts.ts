@@ -35,6 +35,10 @@ function valuesFor(kind: MatchFormKind, value: unknown): MatchFormValues | null 
   if (kind === "friendly_team") for (const field of ["teamAManual", "teamBManual"]) {
     if (raw[field] === "true" || raw[field] === "false") result[field] = raw[field];
   }
+  if (kind === "friendly_team") {
+    if (typeof raw.hostGroupId === "string" && (["auto", "none"].includes(raw.hostGroupId) || UUID.test(raw.hostGroupId))) result.hostGroupId = raw.hostGroupId;
+    if (typeof raw.createStep === "string" && ["1", "2", "3", "4"].includes(raw.createStep)) result.createStep = raw.createStep;
+  }
   return result;
 }
 

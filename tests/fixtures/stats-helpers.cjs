@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 const { createClient } = require('@supabase/supabase-js');
-require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./friendly-round-history','./permissions','./stats-history','./friendly-match-results'].includes(specifier) ? specifier + '.ts' : specifier, context); } });
+require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./friendly-team-rounds','./friendly-rounds','./friendly-round-history','./permissions','./stats-history','./friendly-match-results'].includes(specifier) ? specifier + '.ts' : specifier, context); } });
 const history = require('../../lib/stats-history.ts');
 const results = require('../../lib/friendly-match-results.ts');
 const { readProfileRows } = require('../../lib/player-profiles.ts');
@@ -28,7 +28,7 @@ function expression(source, name) {
 }
 function evaluate(source, name, bindings = {}) {
   const code = ts.transpileModule(`module.exports = (${expression(source, name)});`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText;
-  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, ...roundLineup, eventMode:"manual", fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, setEventTab:()=>{}, initializeEventTab:()=>{}, participantStatusRevision:{current:0}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
+  const values = { ...results, ...history, ...eventCourts, ...fixedPairs, ...roundLineup, generationBusy:false,teamSlots:["team_a_player1","team_a_player2","team_b_player1","team_b_player2"],eventMode:"manual", fixedFeature:false, pendingFixedRound:{current:null}, pendingFixedOwner:{current:null}, fixedOwner:{current:null}, setFixedState:()=>{}, setFixedError:()=>{}, fetchBalancePastStats, readProfileRows, closingEvent:{current:false}, boardOperation:{current:null}, setCourtCount:()=>{}, setIsClosingEvent:()=>{}, setEventStatus:()=>{}, setEventTab:()=>{}, initializeEventTab:()=>{}, participantStatusRevision:{current:0}, scoreQueue:{hasUnsaved:()=>false,has:()=>false,invalidateReads:()=>{}}, scoreScope:'test#', scrollToResults:()=>{}, ...bindings };
   const module = { exports: {} };
   new Function('module', ...Object.keys(values), code)(module, ...Object.values(values));
   return module.exports;

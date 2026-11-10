@@ -21,9 +21,11 @@ type Props = {
   saveDisabled?: boolean;
   saveError?: string;
   children?: ReactNode;
+  slotSources?: Side[];
+  groupNames?: [string,string];
 };
 
-export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled, onSelect, onAddGuest, continuous = false, onAdd, onCancel, saveDisabled = false, saveError, children }: Props) {
+export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled, onSelect, onAddGuest, continuous = false, onAdd, onCancel, saveDisabled = false, saveError, children, slotSources, groupNames = teamNames }: Props) {
   const [slot, setSlot] = useState<Slot | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<0 | 2 | null>(null);
   const promptedTeams = useRef(new Set<number>());
@@ -35,12 +37,13 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
   const [error, setError] = useState("");
   const [recentGuest, setRecentGuest] = useState<{ side: Side; name: string } | null>(null);
   const candidateList = useRef<HTMLDivElement>(null), recentButton = useRef<HTMLButtonElement>(null);
-  const team = slot !== null && slot >= 2 ? 1 : 0;
+  const team = slot !== null && slotSources ? (slotSources[slot] === "team_b" ? 1 : 0) : slot !== null && slot >= 2 ? 1 : 0;
   const side: Side = team === 0 ? "team_a" : "team_b";
   const recentValue = recentGuest?.side === side ? `guest:${recentGuest.name}` : "";
   const recentAvailable = !!recentValue && choices[team].some(choice => choice.value === recentValue);
   const locked = disabled || guestBusy;
-  const duplicate = (value: string) => values.some((selected, index) => index !== slot && selected === value);
+  const duplicate = (value: string) => values.some((selected, index) => index !== slot && selected === value
+    && (!slotSources || !value.startsWith("guest:") || slotSources[index] === side));
   const confirmationValid = confirmTarget !== null && !values[confirmTarget] && !values[confirmTarget + 1]
     && !!values[2 - confirmTarget] && !!values[3 - confirmTarget];
 
@@ -102,12 +105,12 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
 
   const selections = <div className="space-y-2">
       {([0, 1] as const).map(index => <section key={index} className={`team-player-picker team-side-${index === 0 ? "a" : "b"} min-w-0 space-y-1.5`}>
-        <h4 className="team-player-heading flex min-w-0 items-center gap-2 text-sm font-semibold"><span aria-hidden="true" className="team-player-dot h-2 w-2 shrink-0 rounded-full" /><span className="min-w-0 break-words">{teamNames[index]}</span></h4>
+        <h4 className={`${slotSources ? "" : "team-player-heading"} flex min-w-0 items-center gap-2 text-sm font-semibold`}>{!slotSources&&<span aria-hidden="true" className="team-player-dot h-2 w-2 shrink-0 rounded-full" />}<span className="min-w-0 break-words">{groupNames[index]}</span></h4>
         <div className="grid grid-cols-2 gap-2">{([0, 1] as const).map(position => {
           const key = (index * 2 + position) as Slot, value = values[key];
           return <button key={key} data-player-slot={key} data-active={continuous && slot === key} type="button" disabled={disabled || guestBusy} aria-haspopup={continuous ? undefined : "dialog"} aria-pressed={continuous ? slot === key : undefined} aria-label={`${teamNames[index]}の選手${position + 1}を選択：${value ? labels[key] : "未選択"}`} title={value ? labels[key] : undefined}
-            data-selected={!!value} className="team-player-slot flex min-h-11 min-w-0 items-center rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-40" onClick={() => open(key)}>
-            <span className="min-w-0 flex-1">{value ? <GuestName name={labels[key]} guest={value.startsWith("guest:")} compact /> : "＋ 選手を選択"}</span>
+            data-selected={!!value} className={`team-player-slot ${slotSources ? `team-player-picker team-side-${slotSources[key] === "team_a" ? "a" : "b"}` : ""} flex min-h-11 min-w-0 items-center rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-40`} onClick={() => open(key)}>
+            <span className="min-w-0 flex-1">{slotSources&&<span className="team-player-heading block text-[10px]">{teamNames[slotSources[key] === "team_a" ? 0 : 1]}</span>}{value ? <GuestName name={labels[key]} guest={value.startsWith("guest:")} compact /> : "＋ 選手を選択"}</span>
           </button>;
         })}</div>
       </section>)}
@@ -123,7 +126,7 @@ export function TeamPlayerPicker({ teamNames, choices, values, labels, disabled,
           <div className="flex shrink-0 items-center gap-2"><p className="team-player-heading min-w-0 flex-1 break-words text-sm font-semibold">{continuous ? `${teamNames[team]} · 選手${slot % 2 + 1}` : "選手を選択"}</p>{continuous && <button type="button" disabled={locked} aria-label="選手候補を閉じる" className="min-h-11 min-w-11 shrink-0 rounded-xl text-zinc-400" onClick={() => setSlot(null)}>×</button>}</div>
           <div ref={candidateList} data-player-candidates role="group" aria-label={`${teamNames[team]}の選手候補`} className={`grid ${continuous ? "max-h-[28dvh] min-h-12" : "max-h-[40dvh] min-h-0"} grid-cols-2 gap-2 overflow-y-auto overscroll-contain p-0.5`}>
             {options.map(choice => {
-              const selected = values.includes(choice.value), blocked = duplicate(choice.value), current = slot !== null && values[slot] === choice.value;
+              const blocked = duplicate(choice.value), current = slot !== null && values[slot] === choice.value, selected = current || blocked;
               return <button ref={choice.value === recentValue ? recentButton : undefined} key={choice.value} type="button" disabled={locked || blocked} aria-pressed={selected}
                 aria-label={`${teamNames[team]}の${choice.label}を選択`} data-selected={selected} title={blocked ? "他の枠で選択済み" : undefined}
                 className="team-player-option flex min-h-12 min-w-0 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-2 text-left text-sm disabled:opacity-40" onClick={() => choose(choice.value)}>

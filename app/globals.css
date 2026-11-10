@@ -264,3 +264,5 @@ body {
 .team-player-option[data-selected="true"] { background:var(--team-picker-bg); color:var(--team-picker-text); border-color:var(--team-picker-border); }
 .team-player-slot:focus-visible, .team-player-option:focus-visible { outline:2px solid var(--team-picker-border); outline-offset:2px; }
 .team-player-slot[data-active="true"] { background:var(--team-picker-bg); color:var(--team-picker-text); border-color:var(--team-picker-border); }
+/* 混合ではペアの左右と元所属の色を混同しない。元所属の色は選手名にのみ付ける。 */
+.friendly-scoreboard-input[data-mixed="true"] .friendly-scoreboard-pair { background:var(--app-card); color:var(--app-text); border-color:var(--app-border); }

@@ -11,6 +11,6 @@ function CardMount({ id, host, order, children }: { id: string; host: Host; orde
   return container ? createPortal(children,container,id) : null;
 }
 // 同じコンテナを移動してポップアップ・未確定入力・動画フォームを保持する。
-export function TeamMatchCards({ cards, latestHost, pastHost, expandedHost, expanded }: { cards: {id:string;content:ReactNode}[]; latestHost:Host; pastHost:Host; expandedHost:Host; expanded:boolean }) {
-  return <>{cards.map((card,index)=><CardMount key={card.id} id={card.id} order={index} host={expanded?expandedHost:index<2?latestHost:pastHost}>{card.content}</CardMount>)}</>;
+export function TeamMatchCards({ cards, latestHost, pastHost, expandedHost, expanded, latestCount=2 }: { cards: {id:string;content:ReactNode}[]; latestHost:Host; pastHost:Host; expandedHost:Host; expanded:boolean; latestCount?:number }) {
+  return <>{cards.map((card,index)=><CardMount key={card.id} id={card.id} order={index} host={expanded?expandedHost:index<latestCount?latestHost:pastHost}>{card.content}</CardMount>)}</>;
 }

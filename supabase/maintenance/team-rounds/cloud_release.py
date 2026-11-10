@@ -242,9 +242,25 @@ def apply():
     authority()
     return result
 
+def diagnose():
+    """適用失敗後のSELECTだけ。変更行・ID・得点・ハッシュ値を出力しない。"""
+    authority()
+    files,manifest=b.unpack(b.workdir())
+    rows=json.loads((files/'rows.json').read_text())
+    parts=[]
+    for value in rows:
+        relation=b.ident(value['schema'])+'.'+b.ident(value['name'])
+        expected={'rows':value['rows'],'sha256':value['sha256']}
+        parts.append('SELECT '+q(value['schema']+'.'+value['name'])+'::text AS name WHERE '+common.row_expression(relation)+' IS DISTINCT FROM '+q(json.dumps(expected))+'::jsonb')
+    sql="BEGIN READ ONLY;"+b.SQL_SETTINGS+"SELECT json_build_object('migration_0045_absent',to_regclass('public.event_team_rounds') IS NULL,'attendance_0044_present',to_regclass('public.event_team_attendance') IS NOT NULL,'changed_tables_since_backup',(SELECT coalesce(json_agg(name ORDER BY name),'[]'::json) FROM ("+' UNION ALL '.join(parts)+") changed));ROLLBACK;"
+    result=json.loads(common.source_sql(sql,readonly=True,phase='0045_readonly_diagnosis_failed'))
+    return result
+
 def main():
     try:
         action=sys.argv[1]
+        if action=='diagnose':
+            print('::notice title=PR191本番読取診断::'+json.dumps(diagnose(),ensure_ascii=False),flush=True);return
         if action=='select-backup':select_backup();return
         if action=='preflight':preflight();return
         if action=='smoke':

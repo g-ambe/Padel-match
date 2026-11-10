@@ -1,5 +1,23 @@
 name: PR191の実バックアップ検証・0045適用
 on:
+  workflow_dispatch:
+    inputs:
+      backup_run_id:
+        description: 復元成功済みバックアップrun ID
+        required: true
+        type: string
+      backup_release_id:
+        description: 非公開暗号化バックアップRelease ID
+        required: true
+        type: string
+      backup_asset_id:
+        description: 暗号化バックアップasset ID
+        required: true
+        type: string
+      backup_sha256:
+        description: 暗号化バックアップSHA-256
+        required: true
+        type: string
   pull_request:
     types: [labeled]
 concurrency:
@@ -11,6 +29,53 @@ permissions:
   checks: read
   actions: read
 jobs:
+  postmerge-0045-apply:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/codex/friendly-team-random-rounds'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.sha }}
+      BACKUP_RUN_ID: ${{ inputs.backup_run_id }}
+      BACKUP_RELEASE_ID: ${{ inputs.backup_release_id }}
+      BACKUP_ASSET_ID: ${{ inputs.backup_asset_id }}
+      BACKUP_SHA256: ${{ inputs.backup_sha256 }}
+      PADEL_BACKUP_WORKDIR: /tmp/padel-team191-postmerge-${{ github.run_id }}-${{ github.run_attempt }}
+      PADEL_BACKUP_CA_FILE: /tmp/padel-team191-ca.crt
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: 適用ガードの最小限の確認
+        run: python3 -B -m unittest discover -s supabase/maintenance/team-rounds -p test_post_merge_apply.py -v
+      - name: 固定バックアップの取得・復元成功を確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/team-rounds/post_merge_apply.py select-backup
+      - name: 暗号化実ファイルを取得・ハッシュ照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 公式CAを照合
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 実バックアップ隔離復元・互換性・適用時保全ガードを確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/team-rounds/post_merge_apply.py prepare
+      - name: 最新データを保全して0045だけを原子的に適用・適用後確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_RELEASE_AUTHORIZED: PR191-0045-POSTMERGE-20261110
+        run: python3 -B supabase/maintenance/team-rounds/post_merge_apply.py apply
   verify-and-apply:
     if: >-
       github.event.pull_request.number == 191 &&

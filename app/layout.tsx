@@ -4,6 +4,7 @@ import { GlobalMenu } from "@/components/global-menu";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ScoreSaveProvider } from "@/components/score-save-provider";
 import { AppNavigation } from "@/components/app-navigation";
+import { TutorialProvider } from "@/components/tutorial-provider";
 import { Suspense } from "react";
 
 export const metadata: Metadata = {
@@ -17,9 +18,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen">
         <ThemeProvider>
           <ScoreSaveProvider>
+            <TutorialProvider>
             <GlobalMenu />
             {children}
             <Suspense fallback={null}><AppNavigation /></Suspense>
+            </TutorialProvider>
           </ScoreSaveProvider>
         </ThemeProvider>
       </body>

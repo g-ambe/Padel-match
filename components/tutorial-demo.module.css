@@ -1,11 +1,15 @@
 .demo { position: relative; color: var(--app-text); }
 .demo [data-tutorial-current="true"] {
-  outline: 2px solid var(--app-accent);
+  outline: 3px solid var(--app-accent);
   outline-offset: 3px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent) 20%, transparent), 0 0 12px color-mix(in srgb, var(--app-accent) 25%, transparent);
   scroll-margin-block: 3rem;
   animation: nudge 1.8s ease-in-out 2;
 }
 .guide {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   position: absolute;
   z-index: 5;
   pointer-events: none;
@@ -21,6 +25,7 @@
   font-weight: 600;
   line-height: 1.5;
 }
+.pointer { width: 16px; height: 16px; flex: none; color: var(--app-accent); }
 @keyframes nudge { 50% { outline-offset: 5px; } }
 @media (prefers-reduced-motion: reduce) {
   .demo [data-tutorial-current="true"] { animation: none; }

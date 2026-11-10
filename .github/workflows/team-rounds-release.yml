@@ -23,6 +23,9 @@ jobs:
     env:
       BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
       BACKUP_RUN_ID: '42751986377'
+      BACKUP_RELEASE_ID: '439932720'
+      BACKUP_ASSET_ID: '730037736'
+      BACKUP_SHA256: 0158e3551ac1decf0ccac07a39bcd3b7682b3891648fd21534bf4da6f66271df
       PADEL_BACKUP_WORKDIR: /tmp/padel-team191-${{ github.run_id }}-${{ github.run_attempt }}
       PADEL_BACKUP_CA_FILE: /tmp/padel-team191-ca.crt
     steps:

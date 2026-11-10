@@ -46,15 +46,12 @@ def select_backup():
     require(run_id.isdigit(),'0045_backup_run_invalid')
     run=b.api('/actions/runs/'+run_id)
     require(run['conclusion']=='success' and run['head_sha']==MAIN_SHA and run['run_attempt']==1 and run['path']=='.github/workflows/cloud-db-backup.yml','0045_backup_and_restore_not_successful')
-    releases=b.api('/releases?per_page=100')
-    release=next((v for v in releases if v['tag_name']=='db-backup-'+run_id+'-1'),None)
-    require(bool(release) and release['draft'] and '復元確認：成功' in release['body'],'0045_verified_private_backup_missing')
+    release=b.api('/releases/'+str(int(os.environ['BACKUP_RELEASE_ID'])))
+    require(release['name'].endswith(' '+run_id) and release['draft'] and '復元確認：成功' in release['body'],'0045_verified_private_backup_missing')
     record=json.loads(release['body'].split('\n\n')[-1])
-    require(bool(re.fullmatch('[0-9a-f]{64}',record['sha256'])),'0045_backup_hash_invalid')
-    assets=[v for v in release['assets'] if v['name']=='backup.tar.gpg']
+    require(bool(re.fullmatch('[0-9a-f]{64}',record['sha256'])) and record['sha256']==os.environ['BACKUP_SHA256'],'0045_backup_hash_invalid')
+    assets=[v for v in release['assets'] if v['name']=='backup.tar.gpg' and v['id']==int(os.environ['BACKUP_ASSET_ID'])]
     require(len(assets)==1,'0045_backup_asset_invalid')
-    with open(os.environ['GITHUB_ENV'],'a') as out:
-        out.write('BACKUP_RELEASE_ID='+str(int(release['id']))+'\nBACKUP_ASSET_ID='+str(int(assets[0]['id']))+'\nBACKUP_SHA256='+record['sha256']+'\n')
     print('PASS: pinned_backup_run_private_asset_hash_and_actual_restore',flush=True)
 
 def probes(target, manifest):

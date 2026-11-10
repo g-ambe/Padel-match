@@ -24,7 +24,7 @@ jobs:
       BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
       BACKUP_RUN_ID: '42751986377'
       PADEL_BACKUP_WORKDIR: /tmp/padel-team191-${{ github.run_id }}-${{ github.run_attempt }}
-      PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+      PADEL_BACKUP_CA_FILE: /tmp/padel-team191-ca.crt
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -77,7 +77,7 @@ jobs:
     timeout-minutes: 10
     env:
       BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
-      PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+      PADEL_BACKUP_CA_FILE: /tmp/padel-team191-ca.crt
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:

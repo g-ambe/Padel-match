@@ -6,10 +6,10 @@ import { SettingsContent } from "./settings-content";
 import { NotificationsContent } from "./notifications-content";
 import { AboutContent } from "./about-content";
 import { HelpManual } from "./help-manual";
-import { TutorialDemo } from "./tutorial-demo";
+import { TutorialDemo, type DemoDestination } from "./tutorial-demo";
 import { useTutorial } from "./tutorial-provider";
 import { useSessionAccount } from "./use-session-account";
-import { tutorialSteps, type DemoStep } from "@/lib/tutorial-content";
+import { tutorialSteps, type DemoStep, type ExperienceKind } from "@/lib/tutorial-content";
 import { getSupabaseClient } from "@/lib/supabase";
 
 
@@ -21,6 +21,7 @@ export function GlobalMenu() {
   const account = useSessionAccount(), tutorial = useTutorial();
   const hasSession = account.ready && !!account.id;
   const [panel, setPanel] = useState("menu");
+  const [practiceKind, setPracticeKind] = useState<ExperienceKind>("topic");
   const [practice, setPractice] = useState<readonly DemoStep[]>(tutorialSteps);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const busyRef = useRef(false), contentRef = useRef<HTMLElement>(null), backRef = useRef<HTMLButtonElement>(null);
@@ -105,17 +106,17 @@ export function GlobalMenu() {
     catch{setError("ログアウトできませんでした。もう一度お試しください。");}
     finally{busyRef.current=false;setBusy(false);}
   };
-  const experience = async (steps: readonly DemoStep[]) => {
+  const experience = async (steps: readonly DemoStep[], kind: ExperienceKind) => {
     if(busyRef.current)return;
     const owner=account.id;
     busyRef.current=true;setBusy(true);
-    try{await tutorial.begin();if(owner===account.id){setPractice(steps);setPanel("practice");}}
+    try{if(kind==="full")await tutorial.begin();if(owner===account.id){setPractice(steps);setPracticeKind(kind);setPanel("practice");}}
     finally{busyRef.current=false;setBusy(false);}
   };
-  const finish = async () => {
+  const finish = async (destination?: DemoDestination) => {
     if(busyRef.current)return;
     busyRef.current=true;setBusy(true);
-    try{await tutorial.complete(practice.length===8);setPanel("help");}
+    try{await tutorial.complete(practiceKind==="full");setPanel("help");if(practiceKind==="full"&&destination){setOpen(false);router.push(destination==="create"?"/events/new":"/home");}}
     finally{busyRef.current=false;setBusy(false);}
   };
   const titles:Record<string,string>={menu:"メニュー",settings:"アカウント・アプリ設定",help:"使い方・ヘルプ",about:"アプリについて",notifications:"通知",admin:"スーパーユーザー管理",logout:"ログアウト",practice:"操作を体験"};
@@ -154,12 +155,12 @@ export function GlobalMenu() {
         <nav ref={contentRef} aria-label={titles[panel]} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]" style={{ WebkitOverflowScrolling: "touch" }}>
           {panel==="menu"?<>{[["settings","アカウント・アプリ設定"],["help","使い方・ヘルプ"],["about","アプリについて"],["notifications",`通知${unreadCount>0?` (${unreadCount})`:""}`],...(isSuperUser?[["admin","スーパーユーザー管理"]]:[]),["logout","ログアウト"]].map(([key,label])=><button key={key} data-menu-action={key==="logout"?"logout":undefined} className={`min-h-12 w-full rounded-lg px-3 py-3 text-left ${key==="logout"?"bg-red-600/80":"bg-zinc-800"}`} onClick={()=>setPanel(key)}>{label}</button>)}</>:
             panel==="settings"?<SettingsContent onNavigate={closeMenu} onAbout={()=>setPanel("about")}/>:
-            panel==="help"?<HelpManual onExperience={steps=>void experience(steps)}/>:
+            panel==="help"?<HelpManual onExperience={(steps,kind)=>void experience(steps,kind)}/>:
             panel==="about"?<AboutContent onNavigate={closeMenu} onHelp={()=>setPanel("help")}/>:
             panel==="notifications"?<NotificationsContent onNavigate={closeMenu} onUnreadChange={setUnreadCount}/>:
             panel==="admin"&&isSuperUser?<div className="space-y-3 text-sm"><p>グループ・開催の管理、削除済みデータの確認は、既存の管理画面から操作できます。</p><button className="min-h-11 w-full rounded-xl border border-zinc-600 p-3" onClick={()=>moveTo("/super-admin")}>管理画面を開く</button></div>:
             panel==="logout"?<div className="space-y-3 text-sm"><p>ログアウトしますか？</p><button disabled={busy} className="min-h-11 w-full rounded-xl bg-red-600 p-3 font-bold text-white" onClick={()=>void logout()}>ログアウトする</button><button disabled={busy} className="min-h-11 w-full rounded-xl border border-zinc-600 p-3" onClick={()=>setPanel("menu")}>戻る</button></div>:
-            panel==="practice"?<TutorialDemo key={practice.join()} steps={practice} notice={tutorial.error} onClose={()=>setPanel("help")} onComplete={()=>void finish()}/>:null}
+            panel==="practice"?<TutorialDemo key={`${practiceKind}:${practice.join()}`} steps={practice} kind={practiceKind} notice={tutorial.error} onClose={()=>setPanel("help")} onComplete={destination=>void finish(destination)}/>:null}
           {error&&<p role="alert" className="text-sm text-red-400">{error}</p>}
 
         </nav>

@@ -11,7 +11,21 @@ import { useTutorial } from "./tutorial-provider";
 import { useSessionAccount } from "./use-session-account";
 import { tutorialSteps, type DemoStep, type ExperienceKind } from "@/lib/tutorial-content";
 import { getSupabaseClient } from "@/lib/supabase";
+import styles from "./global-menu.module.css";
 
+// Lucide menu: https://lucide.dev/icons/menu (SVG内にライセンスを保持する)。
+const menuIconLicense = `ISC License
+Copyright (c) 2026 Lucide Icons and Contributors
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`;
 
 export function GlobalMenu() {
   const router = useRouter();
@@ -130,10 +144,10 @@ export function GlobalMenu() {
         aria-label="メニュー"
         aria-expanded={open}
         aria-controls="global-menu-panel"
-        className="fixed right-3 top-3 z-50 min-h-11 min-w-11 rounded-lg sm:min-h-0 sm:min-w-0 bg-zinc-900/90 p-2 text-zinc-100 shadow-lg"
+        className={styles.trigger}
         onClick={() => setOpen((v) => !v)}
       >
-        ☰{unreadCount > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-accent px-1 text-[10px] font-bold text-black">{unreadCount}</span>}
+        <svg data-lucide="menu" aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><metadata>{menuIconLicense}</metadata><path d="M4 5h16" /><path d="M4 12h16" /><path d="M4 19h16" /></svg>{unreadCount > 0 && <span className="absolute right-0.5 top-0.5 min-w-4 rounded-full bg-accent px-1 text-[10px] font-bold leading-4 text-black">{unreadCount}</span>}
       </button>
 
       {open && <button className="fixed inset-0 z-40 touch-none bg-black/60" aria-label="閉じる" onClick={closeMenu} />}

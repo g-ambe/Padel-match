@@ -47,3 +47,15 @@ test('結果動画RPC：終了後の手動/自動カードは動画のみ更新�
   await db.exec('reset role');assert.equal(await snapshot(),dataBefore);assert.equal(await catalog(),before);assert.equal(await acl(),aclBefore);
  }finally{await db.close();}
 });
+
+test('0047の専用開催検証SQLは手動・自動・共有・競合を試験し、全試験データを取り消す',async()=>{
+ const {db}=await fixedPairDatabase(false);
+ try{
+  for(const file of ['0044_friendly_team_attendance.sql','0045_friendly_team_random_rounds.sql','0047_event_result_video.sql'])await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8'));
+  const snapshot=async()=>JSON.stringify((await db.query("select coalesce(jsonb_agg(to_jsonb(e) order by id),'[]'::jsonb) data from public.events e")).rows);
+  const before=await snapshot();
+  await db.exec('begin;'+fs.readFileSync('supabase/maintenance/event-result-video/03_smoke.sql','utf8')+'commit;');
+  assert.equal(await snapshot(),before,'成功時にも専用開催を残さない');
+  assert.equal((await db.query('select count(*) n from public.event_team_matches')).rows[0].n,0);
+ }finally{await db.close();}
+});

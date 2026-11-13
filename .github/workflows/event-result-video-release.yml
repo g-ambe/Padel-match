@@ -1,0 +1,75 @@
+name: PR202の実バックアップ検証・0047適用
+on:
+  pull_request:
+    types: [labeled]
+concurrency:
+  group: padel-event-result-video-202-release
+  cancel-in-progress: false
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+  statuses: read
+jobs:
+  verify-and-apply-0047:
+    if: >-
+      github.event.pull_request.number == 202 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/event-results-ui' &&
+      (github.event.label.name == '202隔離検証' || github.event.label.name == '202本番0047適用')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      BACKUP_RUN_ID: '43419491756'
+      BACKUP_RELEASE_ID: '444171644'
+      BACKUP_ASSET_ID: '743475725'
+      BACKUP_SHA256: 840a94d1f2bda5fdb98b2250ba2709f9cb92e8f1ce48ffde4e0ac866bdb03a94
+      PADEL_BACKUP_WORKDIR: /tmp/padel-video202-${{ github.run_id }}-${{ github.run_attempt }}
+      PADEL_BACKUP_CA_FILE: /tmp/padel-video202-ca.crt
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: 適用ガードと0047番号変更後の関連テスト
+        run: |
+          python3 -B -m unittest discover -s supabase/maintenance/event-result-video -p test_cloud_release.py -v
+          npm ci --ignore-scripts
+          node --test tests/result-video-db.test.cjs tests/result-ranking.test.cjs tests/match-share.test.cjs tests/shared-event-client.test.cjs
+      - name: 公式CAを照合
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 最新本番カタログと未適用状態を読み取り専用で確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+        run: python3 -B supabase/maintenance/event-result-video/cloud_release.py preflight
+      - name: 今回のバックアップ・実復元成功・非公開保管を固定照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-result-video/cloud_release.py select-backup
+      - name: 暗号化実ファイルを取得してSHA-256を照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 実データ隔離復元・0047・動画操作・権限・復旧の検証
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/event-result-video/cloud_release.py rehearse
+      - name: 承認済み0047のみ原子的に本番適用・事後確認
+        if: github.event.label.name == '202本番0047適用'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_RELEASE_AUTHORIZED: PR202-0047-20261113
+        run: python3 -B supabase/maintenance/event-result-video/cloud_release.py apply

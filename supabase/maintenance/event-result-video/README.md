@@ -6,7 +6,7 @@
 - `0045_friendly_team_random_rounds.sql` の自動カードは直接更新できず、更新RPCも `lock_event` によって開催中だけ許可される。
 - したがって、UIの表示条件だけを外しても、終了後の動画登録・変更は保存できない。
 
-`0046_event_result_video.sql` は動画URLだけを更新するRPCを追加する。既存RLS、テーブルのGRANT、既存スコア・カード保存RPCは変更しない。
+`0047_event_result_video.sql` は動画URLだけを更新するRPCを追加する。既存RLS、テーブルのGRANT、既存スコア・カード保存RPCは変更しない。
 
 - 認証済み、閲覧可能、従来のチーム戦管理者、未削除のチーム戦という条件を検証する。
 - イベント→試合の順で行ロックする。イベントID・試合IDは変更できない。
@@ -24,8 +24,8 @@ UIのブラウザ試験は合成API応答を利用しており、本番へのRPC
 
 1. 本番適用の承認後、既存のDB外暗号化バックアップ・隔離復元手順を利用する。
 2. 本番カタログが0044・0045および既存RLS/GRANTと整合すること、同名RPCが未導入であることを確認する。差異があれば停止する。
-3. 最新バックアップの隔離復元DBへ0046を適用し、動画のみの更新、管理者A/B、一般メンバー・共有閲覧者の拒否、既存データ・権限不変を再確認する。
-4. 固定した0046だけを本番へ適用する。テーブルのポリシー・GRANTが不変であること、新RPCがanonでは実行できずauthenticatedのみ実行できることを検証する。
+3. 最新バックアップの隔離復元DBへ0047を適用し、動画のみの更新、管理者A/B、一般メンバー・共有閲覧者の拒否、既存データ・権限不変を再確認する。
+4. 固定した0047だけを本番へ適用する。テーブルのポリシー・GRANTが不変であること、新RPCがanonでは実行できずauthenticatedのみ実行できることを検証する。
 5. 専用の試験開催で手動・自動カードの終了後の動画登録/変更/削除と、スコア・編成不変を確認する。既存の本番試合には試験書込みしない。
 6. DB検証成功後にUIをマージし、既存の自動デプロイに任せる。手動の二重デプロイはしない。
 
@@ -37,7 +37,7 @@ select tablename, policyname, roles, cmd, qual, with_check
 from pg_policies
 where schemaname = 'public' and tablename in ('events', 'event_team_matches')
 order by tablename, policyname;
--- 以下は0046導入後のみ。
+-- 以下は0047導入後のみ。
 select has_function_privilege('anon',
  'public.save_friendly_team_match_video(uuid,uuid,text,text)', 'EXECUTE') as anon_execute,
  has_function_privilege('authenticated',

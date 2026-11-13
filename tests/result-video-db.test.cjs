@@ -7,7 +7,7 @@ test('結果動画RPC：終了後の手動/自動カードは動画のみ更新�
   const catalog=async()=>JSON.stringify((await db.query("select tablename,policyname,roles,cmd,qual,with_check from pg_policies where schemaname='public' order by tablename,policyname")).rows);
   const acl=async()=>JSON.stringify((await db.query("select c.relname,c.relacl::text,a.attname,a.attacl::text from pg_class c join pg_namespace n on n.oid=c.relnamespace left join pg_attribute a on a.attrelid=c.oid and a.attnum>0 where n.nspname='public' and c.relkind='r' order by c.relname,a.attnum")).rows);
   const aclBefore=await acl();
-  const before=await catalog();await db.exec(fs.readFileSync('supabase/migrations/0046_event_result_video.sql','utf8'));assert.equal(await catalog(),before);
+  const before=await catalog();await db.exec(fs.readFileSync('supabase/migrations/0047_event_result_video.sql','utf8'));assert.equal(await catalog(),before);
   const normal=await event(971,4,{status:'closed',noGroup:true});
   await db.query('insert into rounds(id,event_id,round_number) values($1,$2,1)',[id(9711),normal.eid]);
   await db.query('insert into matches(id,event_id,round_id,court_number,completed) values($1,$2,$3,1,true)',[id(9712),normal.eid,id(9711)]);

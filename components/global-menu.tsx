@@ -10,6 +10,8 @@ import { TutorialDemo, type DemoDestination } from "./tutorial-demo";
 import { useTutorial } from "./tutorial-provider";
 import { useSessionAccount } from "./use-session-account";
 import { tutorialSteps, type DemoStep, type ExperienceKind } from "@/lib/tutorial-content";
+import { padelBoardHref } from "@/lib/padel-board";
+import { useScoreSaves } from "./score-save-provider";
 import { getSupabaseClient } from "@/lib/supabase";
 import styles from "./global-menu.module.css";
 
@@ -30,6 +32,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.`;
 export function GlobalMenu() {
   const router = useRouter();
   const pathname = usePathname();
+  const { queue } = useScoreSaves();
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const account = useSessionAccount(), tutorial = useTutorial();
@@ -133,6 +136,10 @@ export function GlobalMenu() {
     try{await tutorial.complete(practiceKind==="full");setPanel("help");if(practiceKind==="full"&&destination){setOpen(false);router.push(destination==="create"?"/events/new":"/home");}}
     finally{busyRef.current=false;setBusy(false);}
   };
+  const openBoard = () => {
+    if (queue.hasUnsaved(`${pathname}#`)) { setError("未保存のスコアがあります。保存完了または再試行後に移動してください。"); return; }
+    if (pathname === "/padel-board") closeMenu(); else moveTo(padelBoardHref(pathname + window.location.search));
+  };
   const titles:Record<string,string>={menu:"メニュー",settings:"アカウント・アプリ設定",help:"使い方・ヘルプ",about:"アプリについて",notifications:"通知",admin:"スーパーユーザー管理",logout:"ログアウト",practice:"操作を体験"};
 
   if (!hasSession) return null;
@@ -167,7 +174,7 @@ export function GlobalMenu() {
           <button ref={closeRef} disabled={busy} aria-label="閉じる" className="min-h-11 min-w-11 shrink-0 rounded-lg bg-zinc-800 px-3 py-2 text-lg leading-none" onClick={closeMenu}>×</button>
         </div>
         <nav ref={contentRef} aria-label={titles[panel]} className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]" style={{ WebkitOverflowScrolling: "touch" }}>
-          {panel==="menu"?<>{[["settings","アカウント・アプリ設定"],["help","使い方・ヘルプ"],["about","アプリについて"],["notifications",`通知${unreadCount>0?` (${unreadCount})`:""}`],...(isSuperUser?[["admin","スーパーユーザー管理"]]:[]),["logout","ログアウト"]].map(([key,label])=><button key={key} data-menu-action={key==="logout"?"logout":undefined} className={`min-h-12 w-full rounded-lg px-3 py-3 text-left ${key==="logout"?"bg-red-600/80":"bg-zinc-800"}`} onClick={()=>setPanel(key)}>{label}</button>)}</>:
+          {panel==="menu"?<>{[["settings","アカウント・アプリ設定"],["help","使い方・ヘルプ"],["board","パデルボード"],["about","アプリについて"],["notifications",`通知${unreadCount>0?` (${unreadCount})`:""}`],...(isSuperUser?[["admin","スーパーユーザー管理"]]:[]),["logout","ログアウト"]].map(([key,label])=><button key={key} data-menu-action={key==="logout"?"logout":undefined} className={`min-h-12 w-full rounded-lg px-3 py-3 text-left ${key==="logout"?"bg-red-600/80":"bg-zinc-800"}`} onClick={()=>key==="board"?openBoard():setPanel(key)}>{label}</button>)}</>:
             panel==="settings"?<SettingsContent onNavigate={closeMenu} onAbout={()=>setPanel("about")}/>:
             panel==="help"?<HelpManual onExperience={(steps,kind)=>void experience(steps,kind)}/>:
             panel==="about"?<AboutContent onNavigate={closeMenu} onHelp={()=>setPanel("help")}/>:

@@ -1,19 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ActionButton, Card } from "@/components/ui";
+import { ActionButton } from "@/components/ui";
 import { LegalConsentDialog } from "@/components/legal-consent-dialog";
 import { LEGAL_TERMS_VERSION, LEGAL_PRIVACY_VERSION, type LegalDocumentId } from "@/lib/legal-documents";
 import { resetGuestModeData, setGuestMode } from "@/lib/guest-events";
 import { ensureAccountProfile, ensureLinkedPlayerProfile, preferredPlayerProfileId, profileErrorMessage } from "@/lib/player-profiles";
 
+import { padelBoardHref } from "@/lib/padel-board";
+
 // 再開時はこの表示フラグだけを変更する。Supabase側のOAuth設定は変更しない。
 const GOOGLE_LOGIN_VISIBLE = false;
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter(), pathname = usePathname();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -179,34 +181,44 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-4 p-4">
-      <h1 className="text-center text-2xl font-bold">パデルクラブ</h1>
-      <Card title={signupMode ? "アカウント作成" : "ログイン"}>
-        <form className="space-y-3" onSubmit={signupMode ? signUpWithEmail : loginWithEmail}>
-          {error && <p className="text-sm text-red-400">{error}</p>}
+    <main className="mx-auto flex min-h-[100dvh] w-full max-w-md flex-col justify-start gap-3 px-4 md:justify-center pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <header className="space-y-1 text-center">
+        <h1 className="mx-auto w-fit text-3xl font-bold" style={{ color: "var(--app-text)" }}>Padel Club</h1>
+        <p className="text-sm text-zinc-300">パデルをもっと楽しく、もっと便利に。</p>
+      </header>
+      <section className="rounded-2xl border border-zinc-700 bg-card p-3">
+        <div role="tablist" aria-label="ログイン・新規登録" className="mb-3 grid grid-cols-2 gap-2">
+          {[[false, "ログイン"], [true, "新規登録"]].map(([value, label]) => {
+            const signup = value === true, tabId = signup ? "auth-signup" : "auth-login";
+            return <button key={tabId} id={tabId} role="tab" type="button" aria-selected={signupMode === signup} aria-controls="auth-form" tabIndex={signupMode === signup ? 0 : -1} disabled={loading} className={`min-h-11 rounded-xl px-2 text-sm font-bold disabled:opacity-40 ${signupMode === signup ? "bg-accent text-black" : "text-zinc-300"}`} onClick={() => { setSignupMode(signup); setError(""); setMessage(""); }} onKeyDown={event => {
+              if (loading || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault(); const next = event.key === "Home" ? false : event.key === "End" ? true : !signup;
+              setSignupMode(next); setError(""); setMessage(""); document.getElementById(next ? "auth-signup" : "auth-login")?.focus();
+            }}>{label}</button>;
+          })}
+        </div>
+        <form id="auth-form" role="tabpanel" aria-labelledby={signupMode ? "auth-signup" : "auth-login"} className="space-y-2" onSubmit={signupMode ? signUpWithEmail : loginWithEmail}>
+          {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
           {profileSetupPending && <Link href="/profile" className="block text-sm text-accent underline">ログイン済みのプロフィールを確認</Link>}
-          {message && <p className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">{message}</p>}
-          <input className="w-full rounded-2xl bg-zinc-800 p-3" placeholder="メールアドレス" value={email} onChange={(e) => setEmail(e.target.value)} />
-          {signupMode && <input className="w-full rounded-2xl bg-zinc-800 p-3" placeholder="表示名" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />}
-          <input className="w-full rounded-2xl bg-zinc-800 p-3" type="password" placeholder="パスワード" value={password} onChange={(e) => setPassword(e.target.value)} />
-          {signupMode && <input className="w-full rounded-2xl bg-zinc-800 p-3" type="password" placeholder="パスワード確認" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} />}
-          {signupMode && <label className="flex items-start gap-3 text-sm leading-relaxed text-zinc-300">
-            <input type="checkbox" className="mt-1 shrink-0" checked={agreed} disabled={loading || signupFinished} onChange={event => changeConsent(event.target.checked)} />
+          {message && <p role="status" className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">{message}</p>}
+          {signupMode && <input aria-label="表示名" autoComplete="nickname" className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" placeholder="表示名" value={displayName} onChange={e => setDisplayName(e.target.value)} />}
+          <input aria-label="メールアドレス" inputMode="email" autoComplete="email" className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" placeholder="メールアドレス" value={email} onChange={e => setEmail(e.target.value)} />
+          <input aria-label="パスワード" autoComplete={signupMode ? "new-password" : "current-password"} className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" type="password" placeholder="パスワード" value={password} onChange={e => setPassword(e.target.value)} />
+          {signupMode && <input aria-label="パスワード確認" autoComplete="new-password" className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" type="password" placeholder="パスワード確認" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} />}
+          {signupMode && <label className="flex items-start gap-3 text-xs leading-6 text-zinc-300">
+            <input type="checkbox" className="mt-1.5 shrink-0" checked={agreed} disabled={loading || signupFinished} onChange={event => changeConsent(event.target.checked)} />
             <span><a href="/terms" className="text-accent underline underline-offset-4" aria-haspopup="dialog" onClick={event => { event.preventDefault(); event.stopPropagation(); openLegalDocument("terms"); }}>利用規約</a>に同意し、<a href="/privacy" className="text-accent underline underline-offset-4" aria-haspopup="dialog" onClick={event => { event.preventDefault(); event.stopPropagation(); openLegalDocument("privacy"); }}>プライバシーポリシー</a>の内容を確認しました。</span>
           </label>}
-          <ActionButton type="submit" disabled={loading || (signupMode && signupFinished)}>{loading ? (signupMode ? "作成中..." : "ログイン中...") : (signupMode ? (signupFinished ? "アカウント作成済み" : "アカウント作成") : "メールでログイン")}</ActionButton>
-          {GOOGLE_LOGIN_VISIBLE && !signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={loginWithGoogle}>Googleでログイン</button>}
-          {!signupMode && <button type="button" className="w-full rounded-2xl border border-zinc-600 py-3" onClick={() => { setGuestMode(true); router.push("/home"); }}>ゲストで利用</button>}
-          <button type="button" disabled={loading} className="w-full rounded-2xl border border-zinc-600 py-3 disabled:opacity-40" onClick={() => { setSignupMode((v) => !v); setError(""); setMessage(""); }}>
-            {signupMode ? "ログインへ戻る" : "アカウント作成"}
-          </button>
+          <ActionButton type="submit" disabled={loading || (signupMode && signupFinished)}>{loading ? (signupMode ? "作成中..." : "ログイン中...") : (signupMode ? (signupFinished ? "アカウント作成済み" : "アカウントを作成") : "ログインする")}</ActionButton>
+          {GOOGLE_LOGIN_VISIBLE && !signupMode && <button type="button" className="min-h-11 w-full rounded-xl border border-zinc-600 py-2" onClick={loginWithGoogle}>Googleでログイン</button>}
         </form>
-      </Card>
-      <nav aria-label="規約とプライバシー" className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-xs text-zinc-300">
+      </section>
+      <button type="button" disabled={loading} className="min-h-11 rounded-2xl border border-zinc-600 bg-card px-4 py-3 text-left disabled:opacity-40" onClick={() => { setGuestMode(true); router.push("/home"); }}><strong className="block text-sm">トライアル版を試す</strong><span className="mt-1 block text-xs text-zinc-300">ゲストモードで試合管理を体験。一部機能に制限あり。</span></button>
+      <Link href={padelBoardHref(`${pathname}${signupMode ? "?mode=signup" : ""}`)} aria-disabled={loading || undefined} tabIndex={loading ? -1 : undefined} onClick={event => { if (loading) event.preventDefault(); }} className="block min-h-11 rounded-2xl border border-zinc-600 bg-card px-4 py-3"><strong className="block text-sm">パデルボードを使う</strong><span className="mt-1 block text-xs text-zinc-300">登録不要・無料。選手の配置や動きを描いて共有。</span></Link>
+      <nav aria-label="規約とプライバシー" className="flex flex-wrap justify-center gap-x-5 text-xs text-zinc-300">
         <Link href="/terms" className="inline-flex min-h-11 items-center underline underline-offset-4">利用規約</Link>
         <Link href="/privacy" className="inline-flex min-h-11 items-center underline underline-offset-4">プライバシーポリシー</Link>
       </nav>
-      <Link href="/home" className="text-center text-sm text-zinc-300 underline">デモとしてホームへ進む</Link>
       <LegalConsentDialog open={legalDialogOpen} initialDocument={legalDocument} agreed={agreed} onAgreedChange={changeConsent} onClose={() => setLegalDialogOpen(false)} onSubmit={() => void createAccountWithEmail()} loading={loading} error={error} />
     </main>
   );

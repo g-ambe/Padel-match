@@ -6,7 +6,8 @@ concurrency:
   group: padel-event-result-video-202-release
   cancel-in-progress: false
 permissions:
-  contents: read
+  # 非公開Draft Releaseはpush権限のあるtokenで参照する（既存DB適用手順と同じ）。
+  contents: write
   pull-requests: read
   checks: read
   actions: read

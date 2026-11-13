@@ -29,6 +29,7 @@ jobs:
       BACKUP_SHA256: 840a94d1f2bda5fdb98b2250ba2709f9cb92e8f1ce48ffde4e0ac866bdb03a94
       PADEL_BACKUP_WORKDIR: /tmp/padel-video202-${{ github.run_id }}-${{ github.run_attempt }}
       PADEL_BACKUP_CA_FILE: /tmp/padel-video202-ca.crt
+      NODE_PATH: ${{ runner.temp }}/video202-test-tools/node_modules
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -40,7 +41,7 @@ jobs:
       - name: 適用ガードと0047番号変更後の関連テスト
         run: |
           python3 -B -m unittest discover -s supabase/maintenance/event-result-video -p test_cloud_release.py -v
-          npm install --ignore-scripts --no-audit --no-fund
+          npm install --prefix "$RUNNER_TEMP/video202-test-tools" --ignore-scripts --no-package-lock --no-audit --no-fund typescript@5.9.3 @electric-sql/pglite@0.3.14 @supabase/supabase-js@2.119.0
           node --test tests/result-video-db.test.cjs tests/result-ranking.test.cjs tests/match-share.test.cjs tests/shared-event-client.test.cjs
       - name: 公式CAを照合
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca

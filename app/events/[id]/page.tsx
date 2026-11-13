@@ -1070,7 +1070,7 @@ export default function EventDetailPage() {
     const u = v.trim();
     return /^https:\/\/(www\.)?youtube\.com\/watch\?v=/.test(u)
       || /^https:\/\/youtu\.be\//.test(u)
-      || /^https:\/\/(www\.)?youtube\.com\/shorts\//.test(u);
+      || /^https:\/\/(www\.)?youtube\.com\/(shorts|live)\//.test(u);
   };
 
   const persistMatchVideo = async (matchId: string, value: string | null) => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Card, ActionButton } from "@/components/ui";
@@ -14,7 +14,9 @@ import { readLineupVersions, readRoundLineup, createLineupCommit, createFriendly
 import { guestLineupSnapshot, guestRoundEligibility, roundCards, saveGuestRoundLineup, type RoundCard } from "@/lib/guest-round-lineup";
 import { FriendlyMatchCards } from "@/components/friendly-match-cards";
 import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
-import { MatchShareButtons } from "@/components/match-share-buttons";
+import { EventResultRankings } from "@/components/event-result-rankings";
+import { EventResultHistory, ResultMatchCard } from "@/components/event-result-history";
+import { EventResultShare } from "@/components/event-result-share";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
@@ -34,7 +36,6 @@ type MatchView = { id: string; event_id?: string; round_id?: string | null; line
 type ScoreInput = { a: number | ""; b: number | "" };
 type ManualMatchDraft = { id: string; court_number: number; teamA1: string; teamA2: string; teamB1: string; teamB2: string };
 type LineupDraft = { teamA1: string; teamA2: string; teamB1: string; teamB2: string };
-type SummaryRankingSectionKey = "wins" | "winRate" | "diff" | "mvp";
 type EventVideoLink = { id: string; title: string; video_url: string | null; memo: string | null; display_order: number };
 type EventVideoForm = { title: string; video_url: string; memo: string; display_order: string };
 const eventTabs = [{ value: "matches", label: "対戦" }, { value: "participants", label: "参加者" }, { value: "results", label: "結果" }] as const;
@@ -47,27 +48,13 @@ const getWinnerTeam = (scoreA: number, scoreB: number): TeamResult => scoreA ===
 
 const isSupabaseErrorLike = (error: unknown): error is { message?: string; code?: string; details?: string; hint?: string } => typeof error === "object" && error !== null;
 
-const summaryRankingButtonClass = "flex min-h-12 w-full items-center rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-3 text-left text-sm font-bold text-zinc-100 shadow-sm shadow-black/20 active:bg-zinc-800";
-
-function SummaryRankingSection({ title, isOpen, onToggle, children }: { title: string; isOpen: boolean; onToggle: () => void; children: ReactNode }) {
-  return (
-    <section className="space-y-2">
-      <button type="button" className={summaryRankingButtonClass} onClick={onToggle} aria-expanded={isOpen}>
-        <span aria-hidden="true" className="event-disclosure-icon mr-2">{isOpen ? "▼" : "▶"}</span>
-        <span>{title}</span>
-      </button>
-      {isOpen && <div>{children}</div>}
-    </section>
-  );
-}
-
-
 export default function EventDetailPage() {
   const { id: eventId } = useParams<{ id: string }>();
   const router = useRouter();
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [eventName, setEventName] = useState("-");
+  const [eventCreatedAt, setEventCreatedAt] = useState<string | null>(null);
   const [courtCount, setCourtCount] = useState(1);
   const boardOperation = useRef<"court" | "round" | "delete" | "fixed" | "lineup" | null>(null);
   const [lineupVersions, setLineupVersions] = useState<{eventId:string;userId:string;data:LineupVersions}|null>(null);
@@ -149,7 +136,6 @@ export default function EventDetailPage() {
   const [closeStatsMode, setCloseStatsMode] = useState<StatsMode>("official");
   const [manualDrafts, setManualDrafts] = useState<ManualMatchDraft[]>([]);
   const [lineupDrafts, setLineupDrafts] = useState<Record<string, LineupDraft>>({});
-  const [openSummaryRankingSections, setOpenSummaryRankingSections] = useState<Record<SummaryRankingSectionKey, boolean>>({ wins: false, winRate: false, diff: false, mvp: false });
   const [swipeOffsets, setSwipeOffsets] = useState<Record<string, number>>({});
   const [swipeStartX, setSwipeStartX] = useState<Record<string, number>>({});
   const [matchDeleteTarget, setMatchDeleteTarget] = useState<MatchDeleteTarget>(null);
@@ -214,7 +200,6 @@ export default function EventDetailPage() {
   const winRateRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.winRate - a.winRate || b.wins - a.wins || b.draws - a.draws || b.diff - a.diff || b.scored - a.scored || b.played - a.played || a.name.localeCompare(b.name, "ja")), [summaryRankingRows]);
   const diffRanking = useMemo(() => [...summaryRankingRows].sort((a, b) => b.diff - a.diff || b.wins - a.wins || b.draws - a.draws || b.winRate - a.winRate || b.scored - a.scored || a.played - b.played || a.name.localeCompare(b.name, "ja")), [summaryRankingRows]);
   const mvp = useMemo(() => [...summaryRankingRows].sort((a, b) => b.matchPoints - a.matchPoints || b.wins - a.wins || b.winRate - a.winRate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.played - b.played || a.name.localeCompare(b.name, "ja"))[0] ?? null, [summaryRankingRows]);
-  const toggleSummaryRankingSection = (key: SummaryRankingSectionKey) => setOpenSummaryRankingSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
 
   const candidateParticipants = useMemo(() => participants.filter((p) => p.status === "active" && p.is_member_candidate), [participants]);
@@ -275,7 +260,7 @@ export default function EventDetailPage() {
       setGuestMode(true);
       const ge = getGuestEvent(eventId);
       if (!ge) { setError("イベントが見つかりません"); return; }
-      setEventName(ge.name);
+      setEventName(ge.name); setEventCreatedAt(ge.created_at);
       setCourtCount(ge.court_count);
       setEventStatus(ge.status);
       initializeEventTab(ge.status);
@@ -297,12 +282,13 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase || !eventId) return;
 
-    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token,event_mode,stats_mode,created_by_auth_user_id").eq("id", eventId).single();
+    const { data: event } = await supabase.from("events").select("name,court_count,status,club_id,is_deleted,share_enabled,share_token,event_mode,stats_mode,created_by_auth_user_id,created_at").eq("id", eventId).single();
     if (scoreRevision !== scoreQueue.getRevision(scoreScope)) { await loadAll(); return; }
     if (!event) { setError("イベントが見つかりません"); return; }
     if (event.is_deleted) { setIsDeletedEvent(true); setEventName(event.name ?? "-"); return; }
     setIsDeletedEvent(false);
     if (event?.name) setEventName(event.name);
+    setEventCreatedAt(event.created_at ?? null);
     if (event?.court_count) setCourtCount(event.court_count);
     if (event?.status === "closed") setEventStatus("closed");
     else setEventStatus("active");
@@ -1087,33 +1073,35 @@ export default function EventDetailPage() {
       || /^https:\/\/(www\.)?youtube\.com\/shorts\//.test(u);
   };
 
-  const saveYoutubeUrl = async (matchId: string) => {
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
-    const value = (youtubeInputs[matchId] ?? "").trim();
-    if (!value) return setError("YouTubeのURLを入力してください");
-    if (!isYoutubeUrl(value)) return setError("YouTubeのURLを入力してください");
-    const { error: e } = await supabase.from("matches").update({ youtube_url: value }).eq("id", matchId);
-    if (e) return setError("YouTubeリンクの保存に失敗しました");
-    setError("");
-    await loadAll();
+  const persistMatchVideo = async (matchId: string, value: string | null) => {
+    if (!guestMode && !canManageEventName) throw new Error("この操作を行う権限がありません");
+    if (guestMode) {
+      const event = getGuestEvent(eventId);
+      if (!event || !event.matches.some(match => match.id === matchId)) throw new Error("試合を確認できませんでした");
+      upsertGuestEvent({ ...event, matches: event.matches.map(match => match.id === matchId ? { ...match, youtube_url: value } : match) });
+    } else {
+      const supabase = getSupabaseClient();
+      if (!supabase) throw new Error("保存の準備ができませんでした");
+      const saved = await supabase.from("matches").update({ youtube_url: value }).eq("id", matchId).eq("event_id", eventId).select("id,youtube_url").single();
+      if (saved.error || !saved.data || saved.data.youtube_url !== value) throw new Error("YouTubeリンクの保存に失敗しました");
+    }
+    setError(""); await loadAll();
   };
-
-  // 動画の書込み処理はそのまま使い、通信中のUI操作だけを制御する。
+  const saveYoutubeUrl = async (matchId: string) => {
+    const value = (youtubeInputs[matchId] ?? matches.find(match => match.id === matchId)?.youtube_url ?? "").trim();
+    if (!value || !isYoutubeUrl(value)) return setError("YouTubeのURLを入力してください");
+    await persistMatchVideo(matchId, value);
+  };
   const runYoutubeAction = async (matchId: string, action: () => Promise<void>) => {
     if (youtubeActions.current.has(matchId)) return;
     youtubeActions.current.add(matchId); setYoutubeBusy(previous => ({ ...previous, [matchId]: true }));
     try { await action(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "動画の保存に失敗しました"); }
     finally { youtubeActions.current.delete(matchId); setYoutubeBusy(previous => ({ ...previous, [matchId]: false })); }
   };
-
   const deleteYoutubeUrl = async (matchId: string) => {
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
-    const { error: e } = await supabase.from("matches").update({ youtube_url: null }).eq("id", matchId);
-    if (e) return setError("YouTubeリンクの削除に失敗しました");
-    setYoutubeInputs((prev) => ({ ...prev, [matchId]: "" }));
-    await loadAll();
+    await persistMatchVideo(matchId, null);
+    setYoutubeInputs(previous => ({ ...previous, [matchId]: "" }));
   };
 
   const resetEventVideoForm = () => {
@@ -1570,29 +1558,8 @@ export default function EventDetailPage() {
             );
           };
 
-  const resultSummarySection = (
-    <Card title={eventStatus === "closed" ? "結果サマリー" : "暫定結果サマリー"}>
-      <div className="space-y-3 text-sm">
-        <div className="rounded-xl bg-zinc-800 p-3">
-          <p>イベント名：{eventName}</p>
-          <p>総試合数：{totalMatches}</p>
-          <p>参加者数：{participants.length}</p>
-        </div>
-        <SummaryRankingSection title="勝利数ランキング" isOpen={openSummaryRankingSections.wins} onToggle={() => toggleSummaryRankingSection("wins")}>
-          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r, i) => <li key={`w-${r.name}-${i}`}>{i + 1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
-        </SummaryRankingSection>
-        <SummaryRankingSection title="勝率ランキング" isOpen={openSummaryRankingSections.winRate} onToggle={() => toggleSummaryRankingSection("winRate")}>
-          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r, i) => <li key={`wr-${r.name}-${i}`}>{i + 1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)} / 勝率{r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
-        </SummaryRankingSection>
-        <SummaryRankingSection title="得失点差ランキング" isOpen={openSummaryRankingSections.diff} onToggle={() => toggleSummaryRankingSection("diff")}>
-          {hasSummaryResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{diffRanking.map((r, i) => <li key={`df-${r.name}-${i}`}>{i + 1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)} / 得失点差{r.diff}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}
-        </SummaryRankingSection>
-        <SummaryRankingSection title="MVP" isOpen={openSummaryRankingSections.mvp} onToggle={() => toggleSummaryRankingSection("mvp")}>
-          <div className="rounded-xl bg-zinc-800 p-3"><p>{hasSummaryResults && mvp ? `${mvp.name}（${formatRecord(mvp.wins, mvp.losses, mvp.draws)} / 勝点${mvp.matchPoints} / 勝率${mvp.winRate}% / 得失点差${mvp.diff}）` : "該当なし"}</p></div>
-        </SummaryRankingSection>
-      </div>
-    </Card>
-  );
+  const resultSummarySection = <EventResultRankings wins={winRanking} winRate={winRateRanking} diff={diffRanking} details={<section className="space-y-1 rounded-xl border border-zinc-700 p-2 text-sm"><h3 className="font-bold">MVP</h3><p>{hasSummaryResults && mvp ? `${mvp.name}（${formatRecord(mvp.wins, mvp.losses, mvp.draws)} / 勝点${mvp.matchPoints} / 勝率${mvp.winRate}% / 得失点差${mvp.diff}）` : "該当なし"}</p></section>} />;
+  const resultHistoryCards = sortedMatches.map(m => ({ id: m.id, content: <ResultMatchCard title={`Round ${m.round_number} · コート${m.court_number}`} names={[m.players.filter(p => p.team === "A").map(p => nameMap[p.participant_id] || "未設定"), m.players.filter(p => p.team === "B").map(p => nameMap[p.participant_id] || "未設定")]} score={hasEnteredFriendlyMatchScore(m) ? { a: m.result.score_a, b: m.result.score_b } : null} youtubeUrl={m.youtube_url} videoEditor={(guestMode || canManageEventName) && <YoutubeDisclosure compact closable registered={!!m.youtube_url} busy={!!youtubeBusy[m.id]} label={m.youtube_url ? "リンクを変更" : "動画を登録"}><fieldset disabled={!!youtubeBusy[m.id]} className="space-y-2">{error&&<p role="alert" className="text-sm text-red-400">{error}</p>}<input aria-label={`Round ${m.round_number} コート${m.court_number}のYouTubeリンク`} className="w-full rounded bg-zinc-700 p-2" value={youtubeInputs[m.id] ?? m.youtube_url ?? ""} onChange={e => setYoutubeInputs(previous => ({ ...previous, [m.id]: e.target.value }))} /><div className="flex gap-2"><button type="button" className="min-h-11 flex-1 rounded border border-zinc-500 text-xs" onClick={() => void runYoutubeAction(m.id, () => saveYoutubeUrl(m.id))}>URLを保存</button>{m.youtube_url && <button type="button" className="min-h-11 flex-1 rounded border border-red-500 text-xs" onClick={() => void runYoutubeAction(m.id, () => deleteYoutubeUrl(m.id))}>URLを削除</button>}</div></fieldset></YoutubeDisclosure>} /> }));
 
   return (
     <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-1.5 p-3 pb-20">
@@ -1752,42 +1719,12 @@ export default function EventDetailPage() {
 
       </section>
 
-      <section id="event-panel-results" role="tabpanel" aria-labelledby="event-tab-results" hidden={!tabReady || activeTab !== "results"} className="space-y-4">
+      <section id="event-panel-results" role="tabpanel" aria-labelledby="event-tab-results" hidden={!tabReady || activeTab !== "results"} className="space-y-2">
       <p className="text-sm text-zinc-300">{eventStatus === "closed" ? "終了後の結果です。" : "開催中の暫定結果です。"} 戦績反映：{guestMode ? "ゲストの一時保存" : statsMode === "record_only" ? "このイベント内だけに保存" : statsMode === "official" ? usedFixedPairs ? "グループ通算戦績に反映" : "通算戦績の対象（既存の集計条件に従います）" : "終了時に選択"}</p>
+      <div className="rounded-xl border border-zinc-700 p-2 text-sm"><strong>{eventName}</strong><p className="text-xs text-zinc-400">{eventCreatedAt ? `${new Date(eventCreatedAt).toLocaleDateString("ja-JP")} · ` : ""}全{totalMatches}試合 · {participants.length}人</p></div>
       <div id="event-results">{resultSummarySection}</div>
-{eventStatus !== "closed" && (
-      <Card title="勝率ランキング">
-        <ol className="space-y-1 text-sm">{ranking.map((r, i) => <li key={r.name + i}>{i + 1}位 {r.name} {r.r}%（{r.m}試合）</li>)}</ol>
-      </Card>
-      )}
-
-      
-
-      {eventStatus === "closed" && (
-        <Card title="結果共有">
-          <div className="space-y-2 text-sm">
-            {shareEnabled && shareToken ? <div className="space-y-1"><p className="font-bold">共有リンク</p><p className="break-all rounded bg-zinc-800 p-2">{shareUrl}</p></div> : <p className="text-zinc-300">このイベントは共有されていません</p>}
-            <div className="grid grid-cols-2 gap-2">
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void createShareLink()}>共有リンクを作成</button>
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void copyShareLink()}>コピー</button>
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void stopShareLink()}>共有を停止</button>
-              <button className="rounded border border-zinc-500 py-2" onClick={() => void reissueShareLink()}>共有リンクを再発行</button>
-            </div>
-            <MatchShareButtons
-              event={{ status: eventStatus, is_deleted: isDeletedEvent, share_enabled: shareEnabled, share_token: shareToken }}
-              eventName={eventName}
-              kind="events"
-              canShare={canCopyShare}
-              getMatches={() => sortedMatches.map(match => ({
-                teamA: match.players.length === 4 ? match.players.filter(player => player.team === "A").map(player => nameMap[player.participant_id]) : [],
-                teamB: match.players.length === 4 ? match.players.filter(player => player.team === "B").map(player => nameMap[player.participant_id]) : [],
-                score: hasEnteredFriendlyMatchScore(match) ? { a: match.result.score_a, b: match.result.score_b } : null,
-                youtubeUrl: match.youtube_url,
-              }))}
-            />
-          </div>
-        </Card>
-      )}
+      {eventStatus === "closed" && <EventResultHistory cards={resultHistoryCards} />}
+      {eventStatus === "closed" && <EventResultShare event={{ status: eventStatus, is_deleted: isDeletedEvent, share_enabled: shareEnabled, share_token: shareToken }} name={eventName} canManage={canManageShare} canCopy={guestMode || canCopyShare} onStart={createShareLink} onStop={stopShareLink} onCopyUrl={copyShareLink} onReissue={reissueShareLink} feedback={<>{error && <p role="alert" className="text-sm text-red-400">{error}</p>}{message && <p role="status" className="text-sm text-accent">{message}</p>}</>} getMatches={() => sortedMatches.map(match => ({ teamA: match.players.length === 4 ? match.players.filter(player => player.team === "A").map(player => nameMap[player.participant_id]) : [], teamB: match.players.length === 4 ? match.players.filter(player => player.team === "B").map(player => nameMap[player.participant_id]) : [], score: hasEnteredFriendlyMatchScore(match) ? { a: match.result.score_a, b: match.result.score_b } : null, youtubeUrl: match.youtube_url }))} />}
       {eventStatus === "closed" && <Card title="開催操作">
         <p className="text-sm text-zinc-300">この開催は終了しました</p>
         <button className="mt-2 min-h-11 w-full rounded-xl border border-zinc-500 py-3" disabled={busyParticipants.size > 0 || isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch} onClick={reopenEvent}>イベント再開</button>

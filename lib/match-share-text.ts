@@ -44,9 +44,11 @@ export function buildMatchShareText(params: {
   origin: string;
   kind: MatchShareKind;
   matches: readonly MatchShareEntry[];
+  allowUnsharedText?: boolean;
 }) {
   const urls = getMatchShareUrls(params.event, params.origin, params.kind);
-  if (!urls) throw new Error("終了済みで共有リンクが有効なイベントのみ共有できます");
+  const base = new URL(params.origin);
+  if (!urls && !(params.allowUnsharedText && params.event.status === "closed" && params.event.is_deleted !== true && ["https:", "http:"].includes(base.protocol))) throw new Error("終了済みで共有リンクが有効なイベントのみ共有できます");
   const blocks: string[] = [];
   for (const match of params.matches) {
     const a = match.teamA.map(name => oneLine(name ?? ""));
@@ -59,7 +61,7 @@ export function buildMatchShareText(params: {
     blocks.push(lines.join("\n"));
   }
   if (!blocks.length) throw new Error("共有できる試合がありません。選手が設定済みか確認してください");
-  return `戦績詳細：\n${urls.detail}\n\n${blocks.join("\n\n")}\n\nログイン・アカウント登録はこちら\n${urls.login}`;
+  return `${urls ? `戦績詳細：\n${urls.detail}\n\n` : ""}${blocks.join("\n\n")}\n\nログイン・アカウント登録はこちら\n${urls?.login ?? `${base.origin}/login`}`;
 }
 
 // 実機・ブラウザごとのURL上限に備えた保守的な上限。文章自体は一切切り詰めない。

@@ -3,13 +3,13 @@
 import { TeamMatchShortcut } from "@/components/team-match-shortcut";
 import { TeamRoundGenerator } from "@/components/team-round-generator";
 import { friendlyTeamRoundError, teamCardScores, pendingTeamCard, teamCardPlayers, teamSlots, type TeamCard, type TeamSource } from "@/lib/friendly-team-rounds";
-import { friendlyTeamStats, type TeamStatsRow } from "@/lib/friendly-team-results";
+import { friendlyTeamStats } from "@/lib/friendly-team-results";
 import { readTeamAttendance, teamAbsent, type TeamAttendance } from "@/lib/team-attendance";
 import { TeamPlayerPicker, type TeamPlayerChoice } from "@/components/team-player-picker";
 import { TeamMatchCards } from "@/components/team-match-cards";
 import { AppDialog } from "@/components/app-dialog";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ActionButton, Card } from "@/components/ui";
 import { GuestName, YoutubeDisclosure } from "@/components/match-ui";
@@ -17,7 +17,10 @@ import { canAutoCreateCard, type ScorePair } from "@/lib/score-input";
 import { readFriendlyRoundRows } from "@/lib/friendly-round-history";
 import { ScoreInput } from "@/components/score-input";
 import { useScoreSaves } from "@/components/score-save-provider";
-import { MatchShareButtons } from "@/components/match-share-buttons";
+import { EventResultRankings } from "@/components/event-result-rankings";
+import { EventResultHistory, ResultMatchCard } from "@/components/event-result-history";
+import { EventResultShare } from "@/components/event-result-share";
+import { TeamResultDetails } from "@/components/team-result-details";
 import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { createShareToken, getOfficialAccess, officialStatusLabel, type OfficialGroup } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -28,12 +31,10 @@ type TeamSideKey = "team_a" | "team_b";
 type MemberOption = { membershipId?: string; playerProfileId: string; displayName: string | null };
 type GuestOption = { id: string; side: TeamSideKey; guest_name: string };
 type PlayerChoice = TeamPlayerChoice;
-type EventRow = { court_count: number; id: string; name: string; status: string; club_id: string | null; description: string | null; memo: string | null; stats_mode: string; share_enabled?: boolean | null; share_token?: string | null; created_by_auth_user_id?: string | null; is_deleted?: boolean | null };
+type EventRow = { court_count: number; id: string; name: string; status: string; club_id: string | null; created_at?: string; description: string | null; memo: string | null; stats_mode: string; share_enabled?: boolean | null; share_token?: string | null; created_by_auth_user_id?: string | null; is_deleted?: boolean | null };
 type Side = { id: string; side: TeamSideKey; club_id: string | null; team_name: string | null };
 type Match = TeamCard & {score_detail:string|null;memo:string|null;youtube_url:string|null;created_at?:string|null};
 type Form = { a1ProfileId: string; a1GuestName: string; a2ProfileId: string; a2GuestName: string; b1ProfileId: string; b1GuestName: string; b2ProfileId: string; b2GuestName: string; aScore: string; bScore: string; result: ResultValue; scoreDetail: string; memo: string; youtubeUrl: string };
-type StatsSectionKey = "teams" | "players" | "pairs";
-type StatsRow = TeamStatsRow;
 
 const emptyForm = (): Form => ({ a1ProfileId:"",a1GuestName:"",a2ProfileId:"",a2GuestName:"",b1ProfileId:"",b1GuestName:"",b2ProfileId:"",b2GuestName:"",aScore:"",bScore:"",result:"undecided",scoreDetail:"",memo:"",youtubeUrl:"" });
 const autoResult = (a: string, b: string): ResultValue => { if (a.trim()==="" || b.trim()==="") return "undecided"; const x=Number(a), y=Number(b); if (!Number.isInteger(x)||!Number.isInteger(y)) return "undecided"; if (x>y) return "win"; if (x<y) return "lose"; return "draw"; };
@@ -84,7 +85,7 @@ export default function FriendlyTeamMatchDetailPage() {
   const runVideoAction=async(mid:string,action:()=>Promise<unknown>)=>{
     if(videoLock.current)return;
     videoLock.current=true;setVideoBusy(mid);
-    try{await action();}finally{videoLock.current=false;setVideoBusy(null);}
+    try{await action();}catch(cause){setError(cause instanceof Error?cause.message:"動画の保存に失敗しました");}finally{videoLock.current=false;setVideoBusy(null);}
   };
   const [urlDrafts,setUrlDrafts] = useState<Record<string,string>>({});
   const [editingId,setEditingId]=useState<string|null>(null);
@@ -97,11 +98,11 @@ export default function FriendlyTeamMatchDetailPage() {
   const [showDelete,setShowDelete]=useState(false);
   const [deleteOk,setDeleteOk]=useState(false);
   const [closeMode,setCloseMode]=useState<"official"|"record_only">("official");
-  const [openStatsSections,setOpenStatsSections]=useState<Record<StatsSectionKey, boolean>>({ teams: false, players: false, pairs: false });
   const [isEditingEventName,setIsEditingEventName]=useState(false);
   const [eventNameDraft,setEventNameDraft]=useState("");
 
   const [tab,setTab]=useState("matches");
+  const initializedTab=useRef<string|null>(null);
   const [historyOpen,setHistoryOpen]=useState(false);
   const [generationBusy,setGenerationBusy]=useState(false);
   const [generationOpen,setGenerationOpen]=useState(false);
@@ -134,7 +135,7 @@ export default function FriendlyTeamMatchDetailPage() {
     if(!supabase) return;
     const access=await getOfficialAccess(supabase);
     setGroups(access.groups.filter((g)=>access.superUser||g.role!=="member"));
-    const { data:e }=await supabase.from("events").select("id,name,status,court_count,club_id,description,memo,stats_mode,share_enabled,share_token,created_by_auth_user_id,is_deleted,event_mode").eq("id",id).eq("event_mode","team").maybeSingle();
+    const { data:e }=await supabase.from("events").select("id,name,status,court_count,club_id,created_at,description,memo,stats_mode,share_enabled,share_token,created_by_auth_user_id,is_deleted,event_mode").eq("id",id).eq("event_mode","team").maybeSingle();
     if(scoreRevision!==scoreQueue.getRevision(scoreScope)){await load();return;}
     const row=e as any as EventRow|null;
     if(!row || row.is_deleted){ setEvent(null); setMatches([]); setError("フレンドリーチームマッチが見つかりません"); return; }
@@ -146,6 +147,7 @@ export default function FriendlyTeamMatchDetailPage() {
     const viewable=manageable || access.groups.some((g)=>sideClubIds.includes(g.id)) || (!row.club_id && creator);
     if (!viewable) { setError("この操作を行う権限がありません"); return; }
     setEvent(row);
+    if(initializedTab.current!==id){initializedTab.current=id;setTab(row.status==="closed"?"results":"matches");}
     setCanManage(manageable);
     setSides(sideRows);
     const sideIds=sideRows.map(s=>s.club_id).filter((id):id is string=>!!id);
@@ -189,7 +191,6 @@ export default function FriendlyTeamMatchDetailPage() {
   const applyChoice = (choice: string, profileKey: keyof Form, guestKey: keyof Form) => choice.startsWith("guest:") ? { [profileKey]: "", [guestKey]: choice.slice(6) } as Partial<Form> : { [profileKey]: choice, [guestKey]: "" } as Partial<Form>;
   const teamMatchStats = useMemo(() => friendlyTeamStats(matches,[teamAName,teamBName],memberName,(source,name)=>{const guest=guests[source].find(g=>g.guest_name===name);return guest?`guest:${guest.id}`:undefined;}), [matches, members, guests, historicalNames, teamAName, teamBName]);
   const cardScoreNames=(m:Match)=>{const players=teamCardPlayers(m).map(p=>({name:memberName(p.source,p.profile_id,p.name||null)+(m.generation_mode==="mixed"?` (${p.source==="team_a"?teamAName:teamBName})`:""),guest:!!p.name&&!p.profile_id,...(m.generation_mode==="mixed"?{source:p.source}:{})}));return [players.slice(0,2),players.slice(2,4)] as [typeof players,typeof players];};
-  const toggleStatsSection = (key: StatsSectionKey) => setOpenStatsSections((prev) => ({ ...prev, [key]: !prev[key] }));
   const validate=(f:Form,existing?:Match)=>{
     const pids=[f.a1ProfileId,f.a2ProfileId,f.b1ProfileId,f.b2ProfileId],names=[f.a1GuestName,f.a2GuestName,f.b1GuestName,f.b2GuestName];
     const vals=pids.map((pid,index)=>existing?.round_id?(pid?`profile:${pid}`:names[index].trim()?`guest:${existing[`${teamSlots[index]}_source_side`]}:${names[index].trim()}`:""):pid||names[index].trim()).filter(Boolean);
@@ -280,7 +281,30 @@ export default function FriendlyTeamMatchDetailPage() {
     }finally{closingEvent.current=false;setIsClosingEvent(false);}
   };
   const deleteEvent=async()=>{ if(!event)return setError("イベント情報を取得できていません"); if(!canManage)return setError("この操作を行う権限がありません"); if(!deleteOk)return setError("削除確認にチェックしてください"); const supabase=getSupabaseClient(); if(!supabase)return; const {error:e,count}=await supabase.from("events").update({is_deleted:true,deleted_at:new Date().toISOString(),share_enabled:false,share_token:null},{count:"exact"}).eq("id",id).eq("is_deleted",false); if(e||count!==1)return setError("フレンドリーチームマッチの削除に失敗しました"); router.push("/team-matches/new"); };
-  const share=async()=>{ if(!event)return setError("イベント情報を取得できていません"); const supabase=getSupabaseClient(); if(!supabase)return; await supabase.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id); await load(); };
+  const share=async()=>{
+    if(!event||!canManage||event.status!=="closed"||event.is_deleted)return setError("この操作を行う権限がありません");
+    const db=getSupabaseClient();if(!db)return;
+    const saved=await db.from("events").update({share_enabled:true,share_token:createShareToken(),share_token_updated_at:new Date().toISOString()}).eq("id",id).eq("status","closed").select("id").single();
+    if(saved.error||!saved.data)return setError("共有リンクの作成に失敗しました");
+    await load();
+  };
+  const stopShare=async()=>{
+    if(!event||!canManage||event.status!=="closed"||event.is_deleted)return setError("この操作を行う権限がありません");
+    const db=getSupabaseClient();if(!db)return;
+    const saved=await db.from("events").update({share_enabled:false,share_token:null,share_token_updated_at:new Date().toISOString()}).eq("id",id).eq("status","closed").select("id").single();
+    if(saved.error||!saved.data)return setError("共有停止に失敗しました");
+    await load();
+  };
+  const saveVideo=async(m:Match,value:string)=>{
+    setError("");
+    if(!event||!canManage||event.is_deleted)return setError("この操作を行う権限がありません");
+    const url=value.trim();if(url&&!isYoutubeUrl(url))return setError("YouTubeのURLを入力してください");
+    if(event.status!=="closed")return saveMatch(true,{...toForm(m),youtubeUrl:url},m.id);
+    const db=getSupabaseClient();if(!db)return;
+    const saved=await db.rpc("save_friendly_team_match_video",{p_event:id,p_match:m.id,p_url:url||null,p_expected_url:m.youtube_url??null});
+    if(saved.error||!saved.data||saved.data.youtube_url!==(url||null))return setError(friendlyTeamRoundError(saved.error,"動画リンクの保存に失敗しました"));
+    setUrlDrafts(previous=>({...previous,[m.id]:url}));await load();
+  };
   const startEventNameEdit=()=>{ if(!event){ setError("イベント情報を取得できていません"); return; } setError(""); setNotice(""); setEventNameDraft(event.name ?? ""); setIsEditingEventName(true); };
   const cancelEventNameEdit=()=>{ setEventNameDraft(""); setIsEditingEventName(false); };
   const saveEventName=async()=>{ setError(""); setNotice(""); if(!event)return setError("イベント情報を取得できていません"); const nextName=eventNameDraft.trim(); if(!nextName)return setError("イベント名を入力してください"); if(nextName.length>80)return setError("イベント名は80文字以内で入力してください"); if(!canManage)return setError("この操作を行う権限がありません"); const supabase=getSupabaseClient(); if(!supabase)return; const {error:e}=await supabase.from("events").update({name:nextName,updated_at:new Date().toISOString()}).eq("id",id); if(e){ console.error("イベント名の更新に失敗しました", { message:e.message, code:e.code, details:e.details, hint:e.hint }); return setError("更新に失敗しました"); } setEvent((prev)=>prev?{...prev,name:nextName}:prev); setIsEditingEventName(false); setNotice("更新しました"); };
@@ -319,22 +343,20 @@ export default function FriendlyTeamMatchDetailPage() {
     </section>
     <section id="team-panel-teams" role="tabpanel" aria-labelledby="team-tab-teams" hidden={tab!=="teams"} className="space-y-3">    <Card title="チーム設定"><div className="space-y-3">{eventSides.map((side)=><SideEditor key={side.id} side={side} title={side.team_name||(side.side==="team_a"?"チームA":"チームB")} roster={members[side.side]} guests={guests[side.side]} guestName={guestNames[side.side]} setGuestName={(value)=>setGuestNames((prev)=>({...prev,[side.side]:value}))} groups={groups} attendance={attendance} busy={generationBusy||attendanceBusy||cardBusy||!!videoBusy||unsavedScoreCount>0} onAttendance={(pid,gid,status)=>void changeAttendance(side.side,pid,gid,status)} canManage={canManage&&event.status!=="closed"} onSave={updateSide} onAddGuest={()=>void addGuest(side.side)}/>)}</div></Card>
 </section>
-    <section id="team-panel-results" role="tabpanel" aria-labelledby="team-tab-results" hidden={tab!=="results"} className="space-y-3">    {event.status==="closed"&&<TeamMatchStatsCard stats={teamMatchStats} openSections={openStatsSections} onToggle={toggleStatsSection} />}
-    {event.status==="closed"&&<Card title="共有リンク"><div className="space-y-2 text-sm">{shareUrl?<><p className="break-all rounded-xl bg-zinc-800 p-3 text-xs">{shareUrl}</p><button className="w-full rounded-xl border border-zinc-500 py-2" onClick={()=>navigator.clipboard.writeText(shareUrl)}>共有リンクをコピー</button></>:canManage?<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void share()}>共有リンクを作成</button>:<p>共有されていません</p>}
-      <MatchShareButtons event={event} eventName={event.name} kind="events" getMatches={() => matches.map(match => ({
-        teamA: cardScoreNames(match)[0].map((p,i)=>teamCardPlayers(match)[i].key?p.name:null),
-        teamB: cardScoreNames(match)[1].map((p,i)=>teamCardPlayers(match)[i+2].key?p.name:null),
-        score: storedTeamShareScore(teamCardScores(match).a, teamCardScores(match).b, teamCardScores(match).result),
-        youtubeUrl: match.youtube_url,
-      }))} />
-    </div></Card>}
-{event.status!=="closed"&&<p className="text-sm text-zinc-400">戦績は開催終了後に表示されます。</p>}</section>
+    <section id="team-panel-results" role="tabpanel" aria-labelledby="team-tab-results" hidden={tab!=="results"} className="space-y-2">
+      {event.status==="closed" ? <>
+        <div className="rounded-xl border border-zinc-700 p-2 text-sm"><strong>{event.name}</strong><p className="text-xs text-zinc-400">{event.created_at ? new Date(event.created_at).toLocaleDateString("ja-JP") : ""} · {teamAName} vs {teamBName} · 全{matches.length}試合</p></div>
+        <EventResultRankings wins={[...teamMatchStats.players].sort((a,b)=>b.wins-a.wins)} winRate={[...teamMatchStats.players].sort((a,b)=>b.winRate-a.winRate)} diff={[...teamMatchStats.players].sort((a,b)=>b.diff-a.diff)} details={<TeamResultDetails stats={teamMatchStats}/>} />
+        <EventResultHistory cards={[...matches].reverse().map(m=>({id:m.id,content:<ResultMatchCard title={m.round_id?`第${m.round_number}ラウンド · コート${m.court_number} · ${m.generation_mode==="mixed"?"チーム混合（ペア1対ペア2）":"チーム対決"}`:`第${m.match_order}試合`} names={[cardScoreNames(m)[0].map(p=>p.name),cardScoreNames(m)[1].map(p=>p.name)]} score={storedTeamShareScore(teamCardScores(m).a,teamCardScores(m).b,teamCardScores(m).result)} youtubeUrl={m.youtube_url} videoEditor={canManage ? <YoutubeDisclosure compact closable busy={videoBusy===m.id} registered={!!m.youtube_url} label={m.youtube_url?"リンクを変更":"動画を登録"}><fieldset disabled={videoBusy!==null} className="space-y-2">{error&&<p role="alert" className="text-sm text-red-400">{error}</p>}<input aria-label={`第${m.match_order}試合のYouTubeリンク`} className="w-full rounded bg-zinc-700 p-2" value={urlDrafts[m.id]??m.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[m.id]:e.target.value}))}/><div className="flex gap-2"><button type="button" className="min-h-11 flex-1 rounded border border-zinc-500 text-xs" onClick={()=>void runVideoAction(m.id,()=>saveVideo(m,urlDrafts[m.id]??m.youtube_url??""))}>URLを保存</button>{m.youtube_url&&<button type="button" className="min-h-11 flex-1 rounded border border-red-500 text-xs" onClick={()=>void runVideoAction(m.id,()=>saveVideo(m,""))}>URLを削除</button>}</div></fieldset></YoutubeDisclosure> : null}>{m.score_detail&&<p className="text-xs">詳細スコア：{m.score_detail}</p>}{m.memo&&<p className="whitespace-pre-wrap text-xs">メモ：{m.memo}</p>}</ResultMatchCard>}))}/>
+        <EventResultShare event={event} name={event.name} canManage={canManage} canCopy={true} onStart={share} onStop={stopShare} onCopyUrl={async()=>{if(!shareUrl)throw new Error("共有されていません");await navigator.clipboard.writeText(shareUrl);setNotice("共有リンクをコピーしました");}} feedback={<>{error&&<p role="alert" className="text-sm text-red-400">{error}</p>}{notice&&<p role="status" className="text-sm text-accent">{notice}</p>}</>} getMatches={()=>matches.map(match=>({teamA:cardScoreNames(match)[0].map((p,i)=>teamCardPlayers(match)[i].key?p.name:null),teamB:cardScoreNames(match)[1].map((p,i)=>teamCardPlayers(match)[i+2].key?p.name:null),score:storedTeamShareScore(teamCardScores(match).a,teamCardScores(match).b,teamCardScores(match).result),youtubeUrl:match.youtube_url}))}/>
+      </> : <p className="text-sm text-zinc-400">戦績は開催終了後に表示されます。</p>}
+    </section>
     <AppDialog open={historyOpen} title="全試合履歴" wide onClose={()=>setHistoryOpen(false)}><div ref={expandedHost} className="min-h-0 space-y-2 overflow-y-auto p-3" /></AppDialog>
     <TeamMatchCards cards={[...matches].reverse().map(m=>({id:m.id,content:(<div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm">
       <p className="text-xs font-bold">{m.round_id?`第${m.round_number}ラウンド · コート${m.court_number} · ${m.generation_mode==="mixed"?"チーム混合":"チーム対決"}`:`第${m.match_order}試合`}</p>
       <ScoreInput compact mixed={m.generation_mode==="mixed"} pairLabels={m.generation_mode==="mixed"?["ペア1","ペア2"]:[teamAName,teamBName]} saveKey={`${scoreScope}${m.id}`} names={cardScoreNames(m)} value={{a:teamCardScores(m).a===null?"":String(teamCardScores(m).a),b:teamCardScores(m).b===null?"":String(teamCardScores(m).b)}} saved={!pendingTeamCard(m)} result={pendingTeamCard(m)?null:teamCardScores(m).result==="win"?"A":teamCardScores(m).result==="lose"?"B":teamCardScores(m).result==="draw"?"draw":null} disabled={generationBusy||!canManage||event.status==="closed"||isClosingEvent||videoBusy!==null} onCommit={async scores=>{if(editingId===m.id){if(!await saveMatch(true,{...editingForm,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)},m.id))throw new Error(cardWrites.current.error||"保存できませんでした");}else await commitCardScore(scores,m);}} />
       {m.score_detail&&<p>詳細スコア: {m.score_detail}</p>}{m.memo&&<p className="whitespace-pre-wrap">メモ: {m.memo}</p>}
-      <YoutubeDisclosure compact closable busy={videoBusy===m.id||isClosingEvent||scoreJobs[`${scoreScope}${m.id}`]?.status==="saving"||cardWrites.current.saving.has(m.id)} registered={!!m.youtube_url}>{m.youtube_url&&<a href={m.youtube_url} target="_blank" rel="noreferrer" className="underline">動画視聴</a>}{canManage&&event.status!=="closed"&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[m.id]??m.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[m.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs disabled:opacity-40" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,()=>saveMatch(true,{...toForm(m),youtubeUrl:urlDrafts[m.id]??m.youtube_url??""},m.id))}>URLを保存</button>{m.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300 disabled:opacity-40" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,async()=>{if(await saveMatch(true,{...toForm(m),youtubeUrl:""},m.id))setUrlDrafts(previous=>({...previous,[m.id]:""}));})}>URLを削除</button>}</div></>}</YoutubeDisclosure>
+      <YoutubeDisclosure compact closable busy={videoBusy===m.id||isClosingEvent||scoreJobs[`${scoreScope}${m.id}`]?.status==="saving"||cardWrites.current.saving.has(m.id)} registered={!!m.youtube_url}>{m.youtube_url&&<a href={m.youtube_url} target="_blank" rel="noreferrer" className="underline">動画視聴</a>}{canManage&&<><input className="w-full rounded bg-zinc-700 p-2" placeholder="YouTubeリンク" value={urlDrafts[m.id]??m.youtube_url??""} onChange={e=>setUrlDrafts(previous=>({...previous,[m.id]:e.target.value}))} /><div className="flex gap-2"><button className="flex-1 rounded border border-zinc-500 py-2 text-xs disabled:opacity-40" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,()=>saveVideo(m,urlDrafts[m.id]??m.youtube_url??""))}>URLを保存</button>{m.youtube_url&&<button className="flex-1 rounded border border-red-500 py-2 text-xs text-red-300 disabled:opacity-40" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void runVideoAction(m.id,async()=>{await saveVideo(m,"");})}>URLを削除</button>}</div></>}</YoutubeDisclosure>
       {canManage&&event.status!=="closed"&&<div className="mt-2 flex gap-2"><button className="min-h-11 flex-1 rounded border border-zinc-500 py-2 text-xs text-zinc-200" disabled={generationBusy||cardBusy||videoBusy!==null||scoreJobs[`${scoreScope}${m.id}`]?.status==="saving"||isClosingEvent} onClick={()=>{setEditingId(m.id);setEditingForm(toForm(m));}}>カード編集</button><button className="min-h-11 rounded border border-red-500/70 px-3 py-2 text-xs text-red-200" disabled={generationBusy||cardBusy||videoBusy!==null||scoreQueue.has(`${scoreScope}${m.id}`)||isClosingEvent} onClick={()=>void deleteMatch(m.id)}>削除</button></div>}
       {editingId===m.id&&<MatchFormView knownNames={knownNames} teamNames={[teamAName,teamBName]} onAddGuest={(side,name)=>addGuest(side,name)} showScore={false} saveKey={`${scoreScope}${m.id}`} disabled={generationBusy||isClosingEvent||cardBusy||attendanceBusy} title="試合カードを編集" slotSources={m.round_id?teamCardPlayers(m).map(p=>p.source):undefined} mixed={m.generation_mode==="mixed"} form={editingForm} setForm={(p,s)=>setEditingForm(prev=>{const n={...prev,...p};if(s)n.result=autoResult(n.aScore,n.bScore);return n;})} applyChoice={applyChoice} teamAChoices={choices("team_a")} teamBChoices={choices("team_b")} onScoreCommit={async scores=>{if(!await saveMatch(true,{...editingForm,aScore:scores.a,bScore:scores.b,result:autoResult(scores.a,scores.b)}))throw new Error(cardWrites.current.error||"保存できませんでした。再試行してください");}} onSave={()=>void runFormSave(true)} onCancel={()=>setEditingId(null)} />}
     </div>)}))} latestCount={latestCount} latestHost={latestHost} pastHost={pastHost} expandedHost={expandedHost} expanded={historyOpen} />
@@ -371,23 +393,6 @@ function MatchFormView({knownNames,teamNames,onAddGuest,showScore=true,saveKey,d
     <TeamPlayerPicker teamNames={teamNames} slotSources={slotSources} groupNames={mixed?["ペア1","ペア2"]:undefined} choices={[teamAChoices,teamBChoices]} values={values} labels={[...names("a",teamAChoices),...names("b",teamBChoices)].map(player=>player.name)} disabled={disabled||job?.status==="saving"} onSelect={(slot,value)=>setForm(applyChoice(value,playerKeys[slot][0],playerKeys[slot][1]))} onAddGuest={onAddGuest} continuous={newCard} onAdd={onSave} onCancel={onCancel} saveDisabled={queue.has(saveKey)} saveError={newCard?saveError:undefined}>{newCard?details:null}</TeamPlayerPicker>
     {!newCard&&<><div className="grid grid-cols-2 gap-2"><button className="min-h-11 rounded-xl bg-accent py-2 font-bold text-black" disabled={queue.has(saveKey)} onClick={onSave}>保存</button><button className="min-h-11 rounded-xl border border-zinc-500 py-2 text-zinc-200" onClick={onCancel}>キャンセル</button></div>{showScore&&<ScoreInput compact pairLabels={teamNames} saveKey={saveKey} names={[names("a",teamAChoices),names("b",teamBChoices)]} value={{a:form.aScore,b:form.bScore}} saved={title==="試合カードを編集"&&form.result!=="undecided"&&form.aScore!==""&&form.bScore!==""} onCommit={autoSaveReady?onScoreCommit:undefined} onChange={scores=>setForm({aScore:scores.a,bScore:scores.b},true)} />}{!autoSaveReady&&<p role="status" className="text-xs text-amber-300">選手情報が未設定のため自動登録しません。得点を決定した後、カードの「保存」で登録してください。</p>}{details}</>}
   </fieldset>;
-}
-
-
-const teamStatsButtonClass = "flex min-h-12 w-full items-center rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-3 text-left text-sm font-bold text-zinc-100 shadow-sm shadow-black/20 active:bg-zinc-800";
-
-function TeamStatsSection({ title, isOpen, onToggle, children }: { title: string; isOpen: boolean; onToggle: () => void; children: ReactNode }) {
-  return <section className="space-y-2"><button type="button" className={teamStatsButtonClass} onClick={onToggle} aria-expanded={isOpen}><span className="event-disclosure-icon mr-2">{isOpen ? "▼" : "▶"}</span><span>{title}</span></button>{isOpen && <div>{children}</div>}</section>;
-}
-
-function StatsRowsView({ rows }: { rows: StatsRow[] }) {
-  if (rows.length === 0) return <p className="text-sm text-zinc-400">集計対象の試合結果がありません</p>;
-  return <div className="space-y-2">{rows.map((row) => <div key={row.name} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{row.name}</p><p className="text-zinc-300">{row.wins}勝{row.losses}敗{row.draws}分 / 勝点{row.points} / 勝率{row.winRate.toFixed(1)}% / 得失点差{row.diff >= 0 ? `+${row.diff}` : row.diff}</p><p className="text-xs text-zinc-400">{row.matches}試合 / 得点{row.scored} / 失点{row.conceded}</p></div>)}</div>;
-}
-
-function TeamMatchStatsCard({ stats, openSections, onToggle }: { stats: { countedMatches: number; allCountedMatches?:number; teams: StatsRow[]; players: StatsRow[]; pairs: StatsRow[] }; openSections: Record<StatsSectionKey, boolean>; onToggle: (key: StatsSectionKey) => void }) {
-  const emptyRows: StatsRow[] = [];
-  return <Card title="戦績"><div className="space-y-3"><TeamStatsSection title={stats.allCountedMatches!==undefined&&stats.allCountedMatches!==stats.countedMatches?"チーム戦績（対決のみ）":"チーム戦績"} isOpen={openSections.teams} onToggle={() => onToggle("teams")}><StatsRowsView rows={stats.countedMatches > 0 ? stats.teams : emptyRows} /></TeamStatsSection><TeamStatsSection title={stats.allCountedMatches!==undefined&&stats.allCountedMatches!==stats.countedMatches?"個人戦績（全試合）":"個人戦績"} isOpen={openSections.players} onToggle={() => onToggle("players")}><StatsRowsView rows={stats.players} /></TeamStatsSection><TeamStatsSection title={stats.allCountedMatches!==undefined&&stats.allCountedMatches!==stats.countedMatches?"ペア戦績（全試合）":"ペア戦績"} isOpen={openSections.pairs} onToggle={() => onToggle("pairs")}><StatsRowsView rows={stats.pairs} /></TeamStatsSection></div></Card>;
 }
 
 

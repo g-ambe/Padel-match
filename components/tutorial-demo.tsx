@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { stepPhases, stepTitles, type DemoStep, type ExperienceKind } from "@/lib/tutorial-content";
 
+import { EventResultRankings } from "./event-result-rankings";
 import { TutorialGuide } from "./tutorial-guide";
 import styles from "./tutorial-demo.module.css";
 
@@ -36,6 +37,7 @@ export function TutorialDemo({ steps, kind, onClose, onComplete, notice }: {
   const [rounds, setRounds] = useState<Round[]>(() => full || ["home", "group", "members", "format", "event", "participants", "round", "team"].includes(first) ? [] : first === "score" ? [sampleRound(0)] : [sampleRound(0, undefined, true), sampleRound(1, undefined, first !== "secondScore")]);
   const [editing, setEditing] = useState<0 | 1 | null>(null), [saving, setSaving] = useState<number | null>(null);
   const [confirmEnd, setConfirmEnd] = useState(false), [ended, setEnded] = useState(first === "share" || first === "finalResults");
+  const [sharePanel, setSharePanel] = useState(false);
   const [shareVersion, setShareVersion] = useState(0), [preview, setPreview] = useState(false), [shareMessage, setShareMessage] = useState("");
   const [teamMode, setTeamMode] = useState("manual"), [teamPreview, setTeamPreview] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null), trail = useRef<number[]>([]);
@@ -60,13 +62,13 @@ export function TutorialDemo({ steps, kind, onClose, onComplete, notice }: {
   const activeRound = step === "secondScore" || step === "nextRound" ? 1 : 0;
   const recordedRounds = rounds.filter(r => r.saved);
   const stats = roster.map(player => {
-    let played = 0, wins = 0, losses = 0, diff = 0;
+    let played = 0, wins = 0, losses = 0, diff = 0, scored = 0, conceded = 0;
     for (const r of recordedRounds) {
       const position = r.players.indexOf(player); if (position < 0) continue;
       const a = r.score[0] ?? 0, b = r.score[1] ?? 0, own = position < 2 ? a : b, other = position < 2 ? b : a;
-      played++; wins += Number(own > other); losses += Number(own < other); diff += own - other;
+      played++; scored += own; conceded += other; wins += Number(own > other); losses += Number(own < other); diff += own - other;
     }
-    return { player, played, wins, losses, diff, rate: played ? Math.round(wins / played * 100) : 0 };
+    return { player, played, wins, losses, diff, scored, conceded, rate: played ? Math.round(wins / played * 100) : 0 };
   }).sort((a, b) => b.rate - a.rate || b.diff - a.diff);
   const eventScreen = ["participants", "round", "score", "nextRound", "secondScore", "results", "finish", "finalResults", "share"].includes(step);
   const desiredTab: Tab = step === "participants" ? "参加者" : ["results", "finalResults", "share"].includes(step) ? "結果" : "対戦";
@@ -84,7 +86,7 @@ export function TutorialDemo({ steps, kind, onClose, onComplete, notice }: {
       round: [rounds[0] ? "round-review" : "generate", rounds[0] ? "組み合わせを確認して続けよう" : "組み合わせを作ろう"],
       nextRound: [rounds[1] ? "round-review" : "generate", rounds[1] ? "休憩した選手の出場を確認しよう" : "次のRoundも作ってみよう"],
       results: ["result-review", "暫定戦績を確認して続けよう"], finish: [confirmEnd ? "finish-confirm" : "finish", confirmEnd ? "確認したら「終了する」をタップ" : "イベントを終了してみよう"],
-      finalResults: ["result-review", "結果を確認したら共有へ！"], share: [!shareVersion ? "share-create" : preview ? "share-review" : "share-line", !shareVersion ? "共有リンクを作ろう" : preview ? "送る内容を確認して完了しよう" : "結果をLINEで共有！"],
+      finalResults: ["result-review", "結果を確認したら共有へ！"], share: [!sharePanel ? "share-open" : !shareVersion ? "share-create" : preview ? "share-review" : "share-line", !sharePanel ? "結果を共有しよう" : !shareVersion ? "共有を開始しよう" : preview ? "送る内容を確認して完了しよう" : "結果をLINEで共有！"],
       team: [teamPreview ? "team-review" : "team-show", teamPreview ? "組み合わせを確認して続けよう" : "追加方法を選んで表示しよう"]
     };
     if (step === "participants") {
@@ -116,10 +118,10 @@ export function TutorialDemo({ steps, kind, onClose, onComplete, notice }: {
       <p className="text-xs">自動休憩：{r.rest}</p>
     </section>;
   };
-  const results = () => <section className="space-y-3" aria-label="体験の個人戦績">
+  const demoRankingRows = stats.filter(r => r.played > 0).map(r => ({ name: r.player, played: r.played, wins: r.wins, losses: r.losses, draws: r.played-r.wins-r.losses, diff: r.diff, winRate: r.rate, scored: r.scored, conceded: r.conceded }));
+  const results = () => <section className="space-y-2" aria-label="体験の個人戦績">
     <p className="text-sm font-bold">{ended ? "終了後の結果" : "開催中の暫定戦績"} · {recordedRounds.length}試合記録済み</p>
-    <table className="w-full text-left text-xs"><thead><tr><th className="py-2">選手</th><th>勝敗</th><th>勝率</th><th>得失点差</th></tr></thead><tbody>{stats.map(r => <tr className="border-t border-zinc-700" key={r.player}><th className="py-2 font-normal">{r.player}</th><td>{r.wins}勝{r.losses}敗</td><td>{r.rate}%</td><td>{r.diff > 0 ? "+" : ""}{r.diff}</td></tr>)}</tbody></table>
-    {ended && <p className="rounded-xl border border-accent p-3 text-sm">MVP（体験内の参考表示）：{stats[0].player}</p>}
+    <EventResultRankings wins={[...demoRankingRows].sort((a,b)=>b.wins-a.wins)} winRate={[...demoRankingRows].sort((a,b)=>b.winRate-a.winRate)} diff={[...demoRankingRows].sort((a,b)=>b.diff-a.diff)} details={ended&&<p className="text-sm">MVP（体験内の参考表示）：{stats[0].player}</p>}/>
   </section>;
   const tips = (text: string) => <aside data-tutorial-tip className="rounded-xl bg-zinc-800 p-3 text-sm leading-6"><span aria-hidden="true">💡 </span>{text}</aside>;
   const shareUrl = `https://padel-demo.invalid/share/result-${shareVersion}`;
@@ -145,7 +147,21 @@ export function TutorialDemo({ steps, kind, onClose, onComplete, notice }: {
           {step === "results" && <>{results()}<button {...mark("result-review")} className={`${action} w-full`} onClick={advance}>続ける</button></>}
           {step === "finish" && <>{confirmEnd ? <section aria-label="体験用終了確認" className="space-y-3 rounded-xl border border-zinc-600 p-3"><h4 className="font-bold">この開催を終了しますか？</h4><p className="text-xs">未確定の試合：0件</p><div className="grid grid-cols-2 gap-2"><button className={button} onClick={() => setConfirmEnd(false)}>キャンセル</button><button {...mark("finish-confirm")} className={action} onClick={() => { setEnded(true); advance(); }}>終了する</button></div></section> : <>{card(1)}<button {...mark("finish")} className={`${action} w-full`} onClick={() => setConfirmEnd(true)}>イベント終了</button></>}</>}
           {step === "finalResults" && <>{results()}<button {...mark("result-review")} className={`${action} w-full`} onClick={advance}>続ける</button></>}
-          {step === "share" && <section className="space-y-3" aria-label="体験用結果共有"><h4 className="font-bold">結果共有</h4>{!shareVersion ? <><button {...mark("share-create")} className={`${action} w-full`} onClick={() => { setShareVersion(1); setPreview(false); setShareMessage(""); }}>共有リンクを作成</button></> : <><p className="break-all rounded-xl bg-zinc-800 p-3 text-xs">{shareUrl}</p><p className="text-xs">実在しない体験用リンクです。</p><div className="grid grid-cols-2 gap-2"><button {...mark("share-line")} className={action} onClick={() => { setPreview(true); setShareMessage(""); }}>LINEで共有</button><button className={button} onClick={() => { setPreview(true); setShareMessage("文章のプレビューです（コピーしません）。"); }}>文章をコピー</button><button className={button} onClick={() => { setShareVersion(0); setPreview(false); setShareMessage("共有を停止しました（体験）。"); }}>共有を停止</button><button className={button} onClick={() => { setShareVersion(v => v + 1); setPreview(false); setShareMessage("旧リンクは無効になりました（体験）。"); }}>共有リンクを再発行</button></div></>}{shareMessage && <p role="status" className="text-xs">{shareMessage}</p>}{preview && <div className="space-y-2 rounded-xl border border-accent p-3"><p className="text-sm font-bold">共有メッセージのプレビュー</p><p className="whitespace-pre-line break-all text-sm">{name}{"\n"}本日の結果：{recordedRounds.length}試合記録済み{"\n"}{recordedRounds.map((r, i) => `Round ${i + 1}：${r.score[0]}対${r.score[1]}`).join("\n")}{"\n"}{shareUrl}</p><p className="text-xs">体験ではLINEを起動しません。</p><button {...mark("share-review")} className={`${action} w-full`} onClick={advance}>体験を完了</button></div>}{tips("終了後はLINEで共有できます。共有停止も可能です。") }</section>}
+          {step === "share" && <section className="space-y-2">
+            {!sharePanel ? <button {...mark("share-open")} aria-label="結果を共有" aria-describedby={`${guideId}-share-state`} className={`${button} flex w-full justify-between`} onClick={()=>setSharePanel(true)}>結果を共有<span id={`${guideId}-share-state`}>{shareVersion?"共有中":"未共有"}</span></button> : <>
+              <h4 className="text-sm font-bold">結果を共有</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {!shareVersion ? <button {...mark("share-create")} className={action} onClick={()=>{setShareVersion(1);setPreview(false);setShareMessage("");}}>共有を開始</button> : <button className={button} onClick={()=>{setShareVersion(0);setPreview(false);setShareMessage("共有を停止しました（体験）。");}}>共有を停止</button>}
+                <button className={button} disabled={!shareVersion} onClick={()=>setShareMessage("URLコピーの体験です（コピーしません）。")}>URLコピー</button>
+                <button {...mark("share-line")} className={action} disabled={!shareVersion} onClick={()=>{setPreview(true);setShareMessage("");}}>LINEで送付</button>
+                <button className={button} onClick={()=>{setPreview(true);setShareMessage("文章のプレビューです（コピーしません）。");}}>文章をコピー</button>
+              </div>
+              {!!shareVersion&&<><p className="break-all text-xs">{shareUrl}</p><button className={button} onClick={()=>{setShareVersion(v=>v+1);setPreview(false);setShareMessage("旧リンクは無効になりました（体験）。");}}>共有URLを再発行</button></>}
+              {shareMessage&&<p role="status" className="text-xs">{shareMessage}</p>}
+              {preview&&<div className="space-y-2 rounded-xl border border-accent p-3"><p className="text-sm font-bold">共有メッセージのプレビュー</p><p className="whitespace-pre-line break-all text-sm">{name}{"\n"}本日の結果：{recordedRounds.length}試合記録済み{"\n"}{recordedRounds.map((r,i)=>`Round ${i+1}：${r.score[0]}対${r.score[1]}`).join("\n")}{shareVersion?"\n"+shareUrl:""}</p><p className="text-xs">体験ではLINEを起動しません。</p><button {...mark("share-review")} className={`${action} w-full`} onClick={advance}>体験を完了</button></div>}
+            </>}{tips("終了後はLINEで共有できます。共有停止も可能です。")}
+          </section>}
+
         </>}
       </>}
       {step === "team" && <><div className="grid gap-2">{[["manual", "手動追加"], ["confrontation", "チーム対決乱数"], ["mixed", "チーム混合乱数"]].map(([key, label]) => <button key={key} aria-pressed={teamMode === key} className={`${button} ${teamMode === key ? "border-accent text-accent" : ""}`} onClick={() => { setTeamMode(key); setTeamPreview(false); }}>{label}</button>)}</div><button {...mark("team-show")} className={action} onClick={() => setTeamPreview(true)}>試合カードを表示</button>{teamPreview && <div className="space-y-2 rounded-xl border border-zinc-600 p-3"><div className="grid grid-cols-2 gap-2 text-sm"><p className="border-l-2 border-emerald-500 pl-2">{demoPlayers[4]} ＋ {teamMode === "mixed" ? demoPlayers[6] : demoPlayers[5]}</p><p className="border-l-2 border-blue-500 pl-2">{teamMode === "mixed" ? demoPlayers[5] : demoPlayers[6]} ＋ {demoPlayers[7]}</p></div><p className="text-xs">{teamMode === "mixed" ? "混合は個人・ペア戦績のみ。チーム勝敗へは加算しません。" : teamMode === "manual" ? "手動では4名を自分で選びます。" : "チームごとの2名ずつで対戦します。"}</p><button {...mark("team-review")} className={action} onClick={advance}>続ける</button></div>}</>}

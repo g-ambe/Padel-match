@@ -59,3 +59,24 @@ test('0047の専用開催検証SQLは手動・自動・共有・競合を試験�
   assert.equal((await db.query('select count(*) n from public.event_team_matches')).rows[0].n,0);
  }finally{await db.close();}
 });
+
+test('通常フレンドリーのライブ動画登録は0041/0042適用後もスコア・編成を変更しない',async()=>{
+ const {db,event,as}=await fixedPairDatabase(true);
+ try{
+  for(const file of ['0041_atomic_round_lineups.sql','0042_round_lineup_safety.sql'])await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8'));
+  for(const noGroup of [true,false]){
+   const e=await event(noGroup?985:986,4,{status:'closed',noGroup});
+   const r=(await db.query('insert into rounds(event_id,round_number) values($1,1) returning id',[e.eid])).rows[0];
+   const m=(await db.query('insert into matches(event_id,round_id,court_number,completed) values($1,$2,1,true) returning id',[e.eid,r.id])).rows[0];
+   for(let n=0;n<4;n++)await db.query('insert into match_players(match_id,participant_id,team) values($1,$2,$3)',[m.id,e.participants[n],n<2?'A':'B']);
+   await db.query("insert into match_results(match_id,score_a,score_b,winner_team) values($1,4,2,'A')",[m.id]);
+   const snapshot=async()=>JSON.stringify((await db.query("select (select to_jsonb(m)-'youtube_url' from matches m where id=$1) match,(select jsonb_agg(to_jsonb(p) order by p.id) from match_players p where match_id=$1) players,(select jsonb_agg(to_jsonb(r) order by r.id) from match_results r where match_id=$1) results",[m.id])).rows);
+   const before=await snapshot();await as(1);
+   const url='https://www.youtube.com/live/sample-live?si=sample';
+   const saved=await db.query('update matches set youtube_url=$1 where id=$2 and event_id=$3 returning youtube_url',[url,m.id,e.eid]);
+   assert.equal(saved.rows[0].youtube_url,url);assert.equal(await snapshot(),before);
+   await db.query('update matches set youtube_url=null where id=$1',[m.id]);
+   assert.equal(await snapshot(),before);
+  }
+ }finally{await db.close();}
+});

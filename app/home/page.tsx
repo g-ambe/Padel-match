@@ -87,7 +87,7 @@ export default function HomePage() {
       </Link>) : <p className="rounded-xl bg-card p-4 text-sm text-zinc-400">開催中の試合はありません。</p>}
       {!loading && active.length > 2 && <button type="button" aria-expanded={expanded} className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-sm" onClick={() => setExpanded(value => !value)}>{expanded ? "閉じる" : `残り${active.length - 2}件を表示`}</button>}
     </section>
-    <Link href={createHref} className="block min-h-14 rounded-2xl bg-accent p-4 text-center font-bold text-black">＋ 新しい試合を作成</Link>
+    <Link href={createHref} className="block min-h-14 rounded-2xl bg-accent p-4 text-center font-bold text-black">＋ 新しいイベントを作成</Link>
     <Card title="過去の試合"><div className="space-y-3"><div className="grid grid-cols-3 gap-2" role="group" aria-label="過去の試合の形式">{([ ["all", "すべて"], ["friendly", "フレンドリー"], ["official", "オフィシャル"] ] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={pastFilter === value} className={`min-h-11 rounded-xl border px-1 text-xs ${pastFilter === value ? "border-accent bg-accent font-bold text-black" : "border-zinc-700"}`} onClick={() => setPastFilter(value)}>{label}</button>)}</div>
       {!loading && !past.length && <p className="text-sm text-zinc-400">過去の試合はありません。</p>}
       {past.map(entry => <Link key={`${entry.kind}:${entry.id}`} href={entry.href} className="block rounded-xl border border-zinc-700 px-3 py-3" data-past-match><p className="break-words font-semibold">{entry.title}</p><p className="mt-1 text-xs text-zinc-400">{entry.formatLabel}</p><p className="mt-1 break-words text-xs text-zinc-400">{entry.groupLabel} / {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString("ja-JP") : "日付未設定"}</p></Link>)}

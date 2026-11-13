@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { buildMatchShareText, getMatchShareUrls, storedTeamShareScore, buildLineShareUrl, isLineMobileDevice, MAX_LINE_SHARE_URL_LENGTH } = require('../lib/match-share-text.ts');
 const { hasEnteredFriendlyMatchScore } = require('../lib/friendly-match-results.ts');
 const { copyMatchShareText, openLineShare } = require('../lib/match-share-actions.ts');
+const { groupResultRanking } = require('../lib/result-ranking.ts');
 
 const event = { status: 'closed', is_deleted: false, share_enabled: true, share_token: 'share-token_123' };
 const match = { teamA: ['安倍', '瀧田'], teamB: ['篠原', '今野'], score: { a: 4, b: 2 }, youtubeUrl: 'https://youtu.be/E_f_A-FBni4' };
@@ -160,4 +161,50 @@ test('明示した文章コピーだけは共有停止中にURLなしで既存�
  assert(!text.includes('/share/'));assert.match(text,/スコア：4-2/);assert.match(text,/動画URL：/);
  assert.throws(()=>buildMatchShareText({...params,event:stopped}));
  for(const patch of [{status:'active'},{is_deleted:true}])assert.throws(()=>buildMatchShareText({...params,event:{...stopped,...patch},allowUnsharedText:true}));
+});
+
+const resultRow=(name,wins,losses=0,draws=0,winRate=0)=>({name,wins,losses,draws,winRate,diff:0,scored:0,conceded:0,played:wins+losses+draws});
+const resultParams=rows=>({...params,matches:[],result:{date:'2026-11-13T12:00:00Z',ranking:groupResultRanking(rows,'wins')}});
+
+test('結果文章は既存競技順位の1〜3位と最下位だけを抽出し、同率を一行にまとめる',()=>{
+ const text=buildMatchShareText(resultParams([
+  resultRow('プレイヤー01',5,1,0,83.3),resultRow('プレイヤー02',5,1,0,83.3),
+  resultRow('プレイヤー03',4,2,0,66.7),resultRow('プレイヤー04',3,3,0,50),
+  resultRow('プレイヤー05',0,6),resultRow('プレイヤー06',0,6)]));
+ assert.equal(text,['【イベント結果】','イベント名：261023 部活','開催日：2026/11/13','','【ランキング】',
+  '1位　プレイヤー01、プレイヤー02　5勝1敗（勝率83.3%）','3位　プレイヤー03　4勝2敗（勝率66.7%）',
+  '最下位　プレイヤー05、プレイヤー06　0勝6敗（勝率0%）','','戦績詳細：','https://padel.example.org/share/events/share-token_123'].join('\n'));
+ assert(!text.includes('プレイヤー04'));assert(!text.includes('2位'));assert(!text.includes('ログイン'));
+});
+test('同率でも勝敗・引き分け・勝率が異なる場合は全員の既存戦績を個別に示す',()=>{
+ const text=buildMatchShareText(resultParams([resultRow('プレイヤー01',4,2,1,57.1),resultRow('プレイヤー02',4,3,0,57.1)]));
+ assert.match(text,/1位　プレイヤー01 4勝2敗1分（勝率57.1%） ／ プレイヤー02 4勝3敗（勝率57.1%）/);
+ assert(!text.includes('最下位'));assert.equal(text.split('\n').filter(line=>line.startsWith('1位')).length,1);
+});
+test('少人数・全員同率・0勝・戦績未登録で最下位を重複せず、架空の順位や勝率を作らない',()=>{
+ for(const rows of [[resultRow('P1',0,2)],[resultRow('P1',0,2),resultRow('P2',0,2)],[resultRow('P1',2,0,0,100),resultRow('P2',1,1,0,50),resultRow('P3',0,2)]]){
+  const text=buildMatchShareText(resultParams(rows));assert(!text.includes('最下位'));
+  for(const row of rows)assert.equal(text.split(row.name).length-1,1);
+ }
+ assert.match(buildMatchShareText(resultParams([])),/【ランキング】\n戦績未登録/);
+ const zero=buildMatchShareText(resultParams([resultRow('P1',0,2,1,0)]));assert.match(zero,/0勝2敗1分（勝率0%）/);
+});
+test('結果文章の共有停止・無効URL・削除と日付不明を区別し、公式の既存形式を維持する',()=>{
+ const p=resultParams([resultRow('P1',1,0,0,100)]);
+ for(const patch of [{share_enabled:false},{share_token:null},{share_token:'bad/token'}]){
+  const stopped={...p,event:{...event,...patch},allowUnsharedText:true};
+  assert(!buildMatchShareText(stopped).includes('/share/'));assert.throws(()=>buildMatchShareText({...stopped,allowUnsharedText:false}));
+ }
+ for(const patch of [{status:'active'},{is_deleted:true}])assert.throws(()=>buildMatchShareText({...p,event:{...event,...patch},allowUnsharedText:true}));
+ for(const date of [null,'invalid'])assert.match(buildMatchShareText({...p,result:{...p.result,date}}),/開催日：未設定/);
+ assert.equal(buildMatchShareText({...params,kind:'official-events',result:p.result}),buildMatchShareText({...params,kind:'official-events'}));
+});
+test('結果文章はLINEとコピーで同じ全文を利用する',async()=>{
+ const text=buildMatchShareText(resultParams([resultRow('P1',1,0,0,100)]));
+ assert.equal(new URL(buildLineShareUrl(text)).searchParams.get('text'),text);
+ const original=Object.getOwnPropertyDescriptor(globalThis,'navigator');let copied;
+ try{
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async value=>{copied=value;}}}});
+  await copyMatchShareText(text);assert.equal(copied,text);
+ }finally{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator;}
 });

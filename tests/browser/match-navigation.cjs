@@ -43,18 +43,18 @@ const poll=async fn=>{const until=Date.now()+12000;while(!await fn()){if(Date.no
   }
   // 一般メンバーのグループを初期候補にして、通常・手動の既存作成処理を実行。
   for(const mode of ['auto','manual']){
-   await page.goto(base+'/home');await page.getByRole('combobox',{name:'表示対象グループ'}).selectOption(clubA);await page.getByRole('link',{name:'＋ 新しい試合を作成'}).click();
-   await page.getByRole('link',{name:mode==='auto'?'組み合わせ戦・自動生成':'組み合わせ戦・手動作成',exact:true}).click();await page.getByRole('button',{name:'作成',exact:true}).waitFor();
+   await page.goto(base+'/home');await page.getByRole('combobox',{name:'表示対象グループ'}).selectOption(clubA);await page.getByRole('link',{name:'＋ 新しいイベントを作成'}).click();
+   await page.getByRole('link',{name:mode==='auto'?'自動で組む':'自分で組む',exact:true}).click();await page.getByRole('button',{name:'作成',exact:true}).waitFor();
    assert.equal(await page.getByRole('combobox',{name:'作成先グループ'}).inputValue(),clubA);await page.getByRole('textbox',{name:'開催名'}).fill('作成テスト'+mode);
    await page.getByRole('button',{name:'作成',exact:true}).click();await page.waitForURL(/\/events\/[0-9a-f-]+$/);
    const created=f.tables.events.find(e=>e.name==='作成テスト'+mode);assert.equal(created.club_id,clubA);assert.equal(created.event_mode,mode);
   }
   // A/Bを独立して指定。試験内だけA側も管理可能な役職へ変更する。
-  f.tables.club_members[0].role='sub_admin';await page.goto(base+'/matches/new');await page.getByRole('link',{name:'チーム戦',exact:true}).first().click();await page.getByLabel('イベント名',{exact:true}).fill('作成テストチーム');
-  for(const [label,group]of [['チームA',clubA],['チームB',clubB]]){const box=page.getByText(label,{exact:true}).locator('..');await box.getByRole('combobox').first().selectOption(group);}
-  await page.getByRole('button',{name:'作成',exact:true}).click();await page.waitForURL(/\/team-matches\/[0-9a-f-]+$/);
+  f.tables.club_members[0].role='sub_admin';await page.goto(base+'/matches/new');await page.getByRole('link',{name:'チーム戦',exact:true}).click();const teamWizard=()=>page.getByRole('dialog');await teamWizard().getByLabel('イベント名（必須）').fill('作成テストチーム');await teamWizard().getByRole('button',{name:'次へ',exact:true}).click();
+  for(const [label,group]of [['チームA',clubA],['チームB',clubB]]){await teamWizard().getByRole('combobox',{name:label+'のグループ'}).selectOption(group);await teamWizard().getByRole('button',{name:'次へ',exact:true}).click();}
+  await teamWizard().getByRole('button',{name:'この内容で作成',exact:true}).click();await page.waitForURL(/\/team-matches\/[0-9a-f-]+$/);
   const made=f.tables.events.find(e=>e.name==='作成テストチーム'),sides=f.tables.event_team_sides.filter(side=>side.event_id===made.id);assert.equal(sides[0].club_id,clubA);assert.equal(sides[1].club_id,clubB);f.tables.club_members[0].role='member';
-  await page.goto(base+'/matches/new');await page.getByRole('link',{name:'チーム戦',exact:true}).last().click();await page.getByLabel('大会/リーグ名').fill('作成テスト公式');await page.getByLabel('所属グループ').selectOption(clubB);await page.getByRole('button',{name:'作成',exact:true}).click();await page.waitForURL(/\/official-matches\/[0-9a-f-]+$/);assert(f.tables.official_events.some(e=>e.title==='作成テスト公式'));
+  await page.goto(base+'/matches/new');assert.equal(await page.locator('a[href="/official-matches/new"]').count(),0);await page.goto(base+'/official-matches/new');await page.getByLabel('大会/リーグ名').fill('作成テスト公式');await page.getByLabel('所属グループ').selectOption(clubB);await page.getByRole('button',{name:'作成',exact:true}).click();await page.waitForURL(/\/official-matches\/[0-9a-f-]+$/);assert(f.tables.official_events.some(e=>e.title==='作成テスト公式'));
   // サンプルランキングを出さず、グループの既存戦績タブへ遷移する。
   await nav().getByRole('link',{name:'ランキング',exact:true}).click();await page.getByRole('heading',{name:'ランキング',exact:true}).waitFor();assert(!await page.getByText('田中').count());await page.getByRole('link',{name:/グループA/}).click();await page.waitForURL(/tab=stats/);await page.getByRole('heading',{name:'グループ戦績',exact:true}).waitFor();assert.equal(await nav().locator('[aria-current=page]').getAttribute('href'),'/ranking');
   await nav().getByRole('link',{name:'マイページ',exact:true}).click();await page.getByRole('heading',{name:'マイページ',exact:true}).waitFor();await page.getByRole('link',{name:/グループA/}).waitFor();await page.getByRole('link',{name:'通知・申請を確認する'}).click();await page.getByText('テスト通知',{exact:true}).waitFor();
@@ -76,7 +76,7 @@ const poll=async fn=>{const until=Date.now()+12000;while(!await fn()){if(Date.no
   // 管理者入口は既存条件で出し分ける。
   f.tables.app_admins.push({id:id(900),profile_id:user.id,is_active:true});await page.goto(base+'/home');await page.getByRole('button',{name:'メニュー',exact:true}).click();await page.getByRole('button',{name:'スーパーユーザー管理'}).waitFor();
   await c.close();
-  const g=await context(false),gp=await g.newPage();await gp.goto(base+'/login');assert.equal(await gp.getByRole('navigation',{name:'下部ナビゲーション'}).count(),0);await gp.getByRole('button',{name:'ゲストで利用'}).click();await gp.waitForURL(base+'/home');await gp.getByRole('link',{name:'＋ 新しい試合を作成'}).click();await gp.getByRole('link',{name:'組み合わせ戦・自動生成',exact:true}).click();await gp.getByRole('textbox',{name:'開催名'}).fill('ゲスト保持テスト');await gp.getByRole('button',{name:'作成',exact:true}).click();await gp.waitForURL(/\/events\/guest_/);
+  const g=await context(false),gp=await g.newPage();await gp.goto(base+'/login');assert.equal(await gp.getByRole('navigation',{name:'下部ナビゲーション'}).count(),0);await gp.getByRole('button',{name:'トライアル版を試す'}).click();await gp.waitForURL(base+'/home');await gp.getByRole('link',{name:'＋ 新しいイベントを作成'}).click();await gp.getByRole('link',{name:'自動で組む',exact:true}).click();await gp.getByRole('textbox',{name:'開催名'}).fill('ゲスト保持テスト');await gp.getByRole('button',{name:'作成',exact:true}).click();await gp.waitForURL(/\/events\/guest_/);
   const saved=await gp.evaluate(()=>sessionStorage.getItem('padel_guest_events_v1'));await gp.getByRole('navigation',{name:'下部ナビゲーション'}).getByRole('link',{name:'試合',exact:true}).click();await gp.getByText('ゲスト保持テスト',{exact:true}).waitFor();assert.equal(await gp.evaluate(()=>sessionStorage.getItem('padel_guest_events_v1')),saved);
   await gp.getByRole('navigation',{name:'下部ナビゲーション'}).getByRole('link',{name:'マイページ',exact:true}).click();await gp.getByRole('heading',{name:'ログイン・アカウント登録',exact:true}).waitFor();await gp.locator('dialog[open]').getByRole('button',{name:'閉じる',exact:true}).last().click();assert.equal(await gp.evaluate(()=>sessionStorage.getItem('padel_guest_events_v1')),saved);
   await gp.getByRole('button',{name:'TOPへ戻る',exact:true}).click();await gp.waitForURL(base+'/');assert.equal(await gp.evaluate(()=>sessionStorage.getItem('padel_guest_events_v1')),null);

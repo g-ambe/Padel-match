@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
 import { loadFriendlyEventAccess } from "@/lib/friendly-event-access";
 import { useMatchGroupReturn } from "./use-match-group-return";
+import { recentEventGroups } from "@/lib/recent-event-groups";
 import { isGuestModeEnabled, resetGuestModeData, upsertGuestEvent, type EventMode, type GuestEvent } from "@/lib/guest-events";
 
 type Group = { id: string; name: string };
@@ -21,11 +22,13 @@ export function FriendlyEventCreate() {
   const [guestMode, setGuestModeState] = useState(false);
   const [ready, setReady] = useState(false);
   const [ownerId, setOwnerId] = useState<string | null>(null);
+  const homeRequest = useRef(0);
   const groupReturn = useMatchGroupReturn({
-    kind: "ordinary", ownerId, ready, guest: guestMode,
+    kind: "ordinary", ownerId, ready, guest: guestMode, preserveNavigation: true,
     values: { name, courtCount, eventMode, selectedGroupId }, selectableIds: groups.map(group => group.id),
     restore: value => {
-      setName(String(value.name)); setCourtCount(Number(value.courtCount)); setEventMode(value.eventMode as EventMode);
+      const mode = new URLSearchParams(window.location.search).get("mode");
+      setName(String(value.name)); setCourtCount(Number(value.courtCount)); setEventMode(mode === "auto" || mode === "manual" ? mode : value.eventMode as EventMode);
       setSelectedGroupId(groups.some(group => group.id === value.selectedGroupId) ? String(value.selectedGroupId) : "");
     },
     selectGroup: id => setSelectedGroupId(id)
@@ -34,7 +37,9 @@ export function FriendlyEventCreate() {
   const selectedGroupName = useMemo(() => groups.find((g) => g.id === selectedGroupId)?.name ?? "", [groups, selectedGroupId]);
 
   const loadHomeData = async () => {
+    const request = ++homeRequest.current;
     const showGuestHome = () => {
+      if (request !== homeRequest.current) return;
       setGuestModeState(true);
       setGroups([]);
       setSelectedGroupId("");
@@ -63,14 +68,17 @@ export function FriendlyEventCreate() {
 
     try {
       const { groups: groupRows, uid } = await loadFriendlyEventAccess(supabase);
-      setGroups(groupRows);
+      const orderedGroups = await recentEventGroups(supabase, groupRows);
+      // 開発時の再実行や再読込が重なっても、遅い旧リクエストで復元済みの選択を消さない。
+      if (request !== homeRequest.current) return;
+      setGroups(orderedGroups);
       setOwnerId(uid);
       const query = new URLSearchParams(window.location.search);
       const candidate = query.get("group");
       setSelectedGroupId(candidate && groupRows.some(group => group.id === candidate) ? candidate : "");
       setReady(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "グループ取得に失敗しました");
+      if (request === homeRequest.current) setError(cause instanceof Error ? cause.message : "グループ取得に失敗しました");
     }
   };
 
@@ -198,10 +206,11 @@ export function FriendlyEventCreate() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
-      <h1 className="pr-14 text-xl font-bold">組み合わせ戦を作成</h1>
+      <button type="button" disabled={loading || !ready} className="min-h-11 self-start text-sm text-zinc-400 underline" onClick={()=>{if(groupReturn.saveForNavigation())router.push(`/matches/new${selectedGroupId?`?group=${encodeURIComponent(selectedGroupId)}`:""}`);}}>イベント形式へ戻る</button>
+      <h1 className="pr-14 text-xl font-bold">{eventMode === "manual" ? "自分で組む" : "自動で組む"}イベント</h1>
       <p className="text-sm text-zinc-300">開催情報と作成先を確認してください。</p>
       {guestMode && <p className="text-sm text-amber-300">ゲストの試合はこのブラウザに一時保存されます。</p>}
-      <div id="random-events"><Card title="フレンドリーマッチを作成">
+      <div id="random-events"><Card title="イベントの基本情報">
         <form className="space-y-3" onSubmit={event => { if (ready) void createEvent(event); else event.preventDefault(); }}>
           {!guestMode && ownerId && (
             <>
@@ -212,7 +221,7 @@ export function FriendlyEventCreate() {
                 ))}
               </select>
               <p className="text-xs text-zinc-300">選択中グループ: {selectedGroupName || "グループなし"}</p>
-              {groupReturn.canCreate && <button type="button" disabled={loading || groupReturn.opening} className="min-h-11 text-sm text-accent underline" onClick={() => void groupReturn.begin()}>＋ 新しいグループを作成</button>}
+              {groupReturn.canCreate && <button type="button" disabled={loading || groupReturn.opening} className="min-h-11 text-xs text-zinc-400 underline underline-offset-4" onClick={() => void groupReturn.begin()}>＋ 新しいグループを作成</button>}
             </>
           )}
           <input
@@ -228,8 +237,8 @@ export function FriendlyEventCreate() {
           <label className="block space-y-1 text-sm">
             <span className="text-zinc-300">対戦作成方式</span>
             <select className="w-full rounded-xl bg-zinc-800 p-3" value={eventMode} onChange={(e) => setEventMode(e.target.value as EventMode)}>
-              <option value="auto">自動生成</option>
-              <option value="manual">手動作成</option>
+              <option value="auto">自動で組む（乱数）</option>
+              <option value="manual">自分で組む（手動）</option>
             </select>
           </label>
           {error && <p className="text-sm text-red-400">{error}</p>}

@@ -8,6 +8,16 @@ const team={name:'対抗戦',description:'説明',memo:'メモ',teamAMode:'group
 const official={title:'公式タイトル',eventDate:'2026-11-05',description:'説明',memo:'メモ',clubId:id(11)};
 const tokenOf=path=>new URL(path,'https://local.invalid').searchParams.get('fromMatch');
 
+test('形式画面への往復入力は本人・形式別に保持し、期限切れ・作成成功で破棄する',()=>{
+ const s=storage();d.saveCreationDraft(s,id(1),'ordinary',ordinary);d.saveCreationDraft(s,id(1),'friendly_team',team);
+ assert.deepEqual(d.readCreationDraft(s,id(1),'ordinary'),ordinary);assert.deepEqual(d.readCreationDraft(s,id(1),'friendly_team'),team);
+ assert.equal(d.readCreationDraft(s,id(2),'ordinary'),null);assert.equal(d.readCreationDraft(s,id(1),'official_team'),null);
+ d.discardCreationDraft(s,id(1),'ordinary');assert.equal(d.readCreationDraft(s,id(1),'ordinary'),null);
+ assert.deepEqual(d.readCreationDraft(s,id(1),'friendly_team'),team);
+ assert.equal(d.readCreationDraft(s,id(1),'friendly_team',Date.now()+3*60*60*1000),null);
+ assert.throws(()=>d.saveCreationDraft(s,id(1),'ordinary',{...ordinary,courtCount:6}));
+});
+
 test('3形式の全入力をアカウント別に保存し、グループ作成完了時だけ新グループを引き継ぐ',()=>{
  for(const [kind,slot,value]of [['ordinary','group',ordinary],['friendly_team','team_a',team],['official_team','group',official]]){
   const s=storage(),token=tokenOf(d.startGroupCreation(s,id(1),kind,slot,value));

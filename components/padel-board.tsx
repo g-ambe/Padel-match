@@ -2,10 +2,11 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
 import { AppDialog } from "./app-dialog";
-import { BOARD_COLORS as colors, COURT, MARKERS, boardReturnPath, courtPoint, initialBoard, strokePath, type BoardMode, type BoardState, type MarkerId, type Point, type Stroke } from "@/lib/padel-board";
+import { BOARD_COLORS as colors, DRAW_COLORS, COURT, MARKERS, boardReturnPath, courtPoint, initialBoard, strokePath, type DrawingColor, type BoardState, type MarkerId, type Point, type Stroke } from "@/lib/padel-board";
 import styles from "./padel-board.module.css";
 
 type Gesture = { pointer: number; before: BoardState; marker?: MarkerId; offset: Point; stroke?: Stroke };
+const drawChoices = [["green", "緑"], ["yellow", "黄色"], ["blue", "青"]] as const;
 // 既存メニューと同じ、追加ライブラリ不要の線画SVG。
 const iconPaths = {
   move: "M12 3v18M3 12h18m-13-5 4-4 4 4m-8 10 4 4 4-4M7 8l-4 4 4 4m10-8 4 4-4 4",
@@ -39,8 +40,10 @@ async function boardPng(svg: SVGSVGElement): Promise<Blob> {
 export function PadelBoard() {
   const [board, setBoard] = useState<BoardState>(initialBoard), [history, setHistory] = useState<BoardState[]>([]);
   const live = useRef(board), gesture = useRef<Gesture | null>(null), svg = useRef<SVGSVGElement>(null);
-  const [tool, setTool] = useState<"move" | "draw">("move"), [drawKind, setDrawKind] = useState<Stroke["kind"]>("movement");
-  const mode: BoardMode = tool === "move" ? "place" : drawKind;
+  const [tool, setTool] = useState<"move" | "draw">("move"), [drawColor, setDrawColor] = useState<DrawingColor>("green");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const palette = useRef<HTMLDivElement>(null), drawButton = useRef<HTMLButtonElement>(null);
+  const mode = tool === "move" ? "place" : "draw";
   // 操作・履歴の座標系は維持し、表示だけを利用可能な画面比率へ合わせる。
   const [displayHeight, setDisplayHeight] = useState<number>(COURT.height);
   const scaleY = displayHeight / COURT.height;
@@ -52,11 +55,34 @@ export function PadelBoard() {
     const court = svg.current; if (!court) return;
     const resize = () => {
       const rect = court.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) setDisplayHeight(Math.max(1400, Math.round(rect.height / rect.width * COURT.width)));
+      if (rect.width > 0 && rect.height > 0) setDisplayHeight(Math.max(1, Math.round(rect.height / rect.width * COURT.width)));
     };
     const observer = new ResizeObserver(resize); observer.observe(court); resize();
     return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    // この画面だけページのスクロールを禁止。ダイアログ内のスクロールとズームは維持する。
+    const preventPageScroll = (event: TouchEvent | WheelEvent) => {
+      if (event.target instanceof Element && event.target.closest("dialog[open], #global-menu-panel")) return;
+      if (("touches" in event && event.touches.length > 1) || ("ctrlKey" in event && event.ctrlKey)) return;
+      if (event.cancelable) event.preventDefault();
+    };
+    document.addEventListener("touchmove", preventPageScroll, { passive: false });
+    document.addEventListener("wheel", preventPageScroll, { passive: false });
+    return () => { document.removeEventListener("touchmove", preventPageScroll); document.removeEventListener("wheel", preventPageScroll); };
+  }, []);
+  useEffect(() => {
+    if (!paletteOpen) return;
+    palette.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus({ preventScroll: true });
+    const dismiss = (event: globalThis.PointerEvent) => {
+      if (event.target instanceof Node && !palette.current?.contains(event.target) && !drawButton.current?.contains(event.target)) setPaletteOpen(false);
+    };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setPaletteOpen(false); drawButton.current?.focus({ preventScroll: true }); }
+    };
+    document.addEventListener("pointerdown", dismiss); document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
+  }, [paletteOpen]);
   useEffect(() => {
     const court = svg.current; if (!court) return;
     // SVGのマーカーでtouch-actionを扱わないブラウザでも、ドラッグ中のスクロールを防ぐ。
@@ -76,18 +102,19 @@ export function PadelBoard() {
     if (busyRef.current || gesture.current || !event.isPrimary || event.button !== 0) return;
     const id = (event.target as Element).closest("[data-marker]")?.getAttribute("data-marker") as MarkerId | null;
     if (mode === "place" && !id) return;
-    event.preventDefault(); const before = live.current, p = point(event);
-    const stroke = mode === "place" ? undefined : { kind: mode, points: [courtPoint(p, 40)] } as Stroke;
-    gesture.current = { pointer: event.pointerId, before, marker: mode === "place" ? id! : undefined, offset: id && mode === "place" ? { x: before.markers[id].x - p.x, y: before.markers[id].y - p.y } : { x: 0, y: 0 }, stroke };
+    event.preventDefault(); setPaletteOpen(false); const before = live.current, p = point(event);
+    const stroke = mode === "place" ? undefined : { color: drawColor, points: [courtPoint(p, 40, scaleY)] } as Stroke;
+    const position = id ? courtPoint(before.markers[id], 64, scaleY) : p;
+    gesture.current = { pointer: event.pointerId, before, marker: mode === "place" ? id! : undefined, offset: id && mode === "place" ? { x: position.x - p.x, y: position.y - p.y } : { x: 0, y: 0 }, stroke };
     event.currentTarget.setPointerCapture(event.pointerId); setActive(true); setNotice("");
     if (stroke) show({ ...before, strokes: [...before.strokes, stroke] });
   };
   const move = (event: PointerEvent<SVGSVGElement>) => {
     const action = gesture.current; if (!action || action.pointer !== event.pointerId) return;
     event.preventDefault(); const p = point(event);
-    if (action.marker) show({ ...action.before, markers: { ...action.before.markers, [action.marker]: courtPoint({ x: p.x + action.offset.x, y: p.y + action.offset.y }) } });
+    if (action.marker) show({ ...action.before, markers: { ...action.before.markers, [action.marker]: courtPoint({ x: p.x + action.offset.x, y: p.y + action.offset.y }, 64, scaleY) } });
     else if (action.stroke) {
-      const next = courtPoint(p, 40), previous = action.stroke.points.at(-1)!;
+      const next = courtPoint(p, 40, scaleY), previous = action.stroke.points.at(-1)!;
       if (Math.hypot(next.x - previous.x, next.y - previous.y) < 3) return;
       action.stroke = { ...action.stroke, points: [...action.stroke.points, next] };
       show({ ...action.before, strokes: [...action.before.strokes, action.stroke] });
@@ -105,14 +132,14 @@ export function PadelBoard() {
     if (mode !== "place" || active || busy) return;
     const direction: Record<string, Point> = { ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 }, ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 } };
     const delta = direction[event.key]; if (!delta) return;
-    event.preventDefault(); const before = live.current, p = before.markers[id], amount = event.shiftKey ? 50 : 10;
-    const next = { ...before, markers: { ...before.markers, [id]: courtPoint({ x: p.x + delta.x * amount, y: p.y + delta.y * amount }) } };
+    event.preventDefault(); const before = live.current, p = courtPoint(before.markers[id], 64, scaleY), amount = event.shiftKey ? 50 : 10;
+    const next = { ...before, markers: { ...before.markers, [id]: courtPoint({ x: p.x + delta.x * amount, y: p.y + delta.y * amount }, 64, scaleY) } };
     remember(before, next); show(next);
   };
   const closePreview = () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); previewRef.current = null; setPreview(null); };
   const exportImage = async (action: "save" | "share") => {
     if (busyRef.current || gesture.current || !svg.current) return;
-    busyRef.current = true; setBusy(true); setNotice("");
+    busyRef.current = true; setBusy(true); setPaletteOpen(false); setNotice("");
     try {
       const blob = await boardPng(svg.current); if (!mounted.current) return;
       const file = new File([blob], "padel-board.png", { type: "image/png" });
@@ -137,33 +164,26 @@ export function PadelBoard() {
     <header className={styles.header}><Link href={back} aria-label="戻る" title="元の画面へ戻る"><BoardIcon name="back" /></Link><h1 className="text-xl font-bold">パデルボード</h1></header>
     <div className={styles.courtArea}>
     <svg ref={svg} xmlns="http://www.w3.org/2000/svg" width={COURT.width} height={COURT.height} viewBox={`0 0 ${COURT.width} ${displayHeight}`} role="group" aria-label="パデルコート" data-mode={mode} className={styles.court} onPointerDown={start} onPointerMove={move} onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}>
-      <defs>{(["movement", "ball"] as const).map(kind => <marker key={kind} id={`board-arrow-${kind}`} viewBox="0 0 32 28" refX="28" refY="14" markerWidth="32" markerHeight="28" markerUnits="userSpaceOnUse" orient="auto"><path d="M2 2L28 14L2 26" fill="none" stroke={kind === "movement" ? colors.a : colors.ball} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></marker>)}</defs>
+      <defs>{drawChoices.map(([color]) => <marker key={color} id={`board-arrow-${color}`} viewBox="0 0 32 28" refX="28" refY="14" markerWidth="32" markerHeight="28" markerUnits="userSpaceOnUse" orient="auto"><path d="M2 2L28 14L2 26" fill="none" stroke={DRAW_COLORS[color]} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></marker>)}</defs>
       <rect width={COURT.width} height={displayHeight} fill={colors.court} />
       <g stroke={colors.line} strokeWidth="5" fill="none"><path data-court-services d={`M0 ${COURT.serviceTop * scaleY}H1000 M0 ${COURT.serviceBottom * scaleY}H1000 M500 ${COURT.serviceTop * scaleY}V${COURT.serviceBottom * scaleY}`} /><path data-court-net d={`M0 ${COURT.net * scaleY}H1000`} strokeWidth="9" /></g>
-      <g data-board-strokes>{board.strokes.map((stroke, i) => <path key={i} d={strokePath(stroke.points.map(p => ({ x: p.x, y: p.y * scaleY })))} fill="none" stroke={stroke.kind === "movement" ? colors.a : colors.ball} strokeWidth="9" strokeDasharray={stroke.kind === "movement" ? "24 18" : undefined} strokeLinecap="round" strokeLinejoin="round" markerEnd={stroke.points.length > 1 ? `url(#board-arrow-${stroke.kind})` : undefined} data-stroke-kind={stroke.kind} />)}</g>
-      {MARKERS.map(id => { const p = board.markers[id], ball = id === "ball"; return <g key={id} data-marker={id} transform={`translate(${p.x} ${p.y * scaleY})`} role="img" aria-label={`${ball ? "ボール" : id}（移動モードでは矢印キーでも移動できます）`} tabIndex={mode === "place" && !busy ? 0 : -1} onKeyDown={event => markerKey(event, id)}>
+      <g data-board-strokes>{board.strokes.map((stroke, i) => <path key={i} d={strokePath(stroke.points.map(p => { const next = courtPoint(p, 40, scaleY); return { x: next.x, y: next.y * scaleY }; }))} fill="none" stroke={DRAW_COLORS[stroke.color]} strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" markerEnd={stroke.points.length > 1 ? `url(#board-arrow-${stroke.color})` : undefined} data-stroke-color={stroke.color} />)}</g>
+      {MARKERS.map(id => { const p = courtPoint(board.markers[id], 64, scaleY), ball = id === "ball"; return <g key={id} data-marker={id} transform={`translate(${p.x} ${p.y * scaleY})`} role="img" aria-label={`${ball ? "ボール" : id}（移動モードでは矢印キーでも移動できます）`} tabIndex={mode === "place" && !busy ? 0 : -1} onKeyDown={event => markerKey(event, id)}>
         <circle r="64" fill="transparent" />
         <circle r={ball ? 23 : 42} fill={ball ? colors.ball : id.startsWith("A") ? colors.a : colors.b} stroke={colors.line} strokeWidth="4" />
         {!ball && <text textAnchor="middle" dominantBaseline="central" fontSize="38" fontWeight="700" fontFamily="system-ui,sans-serif" fill={id.startsWith("A") ? colors.ink : colors.line} pointerEvents="none">{id}</text>}
       </g>; })}
     </svg>
     </div>
-    <div className={styles.controls} aria-label="作戦ボードの操作">
-      <div className={styles.modeRow}>
-        <button disabled={busy || active} aria-pressed={tool === "move"} onClick={() => setTool("move")}><BoardIcon name="move" />移動</button>
-        <button disabled={busy || active} aria-pressed={tool === "draw"} onClick={() => setTool("draw")}><BoardIcon name="pen" />描く</button>
-      </div>
-      <div className={styles.actionRow}>
-        <div className={styles.actions}>
-          <button aria-label="戻す" title="直前の操作を取り消す" disabled={!history.length || busy || active} onClick={() => { const previous = history.at(-1); if (previous) { show(previous); setHistory(rows => rows.slice(0, -1)); setNotice(""); } }}><BoardIcon name="undo" /></button>
-          <button aria-label="初期化" title="ボードを初期状態に戻す" disabled={busy || active} onClick={() => { const next = initialBoard(); remember(live.current, next); show(next); setNotice(""); }}><BoardIcon name="reset" /></button>
-          <button aria-label="保存" title="PNG画像を保存" disabled={busy || active} onClick={() => void exportImage("save")}><BoardIcon name="download" /></button>
-          <button aria-label="画像を共有" title="共有" disabled={busy || active} onClick={() => void exportImage("share")}><BoardIcon name="share" /></button>
-        </div>
-      </div>
-      {tool === "draw" && <div className={styles.drawTargets} role="group" aria-label="描く対象">
-        <button disabled={busy || active} aria-pressed={drawKind === "movement"} onClick={() => setDrawKind("movement")}>選手</button>
-        <button disabled={busy || active} aria-pressed={drawKind === "ball"} onClick={() => setDrawKind("ball")}>ボール</button>
+    <div className={styles.controls} role="group" aria-label="作戦ボードの操作">
+      <button aria-label="移動" title="移動" disabled={busy || active} aria-pressed={tool === "move"} onClick={() => { setTool("move"); setPaletteOpen(false); }}><BoardIcon name="move" /><span className={styles.modeLabel}>移動</span></button>
+      <button ref={drawButton} aria-label="描く" title={`描く（${drawChoices.find(([color]) => color === drawColor)![1]}）`} aria-haspopup="dialog" aria-controls="board-palette" aria-expanded={paletteOpen} disabled={busy || active} aria-pressed={tool === "draw"} onClick={() => { setTool("draw"); setPaletteOpen(open => !open); }}><BoardIcon name="pen" /><span className={styles.modeLabel}>描く</span><span className={styles.colorIndicator} style={{ background: DRAW_COLORS[drawColor] }} aria-hidden="true" /></button>
+      <button aria-label="戻す" title="直前の操作を取り消す" disabled={!history.length || busy || active} onClick={() => { const previous = history.at(-1); if (previous) { show(previous); setHistory(rows => rows.slice(0, -1)); setNotice(""); } }}><BoardIcon name="undo" /></button>
+      <button aria-label="初期化" title="ボードを初期状態に戻す" disabled={busy || active} onClick={() => { const next = initialBoard(); remember(live.current, next); show(next); setNotice(""); }}><BoardIcon name="reset" /></button>
+      <button aria-label="保存" title="PNG画像を保存" disabled={busy || active} onClick={() => void exportImage("save")}><BoardIcon name="download" /></button>
+      <button aria-label="画像を共有" title="共有" disabled={busy || active} onClick={() => void exportImage("share")}><BoardIcon name="share" /></button>
+      {paletteOpen && <div ref={palette} id="board-palette" className={styles.palette} role="dialog" aria-label="描画色">
+        {drawChoices.map(([color, label]) => <button key={color} aria-label={label} title={label} aria-pressed={drawColor === color} disabled={busy || active} onClick={() => { setDrawColor(color); setPaletteOpen(false); drawButton.current?.focus({ preventScroll: true }); }}><span className={styles.swatch} style={{ background: DRAW_COLORS[color] }} /></button>)}
       </div>}
     </div>
     {(busy || notice) && <p role="status" className={styles.notice}>{busy ? "画像を作成中…" : notice}</p>}

@@ -4,16 +4,18 @@ export const COURT = { width: 1000, height: 2000, net: 1000, serviceTop: 305, se
 export const MARKERS = ["A1", "A2", "B1", "B2", "ball"] as const;
 export type MarkerId = typeof MARKERS[number];
 export type Point = { x: number; y: number };
-export type BoardMode = "place" | "movement" | "ball";
-export type Stroke = { kind: "movement" | "ball"; points: Point[] };
+export type DrawingColor = "green" | "yellow" | "blue";
+export type Stroke = { color: DrawingColor; points: Point[] };
 export type BoardState = { markers: Record<MarkerId, Point>; strokes: Stroke[] };
 export const BOARD_COLORS = { court: "#115e59", line: "#ffffff", a: "#00c896", b: "#2563eb", ball: "#fcd34d", ink: "#0b1020" };
+export const DRAW_COLORS = { green: BOARD_COLORS.a, yellow: BOARD_COLORS.ball, blue: BOARD_COLORS.b };
 
 export function initialBoard(): BoardState {
   return { markers: { A1: { x: 250, y: 1800 }, A2: { x: 750, y: 1800 }, B1: { x: 250, y: 200 }, B2: { x: 750, y: 200 }, ball: { x: 550, y: 1350 } }, strokes: [] };
 }
-export function courtPoint(point: Point, margin = 64): Point {
-  return { x: Math.max(margin, Math.min(COURT.width - margin, point.x)), y: Math.max(margin, Math.min(COURT.height - margin, point.y)) };
+export function courtPoint(point: Point, margin = 64, scaleY = 1): Point {
+  const insetY = Math.min(COURT.height / 2, margin / Math.max(scaleY, 0.001));
+  return { x: Math.max(margin, Math.min(COURT.width - margin, point.x)), y: Math.max(insetY, Math.min(COURT.height - insetY, point.y)) };
 }
 export function strokePath(points: Point[]): string {
   if (!points.length) return "";

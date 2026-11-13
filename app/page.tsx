@@ -213,8 +213,10 @@ export default function LoginPage() {
           {GOOGLE_LOGIN_VISIBLE && !signupMode && <button type="button" className="min-h-11 w-full rounded-xl border border-zinc-600 py-2" onClick={loginWithGoogle}>Googleでログイン</button>}
         </form>
       </section>
-      <button type="button" disabled={loading} className="min-h-11 rounded-2xl border border-zinc-600 bg-card px-4 py-3 text-left disabled:opacity-40" onClick={() => { setGuestMode(true); router.push("/home"); }}><strong className="block text-sm">トライアル版を試す</strong><span className="mt-1 block text-xs text-zinc-300">ゲストモードで試合管理を体験。一部機能に制限あり。</span></button>
-      <Link href={padelBoardHref(`${pathname}${signupMode ? "?mode=signup" : ""}`)} aria-disabled={loading || undefined} tabIndex={loading ? -1 : undefined} onClick={event => { if (loading) event.preventDefault(); }} className="block min-h-11 rounded-2xl border border-zinc-600 bg-card px-4 py-3"><strong className="block text-sm">パデルボードを使う</strong><span className="mt-1 block text-xs text-zinc-300">登録不要・無料。選手の配置や動きを描いて共有。</span></Link>
+      <div className="grid grid-cols-2 items-stretch gap-2">
+        <button type="button" aria-label="トライアル版を試す" disabled={loading} className="flex min-h-11 min-w-0 flex-col items-start rounded-2xl border border-zinc-600 bg-card px-3 py-3 text-left disabled:opacity-40" onClick={() => { setGuestMode(true); router.push("/home"); }}><strong className="block break-words text-sm">トライアル版</strong><span className="mt-1 block break-words text-xs leading-5 text-zinc-300">ゲストモードで試合管理を体験</span></button>
+        <Link href={padelBoardHref(`${pathname}${signupMode ? "?mode=signup" : ""}`)} aria-label="パデルボードを使う" aria-disabled={loading || undefined} tabIndex={loading ? -1 : undefined} onClick={event => { if (loading) event.preventDefault(); }} className="flex min-h-11 min-w-0 flex-col items-start rounded-2xl border border-zinc-600 bg-card px-3 py-3 text-left"><strong className="block break-words text-sm">パデルボード</strong><span className="mt-1 block break-words text-xs leading-5 text-zinc-300">配置や動きを描いて作戦を共有</span></Link>
+      </div>
       <nav aria-label="規約とプライバシー" className="flex flex-wrap justify-center gap-x-5 text-xs text-zinc-300">
         <Link href="/terms" className="inline-flex min-h-11 items-center underline underline-offset-4">利用規約</Link>
         <Link href="/privacy" className="inline-flex min-h-11 items-center underline underline-offset-4">プライバシーポリシー</Link>

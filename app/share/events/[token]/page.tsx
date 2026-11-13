@@ -1,34 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Card } from "@/components/ui";
-import { GuestName, MatchHistoryList } from "@/components/match-ui";
-import { teamCardScores, countableTeamCard, teamCardPlayers } from "@/lib/friendly-team-rounds";
+import { EventResultRankings } from "@/components/event-result-rankings";
+import { EventResultHistory, ResultMatchCard } from "@/components/event-result-history";
+import { TeamResultDetails } from "@/components/team-result-details";
+import { friendlyTeamStats } from "@/lib/friendly-team-results";
+import { storedTeamShareScore } from "@/lib/match-share-text";
+import { GuestName } from "@/components/match-ui";
+import { teamCardScores, teamCardPlayers } from "@/lib/friendly-team-rounds";
 import { SharedPageHeader } from "@/components/shared-page-header";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getSharedEventClient } from "@/lib/shared-event-client";
-import { firstMatchResult, hasEnteredFriendlyMatchScore, isFriendlyMatchDraw } from "@/lib/friendly-match-results";
+import { firstMatchResult, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 
 type Row = { name: string; played: number; wins: number; losses: number; draws: number; scored: number; conceded: number; winRate: number; diff: number; matchPoints: number };
 
 const formatRecord = (wins: number, losses: number, draws: number) => `${wins}勝${losses}敗${draws}分`;
-type SharedRankingSectionKey = "wins" | "winRate" | "diff" | "mvp";
 type EventVideoLink = { id: string; title: string; video_url: string; memo: string | null; display_order: number };
-
-const sharedRankingButtonClass = "flex min-h-12 w-full items-center rounded-xl border border-zinc-700 bg-zinc-900/80 px-3 py-3 text-left text-sm font-bold text-zinc-100 shadow-sm shadow-black/20 active:bg-zinc-800";
-
-function SharedRankingSection({ title, isOpen, onToggle, children }: { title: string; isOpen: boolean; onToggle: () => void; children: ReactNode }) {
-  return (
-    <section className="space-y-2">
-      <button type="button" className={sharedRankingButtonClass} onClick={onToggle} aria-expanded={isOpen}>
-        <span className="mr-2 text-accent">{isOpen ? "▼" : "◀"}</span>
-        <span>{title}</span>
-      </button>
-      {isOpen && <div>{children}</div>}
-    </section>
-  );
-}
 
 export default function SharedEventPage() {
   const { token } = useParams<{ token: string }>();
@@ -40,9 +29,9 @@ export default function SharedEventPage() {
   const [isTeamEvent, setIsTeamEvent] = useState(false);
   const [teamSides, setTeamSides] = useState<any[]>([]);
   const [teamMatches, setTeamMatches] = useState<any[]>([]);
+  const [teamGuests,setTeamGuests]=useState<any[]>([]);
   const [teamProfileNames,setTeamProfileNames]=useState<Record<string,string>>({});
   const [error, setError] = useState("");
-  const [openRankingSections, setOpenRankingSections] = useState<Record<SharedRankingSectionKey, boolean>>({ wins: false, winRate: false, diff: false, mvp: false });
 
   useEffect(() => { void (async () => {
     const supabase = getSharedEventClient(token);
@@ -73,6 +62,9 @@ export default function SharedEventPage() {
       if (cardsError) logSharedLoadError("フレンドリーチームマッチ共有試合取得に失敗しました", cardsError);
       setTeamSides(sides ?? []);
       setTeamMatches(cards ?? []);
+      const guestRows=await supabase.from("event_team_guests").select("id,side,guest_name").eq("event_id",event.id);
+      if(guestRows.error)return setError("共有チームの戦績を取得できませんでした");
+      setTeamGuests(guestRows.data??[]);
       const ids=[...new Set((cards??[]).flatMap(c=>teamCardPlayers(c).flatMap(p=>p.profile_id?[p.profile_id]:[])))];
       const profileNames:Record<string,string>={};
       for(let start=0;start<ids.length;start+=100){const result=await supabase.from("player_profiles").select("id,display_name").in("id",ids.slice(start,start+100));for(const p of result.data??[])profileNames[p.id]=p.display_name??"選手";}
@@ -127,7 +119,6 @@ export default function SharedEventPage() {
   const diffRanking = useMemo(() => [...rankingRows].sort((a, b) => b.diff - a.diff || b.wins - a.wins || b.draws - a.draws || b.winRate - a.winRate || b.scored - a.scored || a.played - b.played || a.name.localeCompare(b.name, "ja")), [rankingRows]);
   const mvp = useMemo(() => [...rankingRows].sort((a, b) => b.matchPoints - a.matchPoints || b.wins - a.wins || b.winRate - a.winRate || b.diff - a.diff || b.scored - a.scored || b.draws - a.draws || a.played - b.played || a.name.localeCompare(b.name, "ja"))[0] ?? null, [rankingRows]);
   const hasRankingResults = rankingRows.length > 0;
-  const toggleRankingSection = (key: SharedRankingSectionKey) => setOpenRankingSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const logClickError = (error: any) => {
     console.warn("イベント動画クリックの記録に失敗しました", {
@@ -188,6 +179,17 @@ export default function SharedEventPage() {
     const name=player.profile_id?teamProfileNames[player.profile_id]||"選手":player.name||"選手";
     return m.generation_mode==="mixed"?`${name}（${teamName(player.source)}）`:name;
   };
+  const sharedTeamStats=useMemo(()=>friendlyTeamStats(teamMatches,[teamName("team_a"),teamName("team_b")],(_side,pid,guest)=>pid?teamProfileNames[pid]||"選手":guest||"選手",(side,name)=>{const guest=teamGuests.find(g=>g.side===side&&g.guest_name===name);return guest?`guest:${guest.id}`:undefined;}),[teamMatches,teamSides,teamProfileNames,teamGuests]);
+  const rankingDetails=<>
+    <section className="rounded-xl border border-zinc-700 p-2 text-sm"><h3 className="font-bold">MVP</h3><p>{hasRankingResults&&mvp?`${mvp.name}（${formatRecord(mvp.wins,mvp.losses,mvp.draws)} / 勝点${mvp.matchPoints} / 勝率${mvp.winRate}% / 得失点差${mvp.diff}）`:"該当なし"}</p></section>
+    <details className="rounded-xl border border-zinc-700 p-2"><summary className="min-h-11 text-sm">参加メンバー（採点済み試合の出場者）</summary>{playedParticipants.length?<ul className="space-y-1">{playedParticipants.map(p=><li key={p.id} className="text-sm"><GuestName name={p.display_name} guest={p.participant_type==="guest"}/></li>)}</ul>:<p className="text-sm">出場したメンバーはいません</p>}</details>
+  </>;
+  const historyCards=isTeamEvent?[...teamMatches].reverse().map((m:any)=>({id:m.id,content:<ResultMatchCard title={m.round_id?`第${m.round_number}ラウンド · コート${m.court_number} · ${m.generation_mode==="mixed"?"チーム混合（ペア1対ペア2）":"チーム対決"}`:`第${m.match_order}試合`} names={[[teamPlayer(m,"team_a",1),teamPlayer(m,"team_a",2)],[teamPlayer(m,"team_b",1),teamPlayer(m,"team_b",2)]]} score={storedTeamShareScore(teamCardScores(m).a,teamCardScores(m).b,teamCardScores(m).result)} youtubeUrl={m.youtube_url}>{m.score_detail&&<p className="text-xs">詳細スコア：{m.score_detail}</p>}</ResultMatchCard>})):[...matches].sort((a,b)=>b.round_number-a.round_number||a.court_number-b.court_number).map((m:any)=>({id:m.id,content:<ResultMatchCard title={`Round ${m.round_number} · コート${m.court_number}`} names={[(m.match_players??[]).filter((p:any)=>p.team==="A").map((p:any)=>nameMap[p.participant_id]||"未設定"),(m.match_players??[]).filter((p:any)=>p.team==="B").map((p:any)=>nameMap[p.participant_id]||"未設定")]} score={hasEnteredFriendlyMatchScore(m)?{a:m.result.score_a,b:m.result.score_b}:null} youtubeUrl={m.youtube_url} onVideoClick={()=>recordVideoClick(m.id)} />}));
+  return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-2 p-3 pb-8"><SharedPageHeader title="イベント結果共有"/>{error?<p role="alert" className="text-sm text-red-400">{error}</p>:<>
+    <section className="rounded-xl border border-zinc-700 bg-card p-2"><h2 className="break-words text-lg font-bold">{eventName}</h2><p className="text-xs text-zinc-400">{eventDate} · 全{isTeamEvent?teamMatches.length:matches.length}試合 · {isTeamEvent?sharedTeamStats.players.length:playedParticipants.length}人</p>{isTeamEvent&&<p className="text-xs">{teamName("team_a")} vs {teamName("team_b")}</p>}</section>
+    {isTeamEvent?<EventResultRankings wins={[...sharedTeamStats.players].sort((a,b)=>b.wins-a.wins)} winRate={[...sharedTeamStats.players].sort((a,b)=>b.winRate-a.winRate)} diff={[...sharedTeamStats.players].sort((a,b)=>b.diff-a.diff)} details={<TeamResultDetails stats={sharedTeamStats}/>}/>:<EventResultRankings wins={winRanking} winRate={winRateRanking} diff={diffRanking} details={rankingDetails}/>}
+    <EventResultHistory cards={historyCards}/>
+    {eventVideoLinks.length>0&&<details className="rounded-xl border border-zinc-700 bg-card p-2"><summary className="min-h-11 text-sm font-bold">開催動画</summary>{eventVideoLinks.map(video=><div key={video.id} className="py-2 text-sm"><p>{video.title}</p><a href={video.video_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center text-accent underline" onClick={()=>recordEventVideoLinkClick(video.id)}>YouTubeで見る</a>{video.memo&&<p className="whitespace-pre-wrap text-xs">{video.memo}</p>}</div>)}</details>}
+  </>}</main>;
 
-  return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20"><SharedPageHeader title="イベント結果共有" />{error && <p className="text-sm text-red-400">{error}</p>}{!error && <><Card title="イベント情報"><div className="space-y-1 text-sm"><p>イベント名：{eventName}</p><p>開催日：{eventDate}</p><p>総試合数：{matches.length}</p><p>参加者数：{isTeamEvent ? participants.length : playedParticipants.length}</p></div></Card>{isTeamEvent ? <Card title="戦績サマリ"><div className="space-y-2 text-sm"><p>{teamName("team_a")} vs {teamName("team_b")}</p><p>集計対象: {teamMatches.filter(countableTeamCard).length}試合</p></div></Card> : <Card title="結果サマリー"><div className="space-y-3 text-sm"><SharedRankingSection title="勝利数ランキング" isOpen={openRankingSections.wins} onToggle={() => toggleRankingSection("wins")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRanking.map((r,i)=><li key={`w-${r.name}-${i}`}>{i+1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="勝率ランキング" isOpen={openRankingSections.winRate} onToggle={() => toggleRankingSection("winRate")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{winRateRanking.map((r,i)=><li key={`wr-${r.name}-${i}`}>{i+1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)} / 勝率{r.winRate}%</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="得失点差ランキング" isOpen={openRankingSections.diff} onToggle={() => toggleRankingSection("diff")}>{hasRankingResults ? <ol className="space-y-1 rounded-xl bg-zinc-800 p-3">{diffRanking.map((r,i)=><li key={`df-${r.name}-${i}`}>{i+1}位 {r.name} {formatRecord(r.wins, r.losses, r.draws)} / 得失点差{r.diff}</li>)}</ol> : <div className="rounded-xl bg-zinc-800 p-3"><p>試合結果がありません</p></div>}</SharedRankingSection><SharedRankingSection title="MVP" isOpen={openRankingSections.mvp} onToggle={() => toggleRankingSection("mvp")}><div className="rounded-xl bg-zinc-800 p-3"><p>{hasRankingResults && mvp ? `${mvp.name}（${formatRecord(mvp.wins, mvp.losses, mvp.draws)} / 勝点${mvp.matchPoints} / 勝率${mvp.winRate}% / 得失点差${mvp.diff}）` : "該当なし"}</p></div></SharedRankingSection></div></Card>}<Card title="各試合結果"><MatchHistoryList title="各試合結果" previewCount={3}>{isTeamEvent ? teamMatches.map((m:any,i:number)=><div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-bold">{m.round_id?`第${m.round_number}ラウンド · コート${m.court_number} · ${m.generation_mode==="mixed"?"チーム混合（ペア1対ペア2）":"チーム対決"}`:`第${i+1}試合`}</p><p>{teamPlayer(m,"team_a",1)} / {teamPlayer(m,"team_a",2)} vs {teamPlayer(m,"team_b",1)} / {teamPlayer(m,"team_b",2)}</p><p>{teamCardScores(m).a !== null && teamCardScores(m).b !== null ? `${teamCardScores(m).a} - ${teamCardScores(m).b}${teamCardScores(m).result === "draw" ? "（引き分け）" : ""}` : "未入力"}</p>{m.score_detail && <p>詳細スコア: {m.score_detail}</p>}{m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="mt-1 inline-block rounded border border-zinc-500 px-3 py-1 text-xs">動画視聴</a>}</div>) : matches.map((m:any)=>{const a=(m.match_players??[]).filter((x:any)=>x.team==="A").map((x:any)=>nameMap[x.participant_id]).join("/");const b=(m.match_players??[]).filter((x:any)=>x.team==="B").map((x:any)=>nameMap[x.participant_id]).join("/");return <div key={m.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p>Round {m.round_number} / Court{m.court_number}</p><p className="font-semibold">{a} vs {b}</p><p>{hasEnteredFriendlyMatchScore(m) ? `${m.result.score_a} - ${m.result.score_b}${isFriendlyMatchDraw(m) ? "（引き分け）" : ""}` : "未入力"}</p>{m.youtube_url && <a href={m.youtube_url} target="_blank" rel="noreferrer" className="mt-1 inline-block rounded border border-zinc-500 px-3 py-1 text-xs" onClick={() => recordVideoClick(m.id)}>動画を見る</a>}</div>;})}</MatchHistoryList></Card>{!isTeamEvent && <Card title="参加メンバー"><p className="mb-2 text-xs text-zinc-400">スコア保存済みの試合に出場したメンバー・ゲスト</p>{playedParticipants.length ? <ul className="space-y-2">{playedParticipants.map((p) => <li key={p.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex min-h-8 items-center"><GuestName name={p.display_name} guest={p.participant_type === "guest"} /></div></li>)}</ul> : <p className="text-sm text-zinc-400">出場したメンバーはいません</p>}</Card>}{eventVideoLinks.length > 0 && <Card title="動画視聴"><div className="space-y-2">{eventVideoLinks.map((video) => <div key={video.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p className="font-semibold">{video.title || "全試合動画"}</p><a href={video.video_url} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded border border-zinc-500 px-3 py-1 text-xs" onClick={() => recordEventVideoLinkClick(video.id)}>YouTubeで見る</a>{video.memo && <p className="mt-2 whitespace-pre-wrap text-xs text-zinc-400">メモ: {video.memo}</p>}</div>)}</div></Card>}</>}</main>;
 }

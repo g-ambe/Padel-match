@@ -153,3 +153,11 @@ test('LINEウィンドウのopenerを切り、ブロック・開始失敗を検�
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow); else delete globalThis.window;
   }
 });
+
+test('明示した文章コピーだけは共有停止中にURLなしで既存の試合文章を生成できる',()=>{
+ const stopped={...event,share_enabled:false,share_token:null};
+ const text=buildMatchShareText({...params,event:stopped,allowUnsharedText:true});
+ assert(!text.includes('/share/'));assert.match(text,/スコア：4-2/);assert.match(text,/動画URL：/);
+ assert.throws(()=>buildMatchShareText({...params,event:stopped}));
+ for(const patch of [{status:'active'},{is_deleted:true}])assert.throws(()=>buildMatchShareText({...params,event:{...stopped,...patch},allowUnsharedText:true}));
+});

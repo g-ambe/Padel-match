@@ -4,30 +4,33 @@ import { useEffect, useState } from "react";
 import { copyMatchShareText, openLineShare } from "@/lib/match-share-actions";
 import { buildLineShareUrl, buildMatchShareText, getMatchShareUrls, isLineMobileDevice, MAX_LINE_SHARE_URL_LENGTH, type MatchShareEntry, type MatchShareEvent, type MatchShareKind } from "@/lib/match-share-text";
 
-export function MatchShareButtons({ event, eventName, kind, getMatches, canShare = true }: {
+export function MatchShareButtons({ event, eventName, kind, getMatches, canShare = true, allowUnsharedText = false, compact = false }: {
   event: MatchShareEvent;
   eventName: string;
   kind: MatchShareKind;
   getMatches: () => MatchShareEntry[];
   canShare?: boolean;
+  allowUnsharedText?: boolean;
+  compact?: boolean;
 }) {
   const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const origin = typeof window === "undefined" ? "" : window.location.origin;
   const urls = getMatchShareUrls(event, origin, kind);
   const available = canShare && !!urls;
+  const copyAvailable = canShare && event.status === "closed" && event.is_deleted !== true && (allowUnsharedText || !!urls);
   useEffect(() => { setFeedback(null); }, [event.status, event.is_deleted, event.share_enabled, event.share_token]);
 
   const share = async (mode: "copy" | "line") => {
     setFeedback(null);
     // UI表示とは別に、毎回現在の終了・削除・共有停止・トークンを検証する。
-    if (!available || event.status !== "closed" || event.is_deleted === true) {
+    if (!(mode === "copy" ? copyAvailable : available) || event.status !== "closed" || event.is_deleted === true) {
       setFeedback({ text: "終了済みで共有リンクが有効なイベントのみ共有できます", error: true });
       return;
     }
     setBusy(true);
     try {
-      const text = buildMatchShareText({ event, eventName, origin, kind, matches: getMatches() });
+      const text = buildMatchShareText({ event, eventName, origin, kind, matches: getMatches(), allowUnsharedText: mode === "copy" && allowUnsharedText });
       if (mode === "copy") {
         try {
           await copyMatchShareText(text);
@@ -60,11 +63,11 @@ export function MatchShareButtons({ event, eventName, kind, getMatches, canShare
 
   if (event.status !== "closed") return null;
   return <div className="space-y-2 border-t border-zinc-600 pt-3">
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      <button type="button" className="min-h-12 rounded-xl border border-zinc-500 px-3 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40" disabled={!available || busy} onClick={() => void share("copy")}>文章をコピー</button>
-      <button type="button" className="min-h-12 rounded-xl bg-accent px-3 py-3 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!available || busy} onClick={() => void share("line")}>LINEで共有</button>
+    <div className={`grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2"}`}>
+      <button type="button" className="min-h-12 rounded-xl border border-zinc-500 px-3 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40" disabled={!copyAvailable || busy} onClick={() => void share("copy")}>文章をコピー</button>
+      <button type="button" className="min-h-12 rounded-xl bg-accent px-3 py-3 text-sm font-bold text-black disabled:cursor-not-allowed disabled:opacity-40" disabled={!available || busy} onClick={() => void share("line")}>{compact ? "LINEで送付" : "LINEで共有"}</button>
     </div>
-    {!urls && <p className="text-xs text-zinc-400">共有リンクを作成すると利用できます</p>}
+    {!urls && <p className="text-xs text-zinc-400">{allowUnsharedText ? "URLコピー・LINE送付は共有開始後に利用できます" : "共有リンクを作成すると利用できます"}</p>}
     {!canShare && <p className="text-xs text-zinc-400">この操作を行う権限がありません</p>}
     {feedback && <p role={feedback.error ? "alert" : "status"} className={`text-sm ${feedback.error ? "text-red-400" : "text-emerald-400"}`}>{feedback.text}</p>}
   </div>;

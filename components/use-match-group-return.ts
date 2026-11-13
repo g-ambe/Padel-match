@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getSupabaseClient } from "@/lib/supabase";
 import { useSessionAccount } from "./use-session-account";
-import { discardGuestCreationDraft, discardMatchDraft, readGuestCreationDraft, saveGuestCreationDraft, startGroupCreation, takeMatchDraft, type GroupSlot, type MatchFormKind, type MatchFormValues } from "@/lib/match-group-drafts";
+import { discardCreationDraft, discardGuestCreationDraft, discardMatchDraft, readCreationDraft, readGuestCreationDraft, saveCreationDraft, saveGuestCreationDraft, startGroupCreation, takeMatchDraft, type GroupSlot, type MatchFormKind, type MatchFormValues } from "@/lib/match-group-drafts";
 
-export function useMatchGroupReturn({ kind, ownerId, ready, guest = false, values, restore, selectGroup, selectableIds }: {
+export function useMatchGroupReturn({ kind, ownerId, ready, guest = false, preserveNavigation = false, values, restore, selectGroup, selectableIds }: {
   kind: MatchFormKind; ownerId: string | null; ready: boolean; guest?: boolean; values: MatchFormValues;
   restore: (values: MatchFormValues) => void; selectGroup: (id: string, slot: GroupSlot) => void; selectableIds: readonly string[];
+  preserveNavigation?: boolean;
 }) {
   const router = useRouter();
   const account = useSessionAccount();
@@ -39,6 +40,10 @@ export function useMatchGroupReturn({ kind, ownerId, ready, guest = false, value
             else setError("入力内容を復元しました。作成したグループが現在の選択候補にないため自動選択していません。所属・管理権限と取得状態を確認してください。");
           } else setMessage("入力内容を復元しました。グループの選択は変更していません。");
         } else if (token) setError("このアカウントの有効な復帰情報が見つかりません。期限切れ・復元済みの場合は再入力してください。");
+        else if (preserveNavigation) {
+          const saved = readCreationDraft(sessionStorage, ownerId, kind);
+          if (saved) current.current.restore(saved);
+        }
         if (token) window.history.replaceState(window.history.state, "", window.location.pathname);
       } else {
         const draft = readGuestCreationDraft(sessionStorage);
@@ -53,6 +58,21 @@ export function useMatchGroupReturn({ kind, ownerId, ready, guest = false, value
     try { saveGuestCreationDraft(sessionStorage, values); }
     catch { setError("作成途中の入力を一時保存できません。移動すると入力内容が失われる可能性があります。"); }
   }, [guest, ownerId, ready, restored, values]);
+
+  useEffect(() => {
+    if (!preserveNavigation || !ownerId || !ready || !restored || account.id !== ownerId || committed.current) return;
+    try { saveCreationDraft(sessionStorage, ownerId, kind, values); }
+    catch { setError(previous => previous || "入力内容を一時保存できません。移動すると入力内容が失われる可能性があります。"); }
+  }, [preserveNavigation, ownerId, ready, restored, account.id, kind, values]);
+
+  const saveForNavigation = () => {
+    try {
+      if (!ready || !account.ready || (ownerId ? account.id !== ownerId : !guest || !!account.id)) return false;
+      if (ownerId) saveCreationDraft(sessionStorage, ownerId, kind, current.current.values);
+      else saveGuestCreationDraft(sessionStorage, current.current.values);
+      return true;
+    } catch { setError("入力内容を一時保存できないため移動しませんでした。"); return false; }
+  };
 
   const begin = async (slot: GroupSlot = "group") => {
     if (!ready || !ownerId || account.id !== ownerId || openingRef.current) return;
@@ -71,7 +91,7 @@ export function useMatchGroupReturn({ kind, ownerId, ready, guest = false, value
   };
   const clear = () => {
     committed.current = true;
-    try { if (ownerId) discardMatchDraft(sessionStorage, ownerId, kind); else if (guest) discardGuestCreationDraft(sessionStorage); } catch { /* 保存済みの試合作成を失敗扱いにしない。 */ }
+    try { if (ownerId) { discardMatchDraft(sessionStorage, ownerId, kind); if (preserveNavigation) discardCreationDraft(sessionStorage, ownerId, kind); } else if (guest) discardGuestCreationDraft(sessionStorage); } catch { /* 保存済みの試合作成を失敗扱いにしない。 */ }
   };
-  return { begin, clear, message, error, opening, canCreate: ready && account.ready && !!ownerId && account.id === ownerId };
+  return { begin, clear, saveForNavigation, message, error, opening, canCreate: ready && account.ready && !!ownerId && account.id === ownerId };
 }

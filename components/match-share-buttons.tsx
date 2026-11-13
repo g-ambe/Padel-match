@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { copyMatchShareText, openLineShare } from "@/lib/match-share-actions";
-import { buildLineShareUrl, buildMatchShareText, getMatchShareUrls, isLineMobileDevice, MAX_LINE_SHARE_URL_LENGTH, type MatchShareEntry, type MatchShareEvent, type MatchShareKind } from "@/lib/match-share-text";
+import { buildLineShareUrl, buildMatchShareText, getMatchShareUrls, isLineMobileDevice, MAX_LINE_SHARE_URL_LENGTH, type MatchShareEntry, type MatchShareEvent, type MatchShareKind, type MatchShareResult } from "@/lib/match-share-text";
 
-export function MatchShareButtons({ event, eventName, kind, getMatches, canShare = true, allowUnsharedText = false, compact = false }: {
+export function MatchShareButtons({ event, eventName, kind, getMatches, result, canShare = true, allowUnsharedText = false, compact = false }: {
   event: MatchShareEvent;
   eventName: string;
   kind: MatchShareKind;
   getMatches: () => MatchShareEntry[];
+  result?: MatchShareResult;
   canShare?: boolean;
   allowUnsharedText?: boolean;
   compact?: boolean;
@@ -30,7 +31,7 @@ export function MatchShareButtons({ event, eventName, kind, getMatches, canShare
     }
     setBusy(true);
     try {
-      const text = buildMatchShareText({ event, eventName, origin, kind, matches: getMatches(), allowUnsharedText: mode === "copy" && allowUnsharedText });
+      const text = buildMatchShareText({ event, eventName, origin, kind, matches: getMatches(), result, allowUnsharedText: mode === "copy" && allowUnsharedText });
       if (mode === "copy") {
         try {
           await copyMatchShareText(text);

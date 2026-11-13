@@ -18,6 +18,7 @@ const fields = {
 } as const;
 const activeKey = (owner: string, kind: MatchFormKind) => `${PREFIX}active:${owner}:${kind}`;
 const flowKey = (owner: string, token: string) => `${PREFIX}${owner}:${token}`;
+const formKey = (owner: string, kind: MatchFormKind) => `${PREFIX}form:${owner}:${kind}`;
 export const matchFormReturnPath = (draft: GroupCreationDraft) => `${routes[draft.kind]}?groupReturn=${draft.token}`;
 
 function valuesFor(kind: MatchFormKind, value: unknown): MatchFormValues | null {
@@ -130,6 +131,23 @@ export function readGuestCreationDraft(store: DraftStore): MatchFormValues | nul
   try { return valuesFor("ordinary", JSON.parse(store.getItem(GUEST_KEY) ?? "null")?.values); } catch { return null; }
 }
 export function discardGuestCreationDraft(store: DraftStore) { store.removeItem(GUEST_KEY); }
+
+// 形式選択へ戻る際の入力保持。既存のグループ作成フローとは別キーで、本人・形式・期限を照合する。
+export function saveCreationDraft(store: DraftStore, owner: string, kind: MatchFormKind, values: MatchFormValues) {
+  const safe = valuesFor(kind, values);
+  if (!UUID.test(owner) || !safe) throw new Error("入力内容とログイン状態を確認してください");
+  cleanExpiredMatchDrafts(store);
+  write(store, formKey(owner, kind), { owner, kind, values: safe, expiresAt: Date.now() + TTL });
+}
+export function readCreationDraft(store: DraftStore, owner: string, kind: MatchFormKind, now = Date.now()): MatchFormValues | null {
+  if (!UUID.test(owner)) return null;
+  cleanExpiredMatchDrafts(store, now);
+  try {
+    const value = JSON.parse(store.getItem(formKey(owner, kind)) ?? "null");
+    return value?.owner === owner && value?.kind === kind && value.expiresAt > now ? valuesFor(kind, value.values) : null;
+  } catch { return null; }
+}
+export function discardCreationDraft(store: DraftStore, owner: string, kind: MatchFormKind) { store.removeItem(formKey(owner, kind)); }
 
 const filterKey = (owner: string) => `padel_match_group_filter_v1:${owner}`;
 export function readMatchGroupFilter(store: DraftStore, owner: string, available: readonly string[]) {

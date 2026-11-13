@@ -1,3 +1,7 @@
+import type { RankingGroup } from "./result-ranking";
+
+export type MatchShareResult = { date?: string | null; ranking: readonly RankingGroup[] };
+
 export type MatchShareEvent = {
   status: string;
   is_deleted?: boolean | null;
@@ -38,6 +42,23 @@ export function storedTeamShareScore(a: number | null, b: number | null, result:
 
 const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
 
+function eventResultText(name: string, result: MatchShareResult, detail?: string) {
+  const date = result.date ? new Date(result.date) : null;
+  const dateLabel = date && Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date) : "未設定";
+  const record = (row: RankingGroup["rows"][number]) => `${row.wins}勝${row.losses}敗${row.draws ? `${row.draws}分` : ""}（勝率${row.winRate}%）`;
+  const groups = result.ranking.filter((group, index) => group.rank <= 3 || index === result.ranking.length - 1);
+  const lines = groups.map(group => {
+    const records = group.rows.map(record);
+    const people = records.every(value => value === records[0])
+      ? `${group.rows.map(row => oneLine(row.name)).join("、")}　${records[0]}`
+      : group.rows.map((row, index) => `${oneLine(row.name)} ${records[index]}`).join(" ／ ");
+    return `${group.rank > 3 ? "最下位" : `${group.rank}位`}　${people}`;
+  });
+  return [`【イベント結果】`, `イベント名：${oneLine(name)}`, `開催日：${dateLabel}`, "", "【ランキング】",
+    ...(lines.length ? lines : ["戦績未登録"]), ...(detail ? ["", "戦績詳細：", detail] : [])].join("\n");
+}
+
 export function buildMatchShareText(params: {
   event: MatchShareEvent;
   eventName: string;
@@ -45,10 +66,13 @@ export function buildMatchShareText(params: {
   kind: MatchShareKind;
   matches: readonly MatchShareEntry[];
   allowUnsharedText?: boolean;
+  result?: MatchShareResult;
 }) {
   const urls = getMatchShareUrls(params.event, params.origin, params.kind);
   const base = new URL(params.origin);
   if (!urls && !(params.allowUnsharedText && params.event.status === "closed" && params.event.is_deleted !== true && ["https:", "http:"].includes(base.protocol))) throw new Error("終了済みで共有リンクが有効なイベントのみ共有できます");
+  // 既存の結果画面が計算した順位グループ・勝率を使う。他形式の文章は従来どおり。
+  if (params.kind === "events" && params.result) return eventResultText(params.eventName, params.result, urls?.detail);
   const blocks: string[] = [];
   for (const match of params.matches) {
     const a = match.teamA.map(name => oneLine(name ?? ""));

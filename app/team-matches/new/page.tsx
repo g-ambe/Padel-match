@@ -2,6 +2,7 @@
 
 import { AppDialog } from "@/components/app-dialog";
 import { readTeamGroups } from "@/lib/team-groups";
+import { recentFirstGroups } from "@/lib/recent-event-groups";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -54,7 +55,7 @@ export default function NewFriendlyTeamMatchPage() {
   const [historyError, setHistoryError] = useState("");
   const [ready, setReady] = useState(false);
   const groupReturn = useMatchGroupReturn({
-    kind: "friendly_team", ownerId, ready,
+    kind: "friendly_team", ownerId, ready, preserveNavigation: true,
     values: { name, description, memo, hostGroupId, createStep: String(step), teamAMode, teamBMode, teamAClubId, teamBClubId, teamAName, teamBName, teamAManual: String(editedNames.current.a), teamBManual: String(editedNames.current.b) },
     selectableIds: groups.map(group => group.id),
     restore: value => {
@@ -102,6 +103,7 @@ export default function NewFriendlyTeamMatchPage() {
     const sides = (sideRows ?? []) as TeamSideRow[];
     const sidesByEvent = new Map<string, TeamSideRow[]>();
     for (const side of sides) sidesByEvent.set(side.event_id, [...(sidesByEvent.get(side.event_id) ?? []), side]);
+    setGroups(current=>recentFirstGroups(current,rawEvents.flatMap(event=>[event.club_id,...(sidesByEvent.get(event.id)??[]).map(side=>side.club_id)])));
 
     const viewableGroupIds = access.groups.map((group) => group.id);
     const visibleEvents = rawEvents.filter((event) => {
@@ -179,6 +181,7 @@ export default function NewFriendlyTeamMatchPage() {
   };
   const inputClass = "mt-1 min-h-11 w-full rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-white";
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
+    <button type="button" disabled={busy || !ready} className="min-h-11 self-start text-sm text-zinc-400 underline" onClick={()=>{if(groupReturn.saveForNavigation())router.push("/matches/new");}}>イベント形式へ戻る</button>
     <h1 className="text-xl font-bold">フレンドリーチームマッチ</h1>
     <ActionButton onClick={()=>setWizardOpen(true)}>新しいチーム戦を作成</ActionButton>
     <AppDialog open={wizardOpen} title="チーム戦を作成" busy={busy} onClose={()=>setWizardOpen(false)}>
@@ -201,7 +204,7 @@ export default function NewFriendlyTeamMatchPage() {
           {groupReturn.message&&<p role="status" className="text-sm text-accent">{groupReturn.message}</p>}
           {groupReturn.error&&<p role="alert" className="text-sm text-red-400">{groupReturn.error}</p>}
         </div>
-        <div className="flex shrink-0 gap-2 border-t border-zinc-700 p-3">{step>1&&<button type="button" disabled={busy} className="min-h-11 rounded-xl border border-zinc-600 px-4" onClick={()=>{setError("");setStep(current=>current-1);}}>戻る</button>}{step<4?<button type="button" disabled={!ready||busy} className="min-h-11 flex-1 rounded-xl bg-accent px-4 font-bold text-black disabled:opacity-40" onClick={nextStep}>次へ</button>:<ActionButton disabled={!ready||busy}>{loading?"作成中…":"この内容で作成"}</ActionButton>}</div>
+        <div className="flex shrink-0 gap-2 border-t border-zinc-700 p-3">{step===1&&<button type="button" disabled={busy||!ready} className="min-h-11 rounded-xl border border-zinc-600 px-3 text-sm" onClick={()=>{if(groupReturn.saveForNavigation())router.push("/matches/new");}}>形式へ戻る</button>}{step>1&&<button type="button" disabled={busy} className="min-h-11 rounded-xl border border-zinc-600 px-4" onClick={()=>{setError("");setStep(current=>current-1);}}>戻る</button>}{step<4?<button type="button" disabled={!ready||busy} className="min-h-11 flex-1 rounded-xl bg-accent px-4 font-bold text-black disabled:opacity-40" onClick={nextStep}>次へ</button>:<ActionButton disabled={!ready||busy}>{loading?"作成中…":"この内容で作成"}</ActionButton>}</div>
       </form>
     </AppDialog>
     <Card title="フレンドリーチームマッチ一覧">
@@ -223,7 +226,7 @@ export default function NewFriendlyTeamMatchPage() {
 function TeamSetup({ title, mode, setMode, clubId, setClubId, teamName, setTeamName, groups, canCreateGroup, busy, onCreateGroup }: { title: string; mode: SideMode; setMode: (v: SideMode)=>void; clubId: string; setClubId: (v:string)=>void; teamName: string; setTeamName: (v:string)=>void; groups: OfficialGroup[]; canCreateGroup: boolean; busy: boolean; onCreateGroup: () => void }) {
   return <section className="space-y-2 rounded-2xl border border-zinc-700 p-3"><p className="font-bold">{title}</p>
     <label className="block text-sm text-zinc-300">{title}のグループ<select aria-label={`${title}のグループ`} disabled={busy} className="mt-1 min-h-11 w-full rounded-xl bg-zinc-800 p-3 disabled:opacity-50" value={mode === "group" ? clubId : ""} onChange={(e)=>{const id=e.target.value;setMode(id?"group":"free");setClubId(id);}}><option value="">グループなしで入力する</option>{groups.map(g=><option key={g.id} value={g.id}>{g.name}</option>)}</select></label>
-    {canCreateGroup && <button type="button" disabled={busy} className="min-h-11 text-sm text-accent underline" onClick={onCreateGroup}>＋ 新しいグループを作成</button>}
+    {canCreateGroup && <button type="button" disabled={busy} className="min-h-11 text-xs text-zinc-400 underline underline-offset-4" onClick={onCreateGroup}>＋ 新しいグループを作成</button>}
     <label className="block text-sm text-zinc-300">チーム名<input className="mt-1 w-full rounded-xl bg-zinc-800 p-3" value={teamName} onChange={(e)=>setTeamName(e.target.value)} /></label>
   </section>;
 }

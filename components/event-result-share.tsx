@@ -3,8 +3,9 @@ import { useId, useRef, useState, type ReactNode } from "react";
 import { AppDialog } from "./app-dialog";
 import { MatchShareButtons } from "./match-share-buttons";
 import type { MatchShareEntry, MatchShareEvent } from "@/lib/match-share-text";
+import { groupResultRanking, type ResultRankingRow } from "@/lib/result-ranking";
 
-export function EventResultShare({ event, name, canManage, canCopy, onStart, onStop, onCopyUrl, onReissue, getMatches, feedback }: { event: MatchShareEvent; name: string; canManage: boolean; canCopy: boolean; onStart: () => Promise<unknown>; onStop: () => Promise<unknown>; onCopyUrl: () => Promise<unknown>; onReissue?: () => Promise<unknown>; getMatches: () => MatchShareEntry[]; feedback?: ReactNode }) {
+export function EventResultShare({ event, name, date, ranking, canManage, canCopy, onStart, onStop, onCopyUrl, onReissue, getMatches, feedback }: { event: MatchShareEvent; name: string; date?: string | null; ranking: readonly ResultRankingRow[]; canManage: boolean; canCopy: boolean; onStart: () => Promise<unknown>; onStop: () => Promise<unknown>; onCopyUrl: () => Promise<unknown>; onReissue?: () => Promise<unknown>; getMatches: () => MatchShareEntry[]; feedback?: ReactNode }) {
   const statusId = useId();
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const lock = useRef(false), shared = event.share_enabled === true && !!event.share_token;
@@ -22,7 +23,7 @@ export function EventResultShare({ event, name, canManage, canCopy, onStart, onS
         <button type="button" disabled={!canManage || busy} className="min-h-11 rounded-xl bg-accent px-2 text-sm font-bold text-black disabled:opacity-40" onClick={() => { if (!shared || window.confirm("共有を停止しますか？ このURLから結果を閲覧できなくなります。")) void act(shared ? onStop : onStart); }}>{shared ? "共有を停止" : "共有を開始"}</button>
         <button type="button" disabled={!shared || !canCopy || busy} className="min-h-11 rounded-xl border border-zinc-500 px-2 text-sm disabled:opacity-40" onClick={() => void act(onCopyUrl)}>URLコピー</button>
       </div>
-      <fieldset disabled={busy}><MatchShareButtons event={event} eventName={name} kind="events" canShare={canCopy} getMatches={getMatches} allowUnsharedText compact /></fieldset>
+      <fieldset disabled={busy}><MatchShareButtons event={event} eventName={name} kind="events" result={{ date, ranking: groupResultRanking(ranking, "wins") }} canShare={canCopy} getMatches={getMatches} allowUnsharedText compact /></fieldset>
       {onReissue && canManage && shared && <button type="button" disabled={busy} className="min-h-11 text-xs text-zinc-400 underline" onClick={() => { if (window.confirm("共有URLを再発行しますか？ 以前のURLは無効になります。")) void act(onReissue); }}>共有URLを再発行</button>}
     </div></AppDialog>
   </>;

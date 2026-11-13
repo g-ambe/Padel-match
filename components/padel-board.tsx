@@ -22,13 +22,14 @@ function BoardIcon({ name }: { name: keyof typeof iconPaths }) {
 
 async function boardPng(svg: SVGSVGElement): Promise<Blob> {
   const copy = svg.cloneNode(true) as SVGSVGElement;
-  copy.setAttribute("xmlns", "http://www.w3.org/2000/svg"); copy.setAttribute("width", String(COURT.width)); copy.setAttribute("height", String(COURT.height));
+  const height = Math.round(svg.viewBox.baseVal.height);
+  copy.setAttribute("xmlns", "http://www.w3.org/2000/svg"); copy.setAttribute("width", String(COURT.width)); copy.setAttribute("height", String(height));
   copy.removeAttribute("class"); copy.removeAttribute("style");
   const source = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(copy)], { type: "image/svg+xml;charset=utf-8" }));
   try {
     const image = new Image();
     await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = () => reject(new Error("画像を作成できませんでした。")); image.src = source; });
-    const canvas = document.createElement("canvas"); canvas.width = COURT.width; canvas.height = COURT.height;
+    const canvas = document.createElement("canvas"); canvas.width = COURT.width; canvas.height = height;
     const context = canvas.getContext("2d"); if (!context) throw new Error("このブラウザでは画像を作成できません。");
     context.drawImage(image, 0, 0, canvas.width, canvas.height);
     return await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("PNGを作成できませんでした。")), "image/png"));
@@ -40,10 +41,22 @@ export function PadelBoard() {
   const live = useRef(board), gesture = useRef<Gesture | null>(null), svg = useRef<SVGSVGElement>(null);
   const [tool, setTool] = useState<"move" | "draw">("move"), [drawKind, setDrawKind] = useState<Stroke["kind"]>("movement");
   const mode: BoardMode = tool === "move" ? "place" : drawKind;
+  // 操作・履歴の座標系は維持し、表示だけを利用可能な画面比率へ合わせる。
+  const [displayHeight, setDisplayHeight] = useState<number>(COURT.height);
+  const scaleY = displayHeight / COURT.height;
   const [active, setActive] = useState(false), [busy, setBusy] = useState(false);
   const [back, setBack] = useState("/"), [notice, setNotice] = useState(""), [preview, setPreview] = useState<string | null>(null);
   const previewRef = useRef<string | null>(null), busyRef = useRef(false), mounted = useRef(true);
   useEffect(() => { setBack(boardReturnPath(new URLSearchParams(location.search).get("from"))); mounted.current = true; return () => { mounted.current = false; if (previewRef.current) URL.revokeObjectURL(previewRef.current); }; }, []);
+  useEffect(() => {
+    const court = svg.current; if (!court) return;
+    const resize = () => {
+      const rect = court.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) setDisplayHeight(Math.max(1400, Math.round(rect.height / rect.width * COURT.width)));
+    };
+    const observer = new ResizeObserver(resize); observer.observe(court); resize();
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const court = svg.current; if (!court) return;
     // SVGのマーカーでtouch-actionを扱わないブラウザでも、ドラッグ中のスクロールを防ぐ。
@@ -123,12 +136,12 @@ export function PadelBoard() {
   return <main className={styles.page}>
     <header className={styles.header}><Link href={back} aria-label="戻る" title="元の画面へ戻る"><BoardIcon name="back" /></Link><h1 className="text-xl font-bold">パデルボード</h1></header>
     <div className={styles.courtArea}>
-    <svg ref={svg} xmlns="http://www.w3.org/2000/svg" width={COURT.width} height={COURT.height} viewBox={`0 0 ${COURT.width} ${COURT.height}`} role="group" aria-label="パデルコート" data-mode={mode} className={styles.court} onPointerDown={start} onPointerMove={move} onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}>
+    <svg ref={svg} xmlns="http://www.w3.org/2000/svg" width={COURT.width} height={COURT.height} viewBox={`0 0 ${COURT.width} ${displayHeight}`} role="group" aria-label="パデルコート" data-mode={mode} className={styles.court} onPointerDown={start} onPointerMove={move} onPointerUp={event => finish(event)} onPointerCancel={event => finish(event, true)} onLostPointerCapture={event => finish(event, true)}>
       <defs>{(["movement", "ball"] as const).map(kind => <marker key={kind} id={`board-arrow-${kind}`} viewBox="0 0 32 28" refX="28" refY="14" markerWidth="32" markerHeight="28" markerUnits="userSpaceOnUse" orient="auto"><path d="M2 2L28 14L2 26" fill="none" stroke={kind === "movement" ? colors.a : colors.ball} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></marker>)}</defs>
-      <rect width={COURT.width} height={COURT.height} fill={colors.court} stroke={colors.line} strokeWidth="8" />
-      <g stroke={colors.line} strokeWidth="5" fill="none"><path data-court-services d={`M0 ${COURT.serviceTop}H1000 M0 ${COURT.serviceBottom}H1000 M500 ${COURT.serviceTop}V${COURT.serviceBottom}`} /><path data-court-net d={`M0 ${COURT.net}H1000`} strokeWidth="9" /></g>
-      <g data-board-strokes>{board.strokes.map((stroke, i) => <path key={i} d={strokePath(stroke.points)} fill="none" stroke={stroke.kind === "movement" ? colors.a : colors.ball} strokeWidth="9" strokeDasharray={stroke.kind === "movement" ? "24 18" : undefined} strokeLinecap="round" strokeLinejoin="round" markerEnd={stroke.points.length > 1 ? `url(#board-arrow-${stroke.kind})` : undefined} data-stroke-kind={stroke.kind} />)}</g>
-      {MARKERS.map(id => { const p = board.markers[id], ball = id === "ball"; return <g key={id} data-marker={id} transform={`translate(${p.x} ${p.y})`} role="img" aria-label={`${ball ? "ボール" : id}（移動モードでは矢印キーでも移動できます）`} tabIndex={mode === "place" && !busy ? 0 : -1} onKeyDown={event => markerKey(event, id)}>
+      <rect width={COURT.width} height={displayHeight} fill={colors.court} />
+      <g stroke={colors.line} strokeWidth="5" fill="none"><path data-court-services d={`M0 ${COURT.serviceTop * scaleY}H1000 M0 ${COURT.serviceBottom * scaleY}H1000 M500 ${COURT.serviceTop * scaleY}V${COURT.serviceBottom * scaleY}`} /><path data-court-net d={`M0 ${COURT.net * scaleY}H1000`} strokeWidth="9" /></g>
+      <g data-board-strokes>{board.strokes.map((stroke, i) => <path key={i} d={strokePath(stroke.points.map(p => ({ x: p.x, y: p.y * scaleY })))} fill="none" stroke={stroke.kind === "movement" ? colors.a : colors.ball} strokeWidth="9" strokeDasharray={stroke.kind === "movement" ? "24 18" : undefined} strokeLinecap="round" strokeLinejoin="round" markerEnd={stroke.points.length > 1 ? `url(#board-arrow-${stroke.kind})` : undefined} data-stroke-kind={stroke.kind} />)}</g>
+      {MARKERS.map(id => { const p = board.markers[id], ball = id === "ball"; return <g key={id} data-marker={id} transform={`translate(${p.x} ${p.y * scaleY})`} role="img" aria-label={`${ball ? "ボール" : id}（移動モードでは矢印キーでも移動できます）`} tabIndex={mode === "place" && !busy ? 0 : -1} onKeyDown={event => markerKey(event, id)}>
         <circle r="64" fill="transparent" />
         <circle r={ball ? 23 : 42} fill={ball ? colors.ball : id.startsWith("A") ? colors.a : colors.b} stroke={colors.line} strokeWidth="4" />
         {!ball && <text textAnchor="middle" dominantBaseline="central" fontSize="38" fontWeight="700" fontFamily="system-ui,sans-serif" fill={id.startsWith("A") ? colors.ink : colors.line} pointerEvents="none">{id}</text>}
@@ -141,10 +154,6 @@ export function PadelBoard() {
         <button disabled={busy || active} aria-pressed={tool === "draw"} onClick={() => setTool("draw")}><BoardIcon name="pen" />描く</button>
       </div>
       <div className={styles.actionRow}>
-        {tool === "draw" && <div className={styles.drawTargets} role="group" aria-label="描く対象">
-          <button disabled={busy || active} aria-pressed={drawKind === "movement"} onClick={() => setDrawKind("movement")}>選手</button>
-          <button disabled={busy || active} aria-pressed={drawKind === "ball"} onClick={() => setDrawKind("ball")}>ボール</button>
-        </div>}
         <div className={styles.actions}>
           <button aria-label="戻す" title="直前の操作を取り消す" disabled={!history.length || busy || active} onClick={() => { const previous = history.at(-1); if (previous) { show(previous); setHistory(rows => rows.slice(0, -1)); setNotice(""); } }}><BoardIcon name="undo" /></button>
           <button aria-label="初期化" title="ボードを初期状態に戻す" disabled={busy || active} onClick={() => { const next = initialBoard(); remember(live.current, next); show(next); setNotice(""); }}><BoardIcon name="reset" /></button>
@@ -152,6 +161,10 @@ export function PadelBoard() {
           <button aria-label="画像を共有" title="共有" disabled={busy || active} onClick={() => void exportImage("share")}><BoardIcon name="share" /></button>
         </div>
       </div>
+      {tool === "draw" && <div className={styles.drawTargets} role="group" aria-label="描く対象">
+        <button disabled={busy || active} aria-pressed={drawKind === "movement"} onClick={() => setDrawKind("movement")}>選手</button>
+        <button disabled={busy || active} aria-pressed={drawKind === "ball"} onClick={() => setDrawKind("ball")}>ボール</button>
+      </div>}
     </div>
     {(busy || notice) && <p role="status" className={styles.notice}>{busy ? "画像を作成中…" : notice}</p>}
     <AppDialog open={preview !== null} title="PNGを保存" onClose={closePreview}><div className="space-y-3 overflow-y-auto p-4">{preview && <><img src={preview} alt="作成したパデルボードのPNG" className={styles.preview} /><a className={styles.save} href={preview} download="padel-board.png" target="_blank" rel="noopener noreferrer">PNGを保存</a><p className="text-xs">画像を長押しして保存することもできます。</p></>}</div></AppDialog>

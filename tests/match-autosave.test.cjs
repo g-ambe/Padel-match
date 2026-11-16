@@ -49,7 +49,7 @@ test('チーム・公式の新規カードは保存応答喪失後も同じIDで
   for(const kind of ['team','official']) {
     const table=kind==='team'?'event_team_matches':'official_matches',tables={[table]:[]},db=database(tables);loseResponse(db,table);
     const file=kind==='team'?'app/team-matches/[id]/page.tsx':'app/official-matches/[id]/page.tsx';
-    const b={id:'event',event:{status:'active'},canManage:true,canEdit:true,editingId:null,matches:[],cardWrites:{current:{saving:new Set(),newIds:new Map()}},
+    const b={id:'event',event:{status:'active'},canManage:true,canEdit:true,editingId:null,matches:[],pendingLatestScroll:{current:false},cardWrites:{current:{saving:new Set(),newIds:new Map()}},
       emptyForm:()=>({}),getSupabaseClient:()=>db.s,setError:()=>{},setNotice:()=>{},setForm:()=>{},setShowForm:()=>{},setEditingId:()=>{},setEditingForm:()=>{},setMatches:fn=>b.matches=fn(b.matches),load:async()=>{},opponentMatches:()=>[]};
     let values,save;
     if(kind==='team') {

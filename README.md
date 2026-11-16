@@ -15,9 +15,11 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=
 3. インストールと起動
 
 ```bash
-npm install
-npm run dev
+bun install --frozen-lockfile
+bun run dev
 ```
+
+Bun 1.2.15とGit管理の`bun.lock`を使用します。依存更新時以外はロックを変更せず、ビルドは既存の`npm run cf:build`も利用できます。
 
 ## 実装済みMVP要素
 

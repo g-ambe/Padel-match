@@ -15,7 +15,7 @@ const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3042',remote='http
   await c.addInitScript(({base,user})=>{if(location.origin!==base)return;const enc=x=>btoa(JSON.stringify(x)).replaceAll('=','').replaceAll('+','-').replaceAll('/','_');localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:`${enc({alg:'HS256'})}.${enc({sub:user.id,exp:Math.floor(Date.now()/1000)+7200,role:'authenticated'})}.test`,refresh_token:'test',expires_at:Math.floor(Date.now()/1000)+7200,user}));},{base,user});
   await c.route('**/*',async route=>{const req=route.request(),url=new URL(req.url());if(url.origin===base)return route.continue();if(url.origin!==remote){outside.push(url.origin);return route.abort();}const headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','content-type':'application/json'};if(req.method()==='OPTIONS')return route.fulfill({status:200,headers,body:'{}'});if(url.pathname.startsWith('/auth/'))return route.fulfill({status:200,headers,body:JSON.stringify(user)});if(failCard&&url.pathname.endsWith('/event_team_matches')&&req.method()==='POST')return route.fulfill({status:403,headers,body:JSON.stringify({code:'42501',message:'合成試験の保存失敗'})});const r=await f.fetch(req.url(),{method:req.method(),headers:req.headers(),body:req.postData()||undefined});return route.fulfill({status:r.status,headers:{...headers,...Object.fromEntries(r.headers)},body:await r.text()});});
   const p=await c.newPage();p.setDefaultTimeout(15000);p.on('pageerror',e=>errors.push(e.message));
-  await p.goto(base+'/team-matches/'+team);await p.getByRole('button',{name:'試合カードを追加',exact:true}).click();
+  await p.goto(base+'/team-matches/'+team);await p.getByRole('button',{name:/^手動で追加/}).click();
   const dialog=()=>p.locator('dialog[open]').last();
   const slot=i=>dialog().locator(`[data-player-slot="${i}"]`);
   const choose=(side,name)=>dialog().getByRole('button',{name:teamNames[side]+'の'+name+'を選択',exact:true}).click();
@@ -51,7 +51,7 @@ const base=process.env.NAVIGATION_TEST_URL||'http://127.0.0.1:3042',remote='http
   assert.equal(await candidates().count(),0);assert.equal(await confirmation().count(),0);
   await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();
   assert.equal(f.tables.event_team_matches.length,0,'キャンセルでは登録しない');
-  await p.reload();await p.getByRole('button',{name:'試合カードを追加',exact:true}).click();
+  await p.reload();await p.getByRole('button',{name:/^手動で追加/}).click();
   await slot(3).click();await choose(1,'選手4');await active(2); // B2からB1へ
   await choose(1,'選手3');await confirmation().waitFor();
   await confirmation().getByRole('button',{name:'選択する',exact:true}).click();await active(0);

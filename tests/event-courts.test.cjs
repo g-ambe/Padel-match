@@ -62,7 +62,7 @@ test('所属中の一般メンバーも開催操作でき、共有・動画管�
   const db=database({events:[event],player_profiles:[{id:profile,linked_auth_user_id:uid}],club_members:item.role?[{club_id:item.memberClub??'club',role:item.role,is_active:item.active!==false,...(item.legacy?{profile_id:uid}:{player_profile_id:profile})}]:[],app_admins:typeof item.admin==='boolean'?[{id:'admin',profile_id:uid,is_active:item.admin}]:[]},{fail:c=>item.failMembership&&c.table==='club_members'});
   db.s.auth.getUser=async()=>({data:{user:item.user===null?null:{id:uid}},error:null});
   const stop=new Error('権限判定まで検証し、参加者の自動反映は実行しない');let allowed,shareAllowed,videoAllowed;
-  const setters=Object.fromEntries(['setGuestMode','setIsDeletedEvent','setEventName','setCourtCount','setEventStatus','setShareEnabled','setShareToken','setEventClubId','setEventMode','setStatsMode','setRoundUserId','setCanDeleteEvent','setCanViewVideoClickCounts','setCanManageShare','setCanManageEventVideos'].map(name=>[name,()=>{}]));
+  const setters=Object.fromEntries(['setGuestMode','setIsDeletedEvent','setEventName','setEventCreatedAt','setCourtCount','setEventStatus','setShareEnabled','setShareToken','setEventClubId','setEventMode','setStatsMode','setRoundUserId','setCanDeleteEvent','setCanViewVideoClickCounts','setCanManageShare','setCanManageEventVideos'].map(name=>[name,()=>{}]));
   const load=handler('app/events/[id]/page.tsx','loadAll',{...setters,setCanManageShare:v=>shareAllowed=v,setCanManageEventVideos:v=>videoAllowed=v,eventId:'event',getSupabaseClient:()=>db.s,scoreQueue:{getRevision:()=>0},setCanManageEventName:value=>allowed=value,setCanCopyShare:()=>{throw stop;}});
   await assert.rejects(load(),error=>error===stop,item.name);
   assert.equal(allowed,item.allowed,item.name);

@@ -1720,16 +1720,16 @@ export default function EventDetailPage() {
       </section>
 
       <section id="event-panel-results" role="tabpanel" aria-labelledby="event-tab-results" hidden={!tabReady || activeTab !== "results"} className="space-y-2">
-      <p className="text-sm text-zinc-300">{eventStatus === "closed" ? "終了後の結果です。" : "開催中の暫定結果です。"} 戦績反映：{guestMode ? "ゲストの一時保存" : statsMode === "record_only" ? "このイベント内だけに保存" : statsMode === "official" ? usedFixedPairs ? "グループ通算戦績に反映" : "通算戦績の対象（既存の集計条件に従います）" : "終了時に選択"}</p>
-      <div className="rounded-xl border border-zinc-700 p-2 text-sm"><strong>{eventName}</strong><p className="text-xs text-zinc-400">{eventCreatedAt ? `${new Date(eventCreatedAt).toLocaleDateString("ja-JP")} · ` : ""}全{totalMatches}試合 · {participants.length}人</p></div>
+      {eventStatus !== "closed" && <p className="text-sm text-zinc-300">開催中の暫定結果です。 戦績反映：{guestMode ? "ゲストの一時保存" : statsMode === "record_only" ? "このイベント内だけに保存" : statsMode === "official" ? usedFixedPairs ? "グループ通算戦績に反映" : "通算戦績の対象（既存の集計条件に従います）" : "終了時に選択"}</p>}
+      {eventStatus !== "closed" && <div className="rounded-xl border border-zinc-700 p-2 text-sm"><strong>{eventName}</strong><p className="text-xs text-zinc-400">{eventCreatedAt ? `${new Date(eventCreatedAt).toLocaleDateString("ja-JP")} · ` : ""}全{totalMatches}試合 · {participants.length}人</p></div>}
       <div id="event-results">{resultSummarySection}</div>
-      {eventStatus === "closed" && <EventResultHistory cards={resultHistoryCards} />}
+      {eventStatus === "closed" && <EventResultHistory compact cards={resultHistoryCards} />}
       {eventStatus === "closed" && <EventResultShare event={{ status: eventStatus, is_deleted: isDeletedEvent, share_enabled: shareEnabled, share_token: shareToken }} name={eventName} date={eventCreatedAt} ranking={winRanking} canManage={canManageShare} canCopy={guestMode || canCopyShare} onStart={createShareLink} onStop={stopShareLink} onCopyUrl={copyShareLink} onReissue={reissueShareLink} feedback={<>{error && <p role="alert" className="text-sm text-red-400">{error}</p>}{message && <p role="status" className="text-sm text-accent">{message}</p>}</>} getMatches={() => sortedMatches.map(match => ({ teamA: match.players.length === 4 ? match.players.filter(player => player.team === "A").map(player => nameMap[player.participant_id]) : [], teamB: match.players.length === 4 ? match.players.filter(player => player.team === "B").map(player => nameMap[player.participant_id]) : [], score: hasEnteredFriendlyMatchScore(match) ? { a: match.result.score_a, b: match.result.score_b } : null, youtubeUrl: match.youtube_url }))} />}
-      {eventStatus === "closed" && <Card title="開催操作">
-        <p className="text-sm text-zinc-300">この開催は終了しました</p>
+      {eventStatus === "closed" && <details className="rounded-xl border border-zinc-700 bg-card"><summary className="min-h-11 cursor-pointer px-3 py-2.5 text-sm font-bold">開催操作</summary><div className="p-3 pt-0"><div className="rounded-xl border border-zinc-700 p-2 text-sm"><strong>{eventName}</strong><p className="text-xs text-zinc-400">{eventCreatedAt ? `${new Date(eventCreatedAt).toLocaleDateString("ja-JP")} · ` : ""}全{totalMatches}試合 · {participants.length}人</p></div>
+        <p className="text-sm text-zinc-300">{guestMode ? "ゲストの一時保存" : statsMode === "record_only" ? "このイベント内だけに保存" : statsMode === "official" ? "通算戦績の対象" : "戦績反映方法は未設定"}</p>
         <button className="mt-2 min-h-11 w-full rounded-xl border border-zinc-500 py-3" disabled={busyParticipants.size > 0 || isClosingEvent || fixedSaving || isGeneratingRound || courtSaving || isDeletingMatch} onClick={reopenEvent}>イベント再開</button>
         {canDeleteEvent && <button className="mt-2 min-h-11 w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => setShowDeleteModal(true)}>イベント削除</button>}
-      </Card>}
+      </div></details>}
 
       </section>
 

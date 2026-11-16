@@ -13,13 +13,14 @@ export function ResultMatchCard({ title, names, score, youtubeUrl, onVideoClick,
     {videoEditor}
   </article>;
 }
-export function EventResultHistory({ cards }: { cards: { id: string; content: ReactNode }[] }) {
+export function EventResultHistory({ cards, compact = false }: { compact?: boolean; cards: { id: string; content: ReactNode }[] }) {
   const [open, setOpen] = useState(false), normal = useRef<HTMLDivElement>(null), expanded = useRef<HTMLDivElement>(null), unused = useRef<HTMLDivElement>(null);
   return <section className="rounded-xl border border-zinc-700 bg-card p-2" data-result-history>
-    <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-bold">過去の試合 · {cards.length}件</h2><ResultExpandButton label="過去の試合を拡大" onClick={() => setOpen(true)} /></div>
-    {!cards.length && <p className="py-2 text-sm text-zinc-400">過去の試合はありません</p>}
+    <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-bold">{compact ? "各試合" : "過去の試合"} · {cards.length}件</h2><ResultExpandButton label={compact ? "全試合を表示" : "過去の試合を拡大"} onClick={() => setOpen(true)} /></div>
+    {!cards.length && <p className="py-2 text-sm text-zinc-400">{compact ? "試合はありません" : "過去の試合はありません"}</p>}
     <div ref={normal} data-result-list="normal" className="max-h-[17rem] space-y-2 overflow-y-auto overscroll-contain" />
-    <AppDialog open={open} title={`過去の試合 · ${cards.length}件`} wide onClose={() => setOpen(false)}><div ref={expanded} data-result-list="expanded" className="min-h-0 space-y-2 overflow-y-auto overscroll-contain p-3" /></AppDialog>
-    <TeamMatchCards cards={cards.map(card => ({ ...card, id: `result:${card.id}` }))} latestCount={0} latestHost={unused} pastHost={normal} expandedHost={expanded} expanded={open} />
+    <AppDialog open={open} title={`${compact ? "全試合" : "過去の試合"} · ${cards.length}件`} wide onClose={() => setOpen(false)}><div ref={expanded} data-result-list="expanded" className="min-h-0 space-y-2 overflow-y-auto overscroll-contain p-3" /></AppDialog>
+    <div ref={unused} hidden />
+    <TeamMatchCards cards={cards.map(card => ({ ...card, id: `result:${card.id}` }))} latestCount={compact ? 1 : 0} latestHost={normal} pastHost={compact ? unused : normal} expandedHost={expanded} expanded={open} />
   </section>;
 }

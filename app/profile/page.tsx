@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ProfileMediaPanel } from "@/components/profile-media-panel";
 import { Card } from "@/components/ui";
 import Link from "next/link";
 import { GroupDestinations } from "@/components/group-destinations";
@@ -194,6 +195,19 @@ export default function ProfilePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-3 pr-14"><h1 className="whitespace-nowrap text-xl font-bold">マイページ</h1><a href="#profile-groups" className="flex min-h-11 items-center whitespace-nowrap text-xs text-accent underline">所属グループへ</a></div>
+      <ProfileMediaPanel owner={ownerId} id={profileId} name={form.display_name} level={form.play_level} area={form.activity_area} ambiguous={profiles.length>1}/>
+      <Card title="総合戦績">
+        {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (
+          <div className="space-y-2 text-sm"><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-xs text-zinc-400">勝率</p><strong className="text-2xl text-accent">{stats.winRate.toFixed(1)}%</strong></div><div><p className="text-xs text-zinc-400">試合数</p><strong className="text-2xl">{stats.matches}</strong></div><div><p className="text-xs text-zinc-400">勝利数</p><strong className="text-2xl">{stats.wins}</strong></div></div><details><summary className="min-h-11 cursor-pointer text-xs text-zinc-400">戦績の詳細</summary>
+            <p>試合数: {stats.matches}</p>
+            <p>勝利数: {stats.wins}</p>
+            <p>勝率: {stats.winRate.toFixed(1)}%</p>
+            <p>平均得点: {stats.avgScored.toFixed(1)}</p>
+            <p>平均失点: {stats.avgConceded.toFixed(1)}</p>
+          </details></div>
+        ) : <p className="text-sm text-zinc-400">戦績を読み込めていません</p>}
+      </Card>
+      <div id="profile-groups" className="scroll-mt-4"><GroupDestinations /></div>
       <Card title="プレイヤープロフィール">
         {profileId && <p className="mb-3 text-xs text-emerald-300">本人の連携プロフィールです。連携申請の承認後、他グループの所属・戦績もこの選手IDへ引き継ぎます。</p>}
         {profiles.length > 1 && !loading && <div className="mb-4 space-y-2 text-sm">
@@ -239,21 +253,11 @@ export default function ProfilePage() {
         {!loading && <button disabled={saving} className="mt-3 text-sm text-zinc-300 underline" onClick={() => void loadProfile()}>再読み込み</button>}
       </Card>
 
-      <div id="profile-groups" className="scroll-mt-4"><GroupDestinations /></div>
+
       <Card title="連携申請"><ProfileLinkRequests /></Card>
       <Card title="アカウント・お知らせ"><div className="grid gap-2 text-sm"><Link className="min-h-11 p-2 underline" href="/notifications">通知・申請を確認する</Link><Link className="min-h-11 p-2 underline" href="/settings">アカウント・アプリ設定</Link><p className="p-2 text-zinc-400">フォロー・フォロワー：準備中</p></div></Card>
 
-      <Card title="総合戦績">
-        {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (
-          <div className="space-y-2 text-sm">
-            <p>試合数: {stats.matches}</p>
-            <p>勝利数: {stats.wins}</p>
-            <p>勝率: {stats.winRate.toFixed(1)}%</p>
-            <p>平均得点: {stats.avgScored.toFixed(1)}</p>
-            <p>平均失点: {stats.avgConceded.toFixed(1)}</p>
-          </div>
-        ) : <p className="text-sm text-zinc-400">戦績を読み込めていません</p>}
-      </Card>
+
     </main>
   );
 }

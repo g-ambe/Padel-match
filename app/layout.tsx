@@ -1,4 +1,5 @@
 import "./globals.css";
+import { ProfileMediaProvider } from "@/components/profile-media-provider";
 import type { Metadata } from "next";
 import { GlobalMenu } from "@/components/global-menu";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -16,7 +17,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja">
       <body className="min-h-screen">
-        <ThemeProvider>
+        <ThemeProvider><ProfileMediaProvider>
           <ScoreSaveProvider>
             <TutorialProvider>
             <GlobalMenu />
@@ -24,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Suspense fallback={null}><AppNavigation /></Suspense>
             </TutorialProvider>
           </ScoreSaveProvider>
-        </ThemeProvider>
+        </ProfileMediaProvider></ThemeProvider>
       </body>
     </html>
   );

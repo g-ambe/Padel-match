@@ -42,7 +42,7 @@ export function storedTeamShareScore(a: number | null, b: number | null, result:
 
 const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
 
-function eventResultText(name: string, result: MatchShareResult, detail?: string) {
+function eventResultText(name: string, result: MatchShareResult, matches: readonly MatchShareEntry[], detail?: string) {
   const date = result.date ? new Date(result.date) : null;
   const dateLabel = date && Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date) : "未設定";
@@ -56,7 +56,14 @@ function eventResultText(name: string, result: MatchShareResult, detail?: string
     return `${group.rank > 3 ? "最下位" : `${group.rank}位`}　${people}`;
   });
   return [`【イベント結果】`, `イベント名：${oneLine(name)}`, `開催日：${dateLabel}`, "", "【ランキング】",
-    ...(lines.length ? lines : ["戦績未登録"]), ...(detail ? ["", "戦績詳細：", detail] : [])].join("\n");
+    ...(lines.length ? lines : ["戦績未登録"]), "", "【各試合】",
+    ...(matches.length ? [matches.map(match => {
+      const names = (team: MatchShareEntry["teamA"]) => team.length ? team.map(name => oneLine(name ?? "") || "未設定").join("・") : "未設定";
+      const score = match.score && validScore(match.score.a) && validScore(match.score.b) ? `${match.score.a}-${match.score.b}` : "未入力";
+      const video = match.youtubeUrl?.trim();
+      return [`▼${names(match.teamA)} vs ${names(match.teamB)}`, `スコア：${score}`, ...(video ? [`動画：${oneLine(video)}`] : [])].join("\n");
+    }).join("\n\n")] : ["試合はありません"]),
+    ...(detail ? ["", "【戦績詳細】", detail] : [])].join("\n");
 }
 
 export function buildMatchShareText(params: {
@@ -72,7 +79,7 @@ export function buildMatchShareText(params: {
   const base = new URL(params.origin);
   if (!urls && !(params.allowUnsharedText && params.event.status === "closed" && params.event.is_deleted !== true && ["https:", "http:"].includes(base.protocol))) throw new Error("終了済みで共有リンクが有効なイベントのみ共有できます");
   // 既存の結果画面が計算した順位グループ・勝率を使う。他形式の文章は従来どおり。
-  if (params.kind === "events" && params.result) return eventResultText(params.eventName, params.result, urls?.detail);
+  if (params.kind === "events" && params.result) return eventResultText(params.eventName, params.result, params.matches, urls?.detail);
   const blocks: string[] = [];
   for (const match of params.matches) {
     const a = match.teamA.map(name => oneLine(name ?? ""));

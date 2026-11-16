@@ -173,7 +173,7 @@ test('結果文章は既存競技順位の1〜3位と最下位だけを抽出し
   resultRow('プレイヤー05',0,6),resultRow('プレイヤー06',0,6)]));
  assert.equal(text,['【イベント結果】','イベント名：261023 部活','開催日：2026/11/13','','【ランキング】',
   '1位　プレイヤー01、プレイヤー02　5勝1敗（勝率83.3%）','3位　プレイヤー03　4勝2敗（勝率66.7%）',
-  '最下位　プレイヤー05、プレイヤー06　0勝6敗（勝率0%）','','戦績詳細：','https://padel.example.org/share/events/share-token_123'].join('\n'));
+  '最下位　プレイヤー05、プレイヤー06　0勝6敗（勝率0%）','','【各試合】','試合はありません','','【戦績詳細】','https://padel.example.org/share/events/share-token_123'].join('\n'));
  assert(!text.includes('プレイヤー04'));assert(!text.includes('2位'));assert(!text.includes('ログイン'));
 });
 test('同率でも勝敗・引き分け・勝率が異なる場合は全員の既存戦績を個別に示す',()=>{
@@ -207,4 +207,21 @@ test('結果文章はLINEとコピーで同じ全文を利用する',async()=>{
   Object.defineProperty(globalThis,'navigator',{configurable:true,value:{clipboard:{writeText:async value=>{copied=value;}}}});
   await copyMatchShareText(text);assert.equal(copied,text);
  }finally{if(original)Object.defineProperty(globalThis,'navigator',original);else delete globalThis.navigator;}
+});
+
+
+test('結果文章へ全試合を入力順で追加し、ペア・未入力・動画を既存データから表示する',()=>{
+ const p=resultParams([resultRow('P1',2,1,1,50)]);
+ const matches=[
+  {teamA:['P1','P2'],teamB:['P3','P4'],score:{a:3,b:1},youtubeUrl:'https://www.youtube.com/watch?v=demo01'},
+  {teamA:['P1','P3'],teamB:['P2','P4'],score:null},
+  {teamA:['P1',null],teamB:[],score:{a:0,b:0},youtubeUrl:'  '},
+ ];
+ const expected='【各試合】\n▼P1・P2 vs P3・P4\nスコア：3-1\n動画：https://www.youtube.com/watch?v=demo01\n\n▼P1・P3 vs P2・P4\nスコア：未入力\n\n▼P1・未設定 vs 未設定\nスコア：0-0';
+ const text=buildMatchShareText({...p,matches});assert(text.includes(expected));assert(text.indexOf('【ランキング】')<text.indexOf('【各試合】'));assert(text.indexOf('【各試合】')<text.indexOf('【戦績詳細】'));assert.equal((text.match(/動画：/g)||[]).length,1);
+ const stopped=buildMatchShareText({...p,matches,event:{...event,share_enabled:false,share_token:null},allowUnsharedText:true});assert(stopped.includes(expected));assert(!stopped.includes('/share/'));assert(!text.includes('非公開の別イベント'));
+ assert.equal(new URL(buildLineShareUrl(text)).searchParams.get('text'),text);
+ const long=buildMatchShareText({...p,matches:Array.from({length:100},()=>matches[0])});assert.equal((long.match(/▼/g)||[]).length,100);assert(buildLineShareUrl(long).length>MAX_LINE_SHARE_URL_LENGTH);assert.equal(new URL(buildLineShareUrl(long)).searchParams.get('text'),long);
+ // 他形式は既存の文章形式を変えない。
+ assert.equal(buildMatchShareText({...params,kind:'official-events',result:p.result}),buildMatchShareText({...params,kind:'official-events'}));
 });

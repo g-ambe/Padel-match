@@ -17,6 +17,15 @@ export function courtPoint(point: Point, margin = 64, scaleY = 1): Point {
   const insetY = Math.min(COURT.height / 2, margin / Math.max(scaleY, 0.001));
   return { x: Math.max(margin, Math.min(COURT.width - margin, point.x)), y: Math.max(insetY, Math.min(COURT.height - insetY, point.y)) };
 }
+// 選手だけ自陣へ制限する。表示比率によらずマーカーの操作領域もネット内に収める。
+export function markerPoint(id: MarkerId, point: Point, scaleY = 1): Point {
+  const bounded = courtPoint(point, 64, scaleY);
+  if (id === "ball") return bounded;
+  const inset = Math.min(COURT.net / 2, 64 / Math.max(scaleY, 0.001));
+  return { x: bounded.x, y: id.startsWith("A")
+    ? Math.max(COURT.net + inset, Math.min(COURT.height - inset, bounded.y))
+    : Math.max(inset, Math.min(COURT.net - inset, bounded.y)) };
+}
 export function strokePath(points: Point[]): string {
   if (!points.length) return "";
   let d = `M${points[0].x},${points[0].y}`;

@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { stepPhases, stepTitles, type DemoStep, type ExperienceKind } from "@/lib/tutorial-content";
 
+import { EventResultHistory, ResultMatchCard } from "./event-result-history";
 import { EventResultRankings } from "./event-result-rankings";
 import { EventFormatCards } from "./event-format-cards";
 import { buildMatchShareText } from "@/lib/match-share-text";
@@ -123,13 +124,14 @@ export function TutorialDemo({ steps, kind, onClose, onComplete, notice }: {
   };
   const demoRankingRows = stats.filter(r => r.played > 0).map(r => ({ name: r.player, played: r.played, wins: r.wins, losses: r.losses, draws: r.played-r.wins-r.losses, diff: r.diff, winRate: r.rate, scored: r.scored, conceded: r.conceded }));
   const results = () => <section className="space-y-2" aria-label="体験の個人戦績">
-    <p className="text-sm font-bold">{ended ? "終了後の結果" : "開催中の暫定戦績"} · {recordedRounds.length}試合記録済み</p>
+    <p className="text-sm font-bold">{!ended && "開催中の暫定戦績 · "}{recordedRounds.length}試合記録済み</p>
     <EventResultRankings wins={[...demoRankingRows].sort((a,b)=>b.wins-a.wins)} winRate={[...demoRankingRows].sort((a,b)=>b.winRate-a.winRate)} diff={[...demoRankingRows].sort((a,b)=>b.diff-a.diff)} details={ended&&<p className="text-sm">MVP（体験内の参考表示）：{stats[0].player}</p>}/>
+    {ended && <EventResultHistory compact cards={recordedRounds.map((r,index)=>({id:`demo-${index}`,content:<ResultMatchCard title={`Round ${index+1}`} names={[r.players.slice(0,2),r.players.slice(2,4)]} score={{a:r.score[0]!,b:r.score[1]!}}/>}))}/>}
   </section>;
   const tips = (text: string) => <aside data-tutorial-tip className="rounded-xl bg-zinc-800 p-3 text-sm leading-6"><span aria-hidden="true">💡 </span>{text}</aside>;
   const shareToken = `demo-result-${shareVersion}`;
   const shareUrl = `https://padel-demo.invalid/share/events/${shareToken}`;
-  const shareText = () => buildMatchShareText({ event: { status: "closed", share_enabled: !!shareVersion, share_token: shareVersion ? shareToken : null }, eventName: name, origin: "https://padel-demo.invalid", kind: "events", matches: [], allowUnsharedText: true, result: { date: "2026-11-13T12:00:00Z", ranking: groupResultRanking([...demoRankingRows].sort((a,b)=>b.wins-a.wins), "wins") } });
+  const shareText = () => buildMatchShareText({ event: { status: "closed", share_enabled: !!shareVersion, share_token: shareVersion ? shareToken : null }, eventName: name, origin: "https://padel-demo.invalid", kind: "events", matches: recordedRounds.map(r=>({teamA:r.players.slice(0,2),teamB:r.players.slice(2,4),score:{a:r.score[0]!,b:r.score[1]!}})), allowUnsharedText: true, result: { date: "2026-11-13T12:00:00Z", ranking: groupResultRanking([...demoRankingRows].sort((a,b)=>b.wins-a.wins), "wins") } });
   return <div ref={root} data-tutorial-demo data-step={step} data-experience={kind} className={`${styles.demo} flex min-h-0 flex-1 flex-col overflow-hidden`}>
       <div className="flex shrink-0 px-4 pt-4 pb-1 items-center justify-between gap-2 text-xs"><strong className="text-accent">体験モード · 実データは変更しません</strong><span className="shrink-0">{full ? `${stepPhases[step]} / 9` : `${Math.min(index + 1, steps.length)} / ${steps.length}`}</span></div>
     <div ref={scroller} data-tutorial-content className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">

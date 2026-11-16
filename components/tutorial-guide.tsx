@@ -29,8 +29,13 @@ export function TutorialGuide({ root, scroller, target, label, id }: {
     if (!container || !content || !control || !target) { setPoint(null); return; }
     let frame = 0, fallback = false;
     const measure = () => {
-      const box = control.getBoundingClientRect(), bounds = container.getBoundingClientRect(), area = content.getBoundingClientRect();
+      let box = control.getBoundingClientRect();
+      const bounds = container.getBoundingClientRect(), area = content.getBoundingClientRect();
       const top = Math.max(area.top, 0), bottom = Math.min(area.bottom, window.visualViewport?.height ?? innerHeight);
+      // 履歴カードの遅延描画で操作対象が移動した場合も、案内を画面内へ追従させる。
+      if (box.width && box.height && (box.bottom < top || box.top > bottom)) {
+        control.scrollIntoView({ block: "nearest", behavior: "auto" }); box = control.getBoundingClientRect();
+      }
       if (box.bottom < top || box.top > bottom) { setPoint({ target, top: 0, left: 0, fallback, visible: false }); return; }
       const left = Math.max(12, Math.min(box.left - bounds.left, bounds.width - 300)), width = Math.min(288, bounds.width - 24), height = 36;
       // Tips・数値キー・入力欄も覆わない。空きがなければ下部の独立した案内行へ。

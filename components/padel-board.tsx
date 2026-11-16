@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type PointerEvent, type KeyboardEvent } from "react";
 import { AppDialog } from "./app-dialog";
-import { BOARD_COLORS as colors, DRAW_COLORS, COURT, MARKERS, boardReturnPath, courtPoint, initialBoard, strokePath, type DrawingColor, type BoardState, type MarkerId, type Point, type Stroke } from "@/lib/padel-board";
+import { BOARD_COLORS as colors, DRAW_COLORS, COURT, MARKERS, boardReturnPath, courtPoint, markerPoint, initialBoard, strokePath, type DrawingColor, type BoardState, type MarkerId, type Point, type Stroke } from "@/lib/padel-board";
 import styles from "./padel-board.module.css";
 
 type Gesture = { pointer: number; before: BoardState; marker?: MarkerId; offset: Point; stroke?: Stroke };
@@ -104,7 +104,7 @@ export function PadelBoard() {
     if (mode === "place" && !id) return;
     event.preventDefault(); setPaletteOpen(false); const before = live.current, p = point(event);
     const stroke = mode === "place" ? undefined : { color: drawColor, points: [courtPoint(p, 40, scaleY)] } as Stroke;
-    const position = id ? courtPoint(before.markers[id], 64, scaleY) : p;
+    const position = id ? markerPoint(id, before.markers[id], scaleY) : p;
     gesture.current = { pointer: event.pointerId, before, marker: mode === "place" ? id! : undefined, offset: id && mode === "place" ? { x: position.x - p.x, y: position.y - p.y } : { x: 0, y: 0 }, stroke };
     event.currentTarget.setPointerCapture(event.pointerId); setActive(true); setNotice("");
     if (stroke) show({ ...before, strokes: [...before.strokes, stroke] });
@@ -112,7 +112,7 @@ export function PadelBoard() {
   const move = (event: PointerEvent<SVGSVGElement>) => {
     const action = gesture.current; if (!action || action.pointer !== event.pointerId) return;
     event.preventDefault(); const p = point(event);
-    if (action.marker) show({ ...action.before, markers: { ...action.before.markers, [action.marker]: courtPoint({ x: p.x + action.offset.x, y: p.y + action.offset.y }, 64, scaleY) } });
+    if (action.marker) show({ ...action.before, markers: { ...action.before.markers, [action.marker]: markerPoint(action.marker, { x: p.x + action.offset.x, y: p.y + action.offset.y }, scaleY) } });
     else if (action.stroke) {
       const next = courtPoint(p, 40, scaleY), previous = action.stroke.points.at(-1)!;
       if (Math.hypot(next.x - previous.x, next.y - previous.y) < 3) return;
@@ -132,8 +132,8 @@ export function PadelBoard() {
     if (mode !== "place" || active || busy) return;
     const direction: Record<string, Point> = { ArrowLeft: { x: -1, y: 0 }, ArrowRight: { x: 1, y: 0 }, ArrowUp: { x: 0, y: -1 }, ArrowDown: { x: 0, y: 1 } };
     const delta = direction[event.key]; if (!delta) return;
-    event.preventDefault(); const before = live.current, p = courtPoint(before.markers[id], 64, scaleY), amount = event.shiftKey ? 50 : 10;
-    const next = { ...before, markers: { ...before.markers, [id]: courtPoint({ x: p.x + delta.x * amount, y: p.y + delta.y * amount }, 64, scaleY) } };
+    event.preventDefault(); const before = live.current, p = markerPoint(id, before.markers[id], scaleY), amount = event.shiftKey ? 50 : 10;
+    const next = { ...before, markers: { ...before.markers, [id]: markerPoint(id, { x: p.x + delta.x * amount, y: p.y + delta.y * amount }, scaleY) } };
     remember(before, next); show(next);
   };
   const closePreview = () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); previewRef.current = null; setPreview(null); };
@@ -168,7 +168,7 @@ export function PadelBoard() {
       <rect width={COURT.width} height={displayHeight} fill={colors.court} />
       <g stroke={colors.line} strokeWidth="5" fill="none"><path data-court-services d={`M0 ${COURT.serviceTop * scaleY}H1000 M0 ${COURT.serviceBottom * scaleY}H1000 M500 ${COURT.serviceTop * scaleY}V${COURT.serviceBottom * scaleY}`} /><path data-court-net d={`M0 ${COURT.net * scaleY}H1000`} strokeWidth="9" /></g>
       <g data-board-strokes>{board.strokes.map((stroke, i) => <path key={i} d={strokePath(stroke.points.map(p => { const next = courtPoint(p, 40, scaleY); return { x: next.x, y: next.y * scaleY }; }))} fill="none" stroke={DRAW_COLORS[stroke.color]} strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" markerEnd={stroke.points.length > 1 ? `url(#board-arrow-${stroke.color})` : undefined} data-stroke-color={stroke.color} />)}</g>
-      {MARKERS.map(id => { const p = courtPoint(board.markers[id], 64, scaleY), ball = id === "ball"; return <g key={id} data-marker={id} transform={`translate(${p.x} ${p.y * scaleY})`} role="img" aria-label={`${ball ? "ボール" : id}（移動モードでは矢印キーでも移動できます）`} tabIndex={mode === "place" && !busy ? 0 : -1} onKeyDown={event => markerKey(event, id)}>
+      {MARKERS.map(id => { const p = markerPoint(id, board.markers[id], scaleY), ball = id === "ball"; return <g key={id} data-marker={id} transform={`translate(${p.x} ${p.y * scaleY})`} role="img" aria-label={`${ball ? "ボール" : id}（移動モードでは矢印キーでも移動できます）`} tabIndex={mode === "place" && !busy ? 0 : -1} onKeyDown={event => markerKey(event, id)}>
         <circle r="64" fill="transparent" />
         <circle r={ball ? 23 : 42} fill={ball ? colors.ball : id.startsWith("A") ? colors.a : colors.b} stroke={colors.line} strokeWidth="4" />
         {!ball && <text textAnchor="middle" dominantBaseline="central" fontSize="38" fontWeight="700" fontFamily="system-ui,sans-serif" fill={id.startsWith("A") ? colors.ink : colors.line} pointerEvents="none">{id}</text>}

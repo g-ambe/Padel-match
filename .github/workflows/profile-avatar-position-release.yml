@@ -64,3 +64,36 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
           PADEL_RELEASE_AUTHORIZED: PR210-0049-20261117
         run: python3 -B supabase/maintenance/profile-avatar-position/cloud_release.py apply
+
+  diagnose-restore:
+    if: >-
+      github.event.pull_request.number == 210 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/profile-r2-instagram' &&
+      github.event.label.name == '210復元差分調査'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      BACKUP_RELEASE_ID: '448225790'
+      BACKUP_ASSET_ID: '757867825'
+      BACKUP_SHA256: e4aeef1ad6679455d6030825d6a229a1899338272a479c5f8b833724e512a87b
+      PADEL_BACKUP_WORKDIR: /tmp/padel-position210-diagnostic-${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: 固定した暗号化実ファイルを取得・照合（診断専用）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 隔離復元の不一致箇所だけ診断（本番接続・SQL適用なし）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/profile-avatar-position/cloud_release.py diagnose-backup

@@ -17,6 +17,9 @@ on:
       - 'supabase/maintenance/shared-home-facility/**'
       - 'tests/padel-facilities.test.cjs'
       - 'tests/shared-home-facility-db.test.cjs'
+      - 'supabase/migrations/0052_jpa_existing_facility_corrections.sql'
+      - 'docs/facilities/**'
+      - 'tests/jpa-facility-data.test.cjs'
       - 'supabase/migrations/0050_private_profile_home_court.sql'
       - 'supabase/maintenance/profile-home-court/**'
       - 'tests/profile-home-court-db.test.cjs'
@@ -56,7 +59,9 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/bun-tool" --no-package-lock --no-audit --no-fund bun@1.2.15
           "$RUNNER_TEMP/bun-tool/node_modules/.bin/bun" install --frozen-lockfile
       - name: Related unit and isolated SQL tests
-        run: node --test tests/profile-media.test.cjs tests/profile-media-db.test.cjs tests/profile-media-api.test.cjs tests/profile-media-bindings.test.cjs tests/profile-avatar-position.test.cjs tests/profile-avatar-position-db.test.cjs tests/profile-v4.test.cjs tests/profile-home-court-db.test.cjs tests/padel-facilities.test.cjs tests/shared-home-facility-db.test.cjs
+        run: node --test tests/profile-media.test.cjs tests/profile-media-db.test.cjs tests/profile-media-api.test.cjs tests/profile-media-bindings.test.cjs tests/profile-avatar-position.test.cjs tests/profile-avatar-position-db.test.cjs tests/profile-v4.test.cjs tests/profile-home-court-db.test.cjs tests/padel-facilities.test.cjs tests/shared-home-facility-db.test.cjs tests/jpa-facility-data.test.cjs
+      - name: JPA snapshot and facility migration guards
+        run: python3 -B -m unittest discover -s supabase/maintenance/shared-home-facility -p test_rehearsal.py -v
       - name: Real PostgreSQL multi-connection safety
         env:
           PROFILE_MEDIA_TEST_PG_URL: postgresql://postgres:synthetic-only@127.0.0.1:5432/profile_media_test

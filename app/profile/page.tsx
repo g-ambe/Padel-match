@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProfileMediaPanel } from "@/components/profile-media-panel";
+import { ProfileHomeCourtField } from "@/components/profile-home-court-field";
+import { BROAD_ACTIVITY_AREAS,PREFECTURES,legacyActivityArea,homeCourtName } from "@/lib/profile-options";
 import { Card } from "@/components/ui";
 import { ProfileGroups } from "@/components/profile-groups";
 import { AppDialog } from "@/components/app-dialog";
@@ -70,10 +72,13 @@ export default function ProfilePage() {
   const igBaseline=useRef({username:"",version:0});
   const photoButton=useRef<HTMLButtonElement>(null);
   const igLoaded=useRef(false);
-  useEffect(()=>{if(editing&&!igLoaded.current&&media.state.profile){const p=media.state.profile;igBaseline.current={username:p.instagram_username??"",version:p.instagram_version};setInstagram(igBaseline.current.username);igLoaded.current=true;}},[editing,media.state.profile]);
+  const [statsOpen,setStatsOpen]=useState(false),[court,setCourt]=useState("");
+  const courtBaseline=useRef({name:"",version:0});
+  useEffect(()=>{if(editing&&!igLoaded.current&&media.state.profile){const p=media.state.profile;igBaseline.current={username:p.instagram_username??"",version:p.instagram_version};setInstagram(igBaseline.current.username);courtBaseline.current={name:p.home_court_name??"",version:p.home_court_version??0};setCourt(courtBaseline.current.name);igLoaded.current=true;}},[editing,media.state.profile]);
   const openEdit=()=>{
     setDraft(profileId?form:draft);setPhotoView(false);setError("");setMessage("");
     const profile=media.state.profile;igLoaded.current=!!profile;igBaseline.current={username:profile?.instagram_username??"",version:profile?.instagram_version??0};
+    courtBaseline.current={name:profile?.home_court_name??"",version:profile?.home_court_version??0};setCourt(courtBaseline.current.name);
     setInstagram(igBaseline.current.username);setEditing(true);
   };
   const returnFromPhoto=()=>{setPhotoView(false);requestAnimationFrame(()=>photoButton.current?.focus({preventScroll:true}));};
@@ -175,10 +180,11 @@ export default function ProfilePage() {
     if (!expected) return setError("対象のプロフィールを再読み込みしてください");
     const trimmedName = draft.display_name.trim();
     if (!trimmedName) return setError("表示名を入力してください");
-    let normalizedInstagram: string|null;
-    try { normalizedInstagram=instagramUsername(instagram); } catch(cause) { return setError((cause as Error).message); }
+    let normalizedInstagram: string|null,normalizedCourt:string|null;
+    try { normalizedInstagram=instagramUsername(instagram);normalizedCourt=homeCourtName(court); } catch(cause) { return setError((cause as Error).message); }
+    const changeCourt=(normalizedCourt??"")!==courtBaseline.current.name;
     const changeInstagram=(normalizedInstagram??"")!==igBaseline.current.username;
-    if(changeInstagram&&(profiles.length!==1||!media.state.profile))return setError("Instagramの変更には正規プロフィールの確認と読み込みが必要です");
+    if((changeInstagram||changeCourt)&&(profiles.length!==1||!media.state.profile))return setError("Instagram・ホームコートの変更には正規プロフィールの確認と読み込みが必要です");
     setSaving(true);
     setError("");
     setMessage("");
@@ -193,19 +199,20 @@ export default function ProfilePage() {
         play_level: draft.play_level || null,
         dominant_hand: draft.dominant_hand || null,
         preferred_position: draft.preferred_position || null,
-        activity_area: draft.activity_area.trim() || null
+        activity_area: draft.activity_area===form.activity_area ? expected.activity_area : draft.activity_area || null
       }, expected);
       setForm(toForm(saved));
       setDraft(toForm(saved));
       setProfiles((rows) => rows.map((row) => row.id === saved.id ? saved : row));
       rememberPlayerProfile(ownerId, saved.id);
       publicSaved=true;
+      if(changeCourt){const savedCourt=await media.saveHomeCourt(ownerId,profileId,court,courtBaseline.current.version);courtBaseline.current={name:savedCourt.home_court_name??"",version:savedCourt.home_court_version??0};setCourt(courtBaseline.current.name);}
       if(changeInstagram)await media.saveInstagram(ownerId,profileId,instagram,igBaseline.current.version);
       setEditing(false);
       setMessage("プロフィールを更新しました");
     } catch (cause) {
       console.error("プロフィール保存に失敗しました", cause);
-      setError(`${publicSaved?"プレイヤー情報は保存済みです。Instagramは更新できませんでした。":""}${profileErrorMessage(cause)}`);
+      setError(`${publicSaved?"プレイヤー情報は保存済みです。追加項目の一部を保存できませんでした。":""}${profileErrorMessage(cause)}`);
     } finally { setSaving(false); }
   };
 
@@ -243,15 +250,10 @@ export default function ProfilePage() {
       </ProfileMediaPanel>
       <Card title="総合戦績">
         {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (
-          <div className="space-y-2 text-sm"><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-xs text-zinc-400">勝率</p><strong className="text-2xl text-accent">{stats.winRate.toFixed(1)}%</strong></div><div><p className="text-xs text-zinc-400">試合数</p><strong className="text-2xl">{stats.matches}</strong></div><div><p className="text-xs text-zinc-400">勝利数</p><strong className="text-2xl">{stats.wins}</strong></div></div><details><summary className="min-h-11 cursor-pointer text-xs text-zinc-400">戦績の詳細</summary>
-            <p>試合数: {stats.matches}</p>
-            <p>勝利数: {stats.wins}</p>
-            <p>勝率: {stats.winRate.toFixed(1)}%</p>
-            <p>平均得点: {stats.avgScored.toFixed(1)}</p>
-            <p>平均失点: {stats.avgConceded.toFixed(1)}</p>
-          </details></div>
+          <div className="space-y-2 text-sm"><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-xs text-zinc-400">勝率</p><strong className="text-2xl text-accent">{stats.winRate.toFixed(1)}%</strong></div><div><p className="text-xs text-zinc-400">試合数</p><strong className="text-2xl">{stats.matches}</strong></div><div><p className="text-xs text-zinc-400">勝利数</p><strong className="text-2xl">{stats.wins}</strong></div></div><button type="button" className="flex min-h-11 w-full items-center justify-end gap-1 text-xs text-zinc-400 hover:underline" onClick={()=>setStatsOpen(true)}>戦績の詳細 <span aria-hidden="true">›</span></button></div>
         ) : <p className="text-sm text-zinc-400">戦績を読み込めていません</p>}
       </Card>
+      <AppDialog open={statsOpen} title="総合戦績の詳細" onClose={()=>setStatsOpen(false)}><div className="min-h-0 overflow-y-auto p-4">{stats&&<dl className="divide-y divide-zinc-700 text-sm">{[["試合数",`${stats.matches} 試合`],["勝利数",`${stats.wins} 勝`],["勝率",`${stats.winRate.toFixed(1)}%`],["平均得点",stats.avgScored.toFixed(1)],["平均失点",stats.avgConceded.toFixed(1)]].map(([label,value])=><div key={label} className="flex min-h-11 items-center justify-between gap-3"><dt className="text-zinc-400">{label}</dt><dd className="font-semibold">{value}</dd></div>)}</dl>}<button type="button" className="mt-3 min-h-11 w-full rounded-xl border border-zinc-600 text-sm" onClick={()=>setStatsOpen(false)}>閉じる</button></div></AppDialog>
       <div id="profile-groups" className="scroll-mt-4"><ProfileGroups owner={ownerId}/></div>
       <AppDialog open={editing} title={photoView?"プロフィール写真を調整":"プロフィールを編集"} busy={saving||photoSaving} onClose={cancelEdit}>
         {photoView&&ownerId&&profileId&&media.state.profile?<ProfilePhotoEditor key={`${ownerId}:${profileId}`} owner={ownerId} id={profileId} name={draft.display_name} media={media} onBusy={setPhotoSaving} onBack={returnFromPhoto} onSaved={text=>{setMessage(text);returnFromPhoto();}}/>:
@@ -260,13 +262,14 @@ export default function ProfilePage() {
           <ProfileAvatar image={media.state.image} name={draft.display_name} position={avatarPosition(media.state.profile)} className="h-14 w-14"/>
           <span className="min-w-0 flex-1"><strong className="text-sm">プロフィール写真</strong><span className="mt-1 block text-xs text-zinc-400">タップして写真・表示位置を編集</span></span><span aria-hidden="true" className="text-zinc-400">›</span>
         </button>}
-        {profiles.length>1&&<p role="alert" className="mb-3 text-xs text-amber-300">複数の有効な連携プロフィールがあるため、写真・Instagramの変更には正規プロフィールの確認が必要です。</p>}
+        {profiles.length>1&&<p role="alert" className="mb-3 text-xs text-amber-300">複数の有効な連携プロフィールがあるため、写真・Instagram・ホームコートの変更には正規プロフィールの確認が必要です。</p>}
         <form onSubmit={e=>{e.preventDefault();if(profileId)void saveProfile();else void createProfile();}}><fieldset disabled={saving} className="space-y-3 text-sm">
           <ProfileField label="表示名" value={<input aria-label="表示名" className="min-h-11 w-full rounded-xl bg-zinc-800 p-3" value={draft.display_name} onChange={e=>updateDraft("display_name",e.target.value)}/>}/>
           {profileId&&<>
           <ProfileField label="ひとこと" value={<textarea aria-label="ひとこと" className="w-full rounded-xl bg-zinc-800 p-3" rows={3} value={draft.bio} onChange={e=>updateDraft("bio",e.target.value)}/>}/>
-          <div className="grid grid-cols-2 gap-3"><ProfileField label="プレイレベル" value={<select aria-label="プレイレベル" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.play_level} onChange={e=>updateDraft("play_level",e.target.value)}><option value="">未設定</option>{PLAY_LEVEL_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/><ProfileField label="活動地域" value={<input aria-label="活動地域" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.activity_area} onChange={e=>updateDraft("activity_area",e.target.value)}/>}/></div>
-          <div className="grid grid-cols-2 gap-3"><ProfileField label="利き手" value={<select aria-label="利き手" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.dominant_hand} onChange={e=>updateDraft("dominant_hand",e.target.value)}><option value="">未設定</option>{DOMINANT_HAND_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/><ProfileField label="ポジション" value={<select aria-label="ポジション" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.preferred_position} onChange={e=>updateDraft("preferred_position",e.target.value)}><option value="">未設定</option>{PREFERRED_POSITION_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/></div>
+          <div className="grid grid-cols-2 gap-3"><ProfileField label="プレイレベル" value={<select aria-label="プレイレベル" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.play_level} onChange={e=>updateDraft("play_level",e.target.value)}><option value="">未設定</option>{PLAY_LEVEL_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/><ProfileField label="活動エリア" value={<select aria-label="活動エリア" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.activity_area} onChange={e=>updateDraft("activity_area",e.target.value)}><option value="">未設定</option>{legacyActivityArea(draft.activity_area)&&<option value={draft.activity_area}>{draft.activity_area}（登録済み）</option>}<optgroup label="広域エリア">{BROAD_ACTIVITY_AREAS.map(area=><option key={area}>{area}</option>)}</optgroup><optgroup label="都道府県">{PREFECTURES.map(area=><option key={area}>{area}</option>)}</optgroup></select>}/></div>
+          <div className="grid grid-cols-2 gap-3"><ProfileField label="利き手" value={<select aria-label="利き手" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.dominant_hand} onChange={e=>updateDraft("dominant_hand",e.target.value)}><option value="">未設定</option>{DOMINANT_HAND_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/><ProfileField label="得意サイド" value={<select aria-label="得意サイド" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.preferred_position} onChange={e=>updateDraft("preferred_position",e.target.value)}><option value="">未設定</option>{PREFERRED_POSITION_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/></div>
+          <ProfileHomeCourtField value={court} onChange={setCourt} disabled={profiles.length!==1||!media.state.profile}/>
           <ProfileField label="Instagram ID（任意）" value={<input aria-label="Instagram ID" disabled={profiles.length!==1||!media.state.profile} maxLength={31} autoCapitalize="none" autoCorrect="off" placeholder="@ユーザーネーム" className="min-h-11 w-full rounded-xl bg-zinc-800 p-3 disabled:opacity-40" value={instagram} onChange={e=>setInstagram(e.target.value)}/>}/>
           </>}
           {error&&<p role="alert" className="text-xs text-red-400">{error}</p>}

@@ -1,0 +1,9 @@
+BEGIN READ ONLY;
+DO $$ DECLARE signature text:='public.save_my_home_court(uuid,bigint,text,uuid)';p record;BEGIN
+ IF to_regprocedure(signature) IS NULL OR NOT has_function_privilege('authenticated',signature,'EXECUTE') OR has_function_privilege('anon',signature,'EXECUTE') OR EXISTS(SELECT 1 FROM pg_proc f CROSS JOIN LATERAL aclexplode(coalesce(f.proacl,acldefault('f',f.proowner))) a WHERE f.oid=to_regprocedure(signature) AND a.grantee=0 AND a.privilege_type='EXECUTE') THEN RAISE EXCEPTION '0050_rpc_grant_invalid';END IF;
+ SELECT * INTO p FROM pg_proc WHERE oid=to_regprocedure(signature);IF NOT p.prosecdef OR NOT ('search_path=""'=ANY(p.proconfig)) THEN RAISE EXCEPTION '0050_rpc_security_invalid';END IF;
+ IF has_function_privilege('authenticated','profile_media_private.reset_home_court()','EXECUTE') OR has_function_privilege('anon','profile_media_private.reset_home_court()','EXECUTE') THEN RAISE EXCEPTION '0050_private_function_callable';END IF;
+ IF has_table_privilege('anon','public.player_profile_private','SELECT') OR has_table_privilege('authenticated','public.player_profile_private','UPDATE') OR has_column_privilege('authenticated','public.player_profile_private','home_court_name','UPDATE') OR has_column_privilege('authenticated','public.player_profile_private','home_court_version','UPDATE') OR NOT EXISTS(SELECT 1 FROM pg_class WHERE oid='public.player_profile_private'::regclass AND relrowsecurity) THEN RAISE EXCEPTION '0050_RLS_or_update_protection_invalid';END IF;
+ IF (SELECT count(*) FROM pg_constraint WHERE conrelid='public.player_profile_private'::regclass AND conname IN('profile_home_court_name_bounds','profile_home_court_version_bounds') AND convalidated)<>2 OR NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgrelid='public.player_profile_private'::regclass AND tgname='profile_home_court_reset' AND tgenabled='O') THEN RAISE EXCEPTION '0050_constraints_or_trigger_invalid';END IF;
+END; $$;
+ROLLBACK;

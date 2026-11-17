@@ -2,14 +2,17 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card } from "./ui";
+import { AppDialog } from "./app-dialog";
+import { profileGroupPreview } from "@/lib/profile-options";
 import { getSupabaseClient } from "@/lib/supabase";
 import { readMemberGroups } from "@/lib/member-groups";
 import { orderProfileGroups, type ProfileGroupUsage } from "@/lib/profile-group-usage";
 
 export function ProfileGroups({ owner }: { owner: string | null }) {
+  const [expanded,setExpanded]=useState(false);
   const [groups,setGroups]=useState<{id:string;name:string}[]>([]),[loading,setLoading]=useState(true),[error,setError]=useState("");
   useEffect(()=>{
-    let active=true;setGroups([]);setError("");setLoading(true);
+    let active=true;setExpanded(false);setGroups([]);setError("");setLoading(true);
     if(!owner){setLoading(false);return;}
     const s=getSupabaseClient();if(!s){setError("所属グループを取得できませんでした");setLoading(false);return;}
     void(async()=>{
@@ -26,9 +29,16 @@ export function ProfileGroups({ owner }: { owner: string | null }) {
     })();
     return()=>{active=false;};
   },[owner]);
-  return <Card title="所属グループ"><div className="divide-y divide-zinc-700">
+  const preview=profileGroupPreview(groups);
+  const list=(rows:typeof groups)=><div className="divide-y divide-zinc-700">{rows.map(group=><Link key={group.id} href={`/groups/${group.id}`} onClick={()=>setExpanded(false)} className="flex min-h-14 items-center gap-3 py-2"><span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 font-semibold text-accent">{Array.from(group.name.trim())[0]??"G"}</span><span className="min-w-0 flex-1 break-words text-sm font-semibold">{group.name}</span><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0 text-zinc-400"><path d="m9 5 7 7-7 7"/></svg></Link>)}</div>;
+  const actions=[{href:"/groups/discover",label:"グループを探す",path:"m16 16 5 5",kind:"search"},{href:"/groups/new",label:"グループ新規作成",path:"M12 5v14M5 12h14",kind:"plus"},{href:"/groups",label:"グループ管理へ",path:"M4 6h16M4 12h16M4 18h16",kind:"manage"}];
+  return <><Card title="所属グループ">
+    {preview.hasMore&&<div className="-mt-1 flex justify-end"><button type="button" className="min-h-11 px-1 text-xs text-zinc-400 hover:underline" onClick={()=>setExpanded(true)}>すべて見る ›</button></div>}
     {loading&&<p role="status" className="py-3 text-sm text-zinc-400">読み込み中…</p>}
-    {groups.map(group=><Link key={group.id} href={`/groups/${group.id}`} className="flex min-h-14 items-center gap-3 py-2"><span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 font-semibold text-accent">{Array.from(group.name.trim())[0]??"G"}</span><span className="min-w-0 flex-1 break-words text-sm font-semibold">{group.name}</span><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0 text-zinc-400"><path d="m9 5 7 7-7 7"/></svg></Link>)}
+    {list(preview.visible)}
     {!loading&&!groups.length&&!error&&<p className="py-3 text-sm text-zinc-400">まだ所属グループがありません</p>}
-  </div>{error&&<p role="alert" className="py-2 text-xs text-zinc-400">{error}</p>}{owner&&<div className="mt-2 flex flex-wrap gap-x-4 text-xs text-zinc-400"><Link className="flex min-h-11 items-center underline" href="/groups/discover">グループを探す</Link><Link className="flex min-h-11 items-center underline" href="/groups/new">作成</Link><Link className="flex min-h-11 items-center underline" href="/groups">管理</Link></div>}</Card>;
+    {error&&<p role="alert" className="py-2 text-xs text-zinc-400">{error}</p>}
+  </Card>
+  {owner&&<div aria-label="グループ操作" className="mt-3 grid grid-cols-3 gap-2">{actions.map(action=><Link key={action.href} href={action.href} className="flex min-h-20 min-w-0 flex-col items-center justify-center gap-2 rounded-xl border border-zinc-700 bg-card px-1 py-2 text-center text-[11px] font-semibold leading-snug hover:bg-zinc-800"><span aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800 text-accent"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d={action.path}/>{action.kind==="search"&&<circle cx="10" cy="10" r="6"/>}{action.kind==="manage"&&<><circle cx="8" cy="6" r="2"/><circle cx="15" cy="12" r="2"/></>}</svg></span><span className="flex min-h-[2.75em] items-center justify-center break-words">{action.label}</span></Link>)}</div>}
+  <AppDialog open={expanded&&!!owner} title="所属グループ一覧" onClose={()=>setExpanded(false)}><div className="min-h-0 overflow-y-auto overscroll-contain p-4"><p className="mb-2 text-xs text-zinc-400">直近90日のイベント利用が多い順</p>{list(preview.all)}<button type="button" className="mt-3 min-h-11 w-full rounded-xl border border-zinc-600 text-sm" onClick={()=>setExpanded(false)}>閉じる</button></div></AppDialog></>;
 }

@@ -1,0 +1,20 @@
+BEGIN;
+DO $$ DECLARE actor uuid:=gen_random_uuid(); other_actor uuid:=gen_random_uuid(); profile uuid:=gen_random_uuid();m jsonb;before jsonb;denied boolean;BEGIN
+ INSERT INTO public.player_profiles(id,display_name,linked_auth_user_id,is_active) VALUES(profile,'ホームコート一時検証',actor,true);
+ PERFORM set_config('request.jwt.claim.sub',actor::text,true);PERFORM set_config('request.jwt.claims',json_build_object('sub',actor,'role','authenticated')::text,true);
+ SET LOCAL ROLE authenticated;
+ before:=public.save_my_instagram(profile,0,'demo_court',public.profile_media_attempt());
+ m:=public.save_my_home_court(profile,0,'  テストコート  ',public.profile_media_attempt());
+ IF m->>'home_court_name'<>'テストコート' OR (m->>'home_court_version')::int<>1 OR (m-ARRAY['home_court_name','home_court_version','updated_at']) IS DISTINCT FROM (before-ARRAY['home_court_name','home_court_version','updated_at']) THEN RAISE EXCEPTION '0050_save_changed_other_fields';END IF;
+ denied:=false;BEGIN PERFORM public.save_my_home_court(profile,0,'古い操作',public.profile_media_attempt());EXCEPTION WHEN serialization_failure THEN denied:=true;END;IF NOT denied THEN RAISE EXCEPTION '0050_stale_allowed';END IF;
+ denied:=false;BEGIN PERFORM public.save_my_home_court(profile,1,repeat('あ',81),public.profile_media_attempt());EXCEPTION WHEN invalid_parameter_value THEN denied:=true;END;IF NOT denied THEN RAISE EXCEPTION '0050_long_name_allowed';END IF;
+ m:=public.save_my_home_court(profile,1,'変更したコート',public.profile_media_attempt());m:=public.save_my_home_court(profile,2,'',public.profile_media_attempt());IF m->>'home_court_name' IS NOT NULL THEN RAISE EXCEPTION '0050_delete_failed';END IF;
+ m:=public.save_my_home_court(profile,3,'本人コート',public.profile_media_attempt());
+ SET LOCAL ROLE postgres;IF EXISTS(SELECT 1 FROM public.profile_media_operations WHERE actor_id=actor) OR EXISTS(SELECT 1 FROM public.profile_media_objects WHERE profile_id=profile) THEN RAISE EXCEPTION '0050_image_quota_changed';END IF;
+ PERFORM set_config('request.jwt.claim.sub',other_actor::text,true);PERFORM set_config('request.jwt.claims',json_build_object('sub',other_actor,'role','authenticated')::text,true);
+ SET LOCAL ROLE authenticated;denied:=false;BEGIN PERFORM public.save_my_home_court(profile,4,'権限外',public.profile_media_attempt());EXCEPTION WHEN insufficient_privilege THEN denied:=true;END;IF NOT denied OR EXISTS(SELECT 1 FROM public.player_profile_private WHERE profile_id=profile) THEN RAISE EXCEPTION '0050_other_owner_allowed';END IF;
+ SET LOCAL ROLE anon;denied:=false;BEGIN PERFORM public.save_my_home_court(profile,4,NULL,NULL);EXCEPTION WHEN insufficient_privilege THEN denied:=true;END;IF NOT denied THEN RAISE EXCEPTION '0050_anon_allowed';END IF;
+ SET LOCAL ROLE postgres;UPDATE public.player_profiles SET linked_auth_user_id=other_actor WHERE id=profile;
+ IF EXISTS(SELECT 1 FROM public.player_profile_private WHERE profile_id=profile AND (home_court_name IS NOT NULL OR home_court_version<>5)) THEN RAISE EXCEPTION '0050_transfer_did_not_clear';END IF;
+END; $$;
+ROLLBACK;

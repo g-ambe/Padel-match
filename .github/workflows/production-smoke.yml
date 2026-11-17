@@ -56,27 +56,22 @@ jobs:
           python3 -B - <<'PY'
           import json, sys
           from urllib.request import Request, urlopen
-          from urllib.error import HTTPError, URLError
+          from urllib.error import HTTPError
           base='https://padel-match.ranbo-ga.workers.dev'
           pid='00000000-0000-4000-8000-000000000001'
           results=[]
+          headers={'User-Agent':'Padel-release-readonly-check'}
           try:
-              with urlopen(base+'/profile',timeout=30) as r:
+              with urlopen(Request(base+'/profile',headers=headers),timeout=30) as r:
                   html=r.read(2*1024*1024).decode()
                   results.append({'profile_html':r.status==200 and 'Instagram' in html and 'Application error' not in html})
           except Exception as e:
               print('::notice title=TASK01プロフィールHTTP診断::'+json.dumps({'error_type':type(e).__name__,'status':getattr(e,'code',None),'reason_type':type(getattr(e,'reason',None)).__name__}))
               results.append({'profile_html':False})
-          try:
-              with urlopen(Request(base+'/profile',headers={'User-Agent':'Padel-release-readonly-check'}),timeout=30) as r:
-                  html=r.read(2*1024*1024).decode()
-                  print('::notice title=TASK01プロフィールUA診断::'+json.dumps({'status':r.status,'profile_html':'Instagram' in html}))
-          except Exception as e:
-              print('::notice title=TASK01プロフィールUA診断::'+json.dumps({'error_type':type(e).__name__,'status':getattr(e,'code',None)}))
           for suffix,method in [('', 'GET'),('/image','GET'),('','PUT'),('','PATCH'),('','DELETE')]:
               status=0;cache=''
               try:
-                  with urlopen(Request(base+'/api/profile-media/'+pid+suffix,method=method,data=b'' if method in ('PUT','PATCH') else None),timeout=30) as r:status=r.status
+                  with urlopen(Request(base+'/api/profile-media/'+pid+suffix,headers=headers,method=method,data=b'' if method in ('PUT','PATCH') else None),timeout=30) as r:status=r.status
               except HTTPError as e:status=e.code;cache=e.headers.get('Cache-Control','')
               except Exception as e:print('::notice title=TASK01画像API通信診断::'+json.dumps({'method':method,'error_type':type(e).__name__}))
               results.append({'method':method,'image':bool(suffix),'status':status,'cache':cache,'unauthenticated_rejected':status==401 and cache=='no-store'})

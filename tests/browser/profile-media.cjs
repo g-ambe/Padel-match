@@ -3,17 +3,21 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright');
 const {navigationFixture,user,player,ordinary}=require('../fixtures/navigation-app.cjs');
 const {validateWebp}=require('../../lib/profile-media/shared.ts');
 const base=process.env.PROFILE_MEDIA_TEST_URL||'http://127.0.0.1:3070',remote='http://127.0.0.1:54321';
+const encoding=process.env.PROFILE_MEDIA_ENCODING||'native';
 (async()=>{
  const f=navigationFixture(),pid=f.tables.player_profiles[0].id,errors=[],outside=[],requests=[];
  Object.assign(f.tables.player_profiles[0],{bio:'自己紹介保持',play_level:'中級',dominant_hand:'右',preferred_position:'フォア',activity_area:'東京都',created_at:'2026-11-01T00:00:00Z'});
  f.tables.events.find(e=>e.id===ordinary).status='closed';f.tables.user_preferences[0].tutorial_status='completed';
- let meta={profile_id:pid,owner_id:user.id,instagram_username:null,instagram_version:0,avatar_key:null,avatar_version:0},bytes=null,hold=false,release,fail=false,loseReply=false;
+ let meta={profile_id:pid,owner_id:user.id,instagram_username:null,instagram_version:0,avatar_key:null,avatar_version:0},bytes=null,hold=false,release,fail=false,loseReply=false,blockWasm=encoding==='retry';
+ const wasmRequests=[];
  const ops=new Map(),browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
  const c=await browser.newContext({viewport:{width:375,height:812},hasTouch:true});
+ if(encoding!=='native')await c.addInitScript(mode=>{if(mode==='null')WebAssembly.validate=()=>false;const original=HTMLCanvasElement.prototype.toBlob;HTMLCanvasElement.prototype.toBlob=function(callback,type,quality){if(type==='image/webp'){if(mode==='null'){queueMicrotask(()=>callback(null));return;}return original.call(this,callback,'image/png');}return original.call(this,callback,type,quality);};},encoding);
  await c.addInitScript(({base,user})=>{if(location.origin!==base)return;const enc=x=>btoa(JSON.stringify(x)).replaceAll('=','').replaceAll('+','-').replaceAll('/','_');localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:`${enc({alg:'HS256'})}.${enc({sub:user.id,exp:Math.floor(Date.now()/1000)+7200,role:'authenticated'})}.test`,refresh_token:'synthetic',expires_at:Math.floor(Date.now()/1000)+7200,user}));},{base,user});
  const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','content-type':'application/json'};
  await c.route('**/*',async route=>{
   const req=route.request(),u=new URL(req.url()),method=req.method(),answer=(status,value)=>route.fulfill({status,headers:cors,body:JSON.stringify(value)});
+  if(u.pathname.endsWith('.wasm')){wasmRequests.push(u.origin);if(blockWasm)return route.abort('failed');}
   if(u.origin===base&&u.pathname.startsWith('/api/profile-media/')){
    assert(req.headers().authorization?.startsWith('Bearer '));requests.push({path:u.pathname,method});
    if(u.pathname.endsWith('/image'))return route.fulfill({status:bytes?200:404,headers:{'content-type':'image/webp','cache-control':'private, max-age=300','vary':'Authorization'},body:bytes||Buffer.alloc(0)});
@@ -42,6 +46,7 @@ const base=process.env.PROFILE_MEDIA_TEST_URL||'http://127.0.0.1:3070',remote='h
   const patches=requests.filter(r=>r.method==='PATCH').length;await p.getByRole('button',{name:'Instagramを編集',exact:true}).click();await p.getByLabel('Instagram ID',{exact:true}).fill('javascript:alert(1)');await p.getByRole('button',{name:'Instagramを保存',exact:true}).click();await p.getByRole('alert').filter({hasText:'URLは登録できません'}).waitFor();assert.equal(requests.filter(r=>r.method==='PATCH').length,patches);await p.getByRole('button',{name:'IDを削除',exact:true}).click();await p.getByText('Instagram未登録',{exact:true}).waitFor();
   const png=await p.evaluate(async()=>{const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=800;const ctx=canvas.getContext('2d');ctx.fillStyle='#123456';ctx.fillRect(0,0,1200,800);const b=await new Promise(r=>canvas.toBlob(r,'image/png'));return Array.from(new Uint8Array(await b.arrayBuffer()));});
   hold=true;await p.getByLabel('プロフィール画像を選択',{exact:true}).setInputFiles({name:'synthetic.png',mimeType:'image/png',buffer:Buffer.from(png)});
+  if(encoding==='retry'){await p.getByRole('alert').filter({hasText:'画像を変換できませんでした'}).waitFor();assert.equal(requests.filter(r=>r.method==='PUT').length,0);assert.equal(meta.avatar_version,0);blockWasm=false;await p.getByRole('button',{name:'再確認・再試行',exact:true}).click();}
   await p.getByRole('status').filter({hasText:'プロフィール画像をアップロード中'}).waitFor().catch(async e=>{console.error('画像UI',await p.locator('[aria-label="プロフィール概要"]').innerText());throw e;});await p.getByRole('button',{name:'Instagramを編集',exact:true}).click();await p.getByLabel('Instagram ID',{exact:true}).fill('during_upload');await p.getByRole('button',{name:'Instagramを保存',exact:true}).click();await p.getByRole('link',{name:'@during_upload',exact:true}).waitFor();await p.getByRole('link',{name:'試合',exact:true}).click();await p.waitForURL(base+'/home');await p.getByRole('status').filter({hasText:/プロフィール画像/}).waitFor();
   hold=false;release();await p.getByRole('status').filter({hasText:'プロフィール画像を変更しました'}).waitFor();await p.getByRole('link',{name:'マイページ',exact:true}).click();await p.waitForURL(base+'/profile');await p.getByRole('img',{name:'プロフィール画像',exact:true}).waitFor();assert.equal(requests.filter(r=>r.method==='PUT').length,1);
   const imageGets=requests.filter(r=>r.path.endsWith('/image')).length;
@@ -52,6 +57,6 @@ const base=process.env.PROFILE_MEDIA_TEST_URL||'http://127.0.0.1:3070',remote='h
   p.once('dialog',d=>d.accept());await p.getByRole('button',{name:'画像を削除',exact:true}).click();await p.getByRole('status').filter({hasText:'画像を削除しました'}).first().waitFor();assert.equal(meta.avatar_key,null);
   f.tables.player_profiles.push({...f.tables.player_profiles[0],id:'00000000-0000-4000-8000-000000000099'});await p.reload();await p.getByRole('alert').filter({hasText:'複数の連携'}).waitFor();assert.equal(await p.getByLabel('プロフィール画像を選択',{exact:true}).isEnabled(),false);assert.equal(await p.getByRole('button',{name:'Instagramを編集',exact:true}).count(),0);
   for(const width of [320,375,390])for(const theme of ['light','dark']){await p.setViewportSize({width,height:812});await p.evaluate(t=>{document.documentElement.dataset.theme=t;document.body.dataset.theme=t;},theme);assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
-  assert.deepEqual(errors,[]);assert.deepEqual(outside,[]);console.log('プロフィール/旧戦績・グループ/Instagram検証と削除/WebP再圧縮・寸法/画面移動中アップロード/応答喪失/旧画像維持/一覧GET抑制/複数連携/320・375・390px両テーマ PASS');
+  assert.deepEqual(errors,[]);assert.deepEqual(outside,[]);if(encoding==='native')assert.equal(wasmRequests.length,0,'標準変換に対応するブラウザはWASMを取得しない');else assert(wasmRequests.length>0&&wasmRequests.every(origin=>origin===base),'互換変換は自サイトのWASMだけを使用');console.log(`プロフィール/旧戦績・グループ/Instagram検証と削除/WebP再圧縮・寸法/画面移動中アップロード/応答喪失/旧画像維持/一覧GET抑制/複数連携/320・375・390px両テーマ PASS (${encoding})`);
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

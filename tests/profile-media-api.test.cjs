@@ -30,3 +30,21 @@ test('ストリーム本文を容量上限で停止し、宣言されたContent-
  await assert.rejects(body(new Request('https://app.invalid',{method:'PUT',body:stream,duplex:'half'})),e=>e.status===413);assert(cancelled);
  assert.deepEqual(await body(new Request('https://app.invalid',{method:'PUT',body:new Uint8Array([1,2])})),new Uint8Array([1,2]));
 });
+
+test('位置APIは認証/試行制限と期待版を使い、R2・画像操作APIを呼び出さない',async()=>{
+ const {validAvatarPosition}=require('../lib/profile-media/position.ts');const code=fs.readFileSync('app/api/profile-media/[id]/position/route.ts','utf8').replaceAll('export ','');let writes=0,allowed=true;
+ const position={x:.6,y:.4,zoom:2};const patch=evaluate(code,'PATCH',{validAvatarPosition,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>{if(!allowed)throw new MediaFailure('auth',401);return {ticket:'t',get env(){throw Error('R2 must not be accessed');},rpc:async(name,args)=>{assert.equal(name,'save_my_avatar_position');assert.equal(args.p_expected_avatar,2);assert.equal(args.p_expected_pose,3);assert.equal(args.p_ticket,'t');writes++;return {avatar_version:2,avatar_pose_version:4};}};}});
+ const context={params:Promise.resolve({id:pid})},req=value=>new Request('https://app.invalid',{method:'PATCH',body:JSON.stringify(value)});
+ assert.equal((await patch(req({position,avatarVersion:2,poseVersion:3}),context)).status,200);assert.equal(writes,1);
+ for(const value of [{position:{...position,x:2},avatarVersion:2,poseVersion:3},{position,avatarVersion:-1,poseVersion:3},null])assert.equal((await patch(req(value),context)).status,400);assert.equal(writes,1);
+ allowed=false;assert.equal((await patch(req({position,avatarVersion:2,poseVersion:3}),context)).status,401);assert.equal(writes,1);
+});
+test('位置保存の応答喪失はDB再取得で確認し、別画像/別位置の競合を成功扱いしない',async()=>{
+ const {avatarPosition,sameAvatarPosition}=require('../lib/profile-media/position.ts');const code=fs.readFileSync('components/profile-media-provider.tsx','utf8');
+ const position={x:.6,y:.4,zoom:2},confirmed={avatar_version:2,avatar_pose_version:4,avatar_focus_x:.6,avatar_focus_y:.4,avatar_zoom:2};
+ let actual=confirmed;const cache={current:{}},current={current:'owner'};let reads=0;
+ const save=evaluate(code,'savePosition',{avatarPosition,sameAvatarPosition,current,cache,keyFor:(u,p)=>u+':'+p,request:async()=>{throw Error('lost response');},read:async()=>{reads++;return {profile:actual};},update:()=>{throw Error('no successful response to merge');}});
+ assert.deepEqual(await save('owner',pid,position,2,3),confirmed);assert.equal(reads,1);
+ actual={...confirmed,avatar_version:3};await assert.rejects(save('owner',pid,position,2,3),/lost response/);
+ actual={...confirmed,avatar_focus_x:.2};await assert.rejects(save('owner',pid,position,2,3),/lost response/);
+});

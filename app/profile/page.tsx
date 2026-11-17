@@ -4,9 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProfileMediaPanel } from "@/components/profile-media-panel";
 import { Card } from "@/components/ui";
-import Link from "next/link";
-import { GroupDestinations } from "@/components/group-destinations";
-import { ProfileLinkRequests } from "@/components/profile-link-requests";
+import { ProfileGroups } from "@/components/profile-groups";
+import { AppDialog } from "@/components/app-dialog";
+import { ProfileAvatar } from "@/components/profile-avatar";
+import { ProfilePhotoEditor } from "@/components/profile-photo-editor";
+import { useProfileMedia } from "@/components/profile-media-provider";
+import { avatarPosition } from "@/lib/profile-media/position";
+import { instagramUsername } from "@/lib/profile-media/shared";
 import { firstMatchResult, hasEnteredFriendlyMatchScore, type EmbeddedMatchResults } from "@/lib/friendly-match-results";
 import { fetchCountedFriendlyEvents, readStatsRows } from "@/lib/stats-history";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -60,6 +64,19 @@ export default function ProfilePage() {
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [canCreate, setCanCreate] = useState(false);
   const loadVersion = useRef(0);
+  const media = useProfileMedia(ownerId, profileId);
+  const [photoView,setPhotoView]=useState(false),[photoSaving,setPhotoSaving]=useState(false);
+  const [instagram,setInstagram]=useState("");
+  const igBaseline=useRef({username:"",version:0});
+  const photoButton=useRef<HTMLButtonElement>(null);
+  const igLoaded=useRef(false);
+  useEffect(()=>{if(editing&&!igLoaded.current&&media.state.profile){const p=media.state.profile;igBaseline.current={username:p.instagram_username??"",version:p.instagram_version};setInstagram(igBaseline.current.username);igLoaded.current=true;}},[editing,media.state.profile]);
+  const openEdit=()=>{
+    setDraft(profileId?form:draft);setPhotoView(false);setError("");setMessage("");
+    const profile=media.state.profile;igLoaded.current=!!profile;igBaseline.current={username:profile?.instagram_username??"",version:profile?.instagram_version??0};
+    setInstagram(igBaseline.current.username);setEditing(true);
+  };
+  const returnFromPhoto=()=>{setPhotoView(false);requestAnimationFrame(()=>photoButton.current?.focus({preventScroll:true}));};
 
   const loadProfile = async (preferredId?: string) => {
     const version = ++loadVersion.current;
@@ -158,9 +175,14 @@ export default function ProfilePage() {
     if (!expected) return setError("対象のプロフィールを再読み込みしてください");
     const trimmedName = draft.display_name.trim();
     if (!trimmedName) return setError("表示名を入力してください");
+    let normalizedInstagram: string|null;
+    try { normalizedInstagram=instagramUsername(instagram); } catch(cause) { return setError((cause as Error).message); }
+    const changeInstagram=(normalizedInstagram??"")!==igBaseline.current.username;
+    if(changeInstagram&&(profiles.length!==1||!media.state.profile))return setError("Instagramの変更には正規プロフィールの確認と読み込みが必要です");
     setSaving(true);
     setError("");
     setMessage("");
+    let publicSaved=false;
     try {
       const { getSupabaseClient } = await import("@/lib/supabase");
       const s = getSupabaseClient();
@@ -177,11 +199,13 @@ export default function ProfilePage() {
       setDraft(toForm(saved));
       setProfiles((rows) => rows.map((row) => row.id === saved.id ? saved : row));
       rememberPlayerProfile(ownerId, saved.id);
+      publicSaved=true;
+      if(changeInstagram)await media.saveInstagram(ownerId,profileId,instagram,igBaseline.current.version);
       setEditing(false);
       setMessage("プロフィールを更新しました");
     } catch (cause) {
       console.error("プロフィール保存に失敗しました", cause);
-      setError(profileErrorMessage(cause));
+      setError(`${publicSaved?"プレイヤー情報は保存済みです。Instagramは更新できませんでした。":""}${profileErrorMessage(cause)}`);
     } finally { setSaving(false); }
   };
 
@@ -195,21 +219,7 @@ export default function ProfilePage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-3 pr-14"><h1 className="whitespace-nowrap text-xl font-bold">マイページ</h1><a href="#profile-groups" className="flex min-h-11 items-center whitespace-nowrap text-xs text-accent underline">所属グループへ</a></div>
-      <ProfileMediaPanel owner={ownerId} id={profileId} name={form.display_name} level={form.play_level} area={form.activity_area} ambiguous={profiles.length>1}/>
-      <Card title="総合戦績">
-        {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (
-          <div className="space-y-2 text-sm"><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-xs text-zinc-400">勝率</p><strong className="text-2xl text-accent">{stats.winRate.toFixed(1)}%</strong></div><div><p className="text-xs text-zinc-400">試合数</p><strong className="text-2xl">{stats.matches}</strong></div><div><p className="text-xs text-zinc-400">勝利数</p><strong className="text-2xl">{stats.wins}</strong></div></div><details><summary className="min-h-11 cursor-pointer text-xs text-zinc-400">戦績の詳細</summary>
-            <p>試合数: {stats.matches}</p>
-            <p>勝利数: {stats.wins}</p>
-            <p>勝率: {stats.winRate.toFixed(1)}%</p>
-            <p>平均得点: {stats.avgScored.toFixed(1)}</p>
-            <p>平均失点: {stats.avgConceded.toFixed(1)}</p>
-          </details></div>
-        ) : <p className="text-sm text-zinc-400">戦績を読み込めていません</p>}
-      </Card>
-      <div id="profile-groups" className="scroll-mt-4"><GroupDestinations /></div>
-      <Card title="プレイヤープロフィール">
-        {profileId && <p className="mb-3 text-xs text-emerald-300">本人の連携プロフィールです。連携申請の承認後、他グループの所属・戦績もこの選手IDへ引き継ぎます。</p>}
+      <ProfileMediaPanel name={form.display_name} level={form.play_level} area={form.activity_area} bio={form.bio} hand={form.dominant_hand} position={form.preferred_position} state={media.state} onEdit={openEdit} canEdit={!loading&&!!(profileId||canCreate)}>
         {profiles.length > 1 && !loading && <div className="mb-4 space-y-2 text-sm">
           <p className="text-amber-300">複数の有効な連携プロフィールがあります。表示する選手は選べますが、正規プロフィールの特定と新しい連携・統合は、本人の選択を管理者が確認するまで停止します。</p>
           <select aria-label="表示する選手プロフィール" className="w-full rounded-xl bg-zinc-800 p-3" value={profileId ?? ""} disabled={saving} onChange={(e) => {
@@ -225,38 +235,45 @@ export default function ProfilePage() {
           </select>
           <p className="text-xs text-zinc-400">所属グループと総合戦績は、連携中の選手すべての記録を表示します。選手や試合の統合は行いません。</p>
         </div>}
-        {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : profileId ? (
-          <fieldset disabled={saving} className="space-y-3 text-sm">
-            <ProfileField label="表示名" value={editing ? <input aria-label="表示名" className="w-full rounded-xl bg-zinc-800 p-3" value={draft.display_name} onChange={(e) => updateDraft("display_name", e.target.value)} /> : <p>{form.display_name || "未設定"}</p>} />
-            <ProfileField label="自己紹介" value={editing ? <textarea aria-label="自己紹介" className="w-full rounded-xl bg-zinc-800 p-3" rows={3} placeholder="自己紹介を入力" value={draft.bio} onChange={(e) => updateDraft("bio", e.target.value)} /> : <p className="whitespace-pre-wrap">{form.bio || "未設定"}</p>} />
-            <ProfileField label="プレイレベル" value={editing ? <select aria-label="プレイレベル" className="w-full rounded-xl bg-zinc-800 p-3" value={draft.play_level} onChange={(e) => updateDraft("play_level", e.target.value)}><option value="">未設定</option>{PLAY_LEVEL_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}</select> : <p>{form.play_level || "未設定"}</p>} />
-            <ProfileField label="利き手" value={editing ? <select aria-label="利き手" className="w-full rounded-xl bg-zinc-800 p-3" value={draft.dominant_hand} onChange={(e) => updateDraft("dominant_hand", e.target.value)}><option value="">未設定</option>{DOMINANT_HAND_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}</select> : <p>{form.dominant_hand || "未設定"}</p>} />
-            <ProfileField label="ポジション" value={editing ? <select aria-label="ポジション" className="w-full rounded-xl bg-zinc-800 p-3" value={draft.preferred_position} onChange={(e) => updateDraft("preferred_position", e.target.value)}><option value="">未設定</option>{PREFERRED_POSITION_OPTIONS.map((x) => <option key={x} value={x}>{x}</option>)}</select> : <p>{form.preferred_position || "未設定"}</p>} />
-            <ProfileField label="主な活動地域" value={editing ? <input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="例: 東京都" value={draft.activity_area} onChange={(e) => updateDraft("activity_area", e.target.value)} /> : <p>{form.activity_area || "未設定"}</p>} />
-
-            {editing ? (
-              <div className="flex gap-2">
-                <button className="w-1/2 rounded-xl border border-zinc-600 py-2" disabled={saving} onClick={cancelEdit}>キャンセル</button>
-                <button disabled={saving} className="w-1/2 rounded-xl bg-accent py-2 font-semibold text-black disabled:bg-zinc-600" onClick={() => void saveProfile()}>{saving ? "保存中..." : "保存"}</button>
-              </div>
-            ) : (
-              <button className="w-full rounded-xl border border-zinc-600 py-2" onClick={() => setEditing(true)}>編集</button>
-            )}
-          </fieldset>
-        ) : canCreate ? <div className="space-y-3 text-sm">
-          <p>プロフィールはまだ登録されていません</p>
-          <input aria-label="表示名" disabled={saving} className="w-full rounded-xl bg-zinc-800 p-3" placeholder="表示名" value={draft.display_name} onChange={(e) => updateDraft("display_name", e.target.value)} />
-          <button disabled={saving} className="w-full rounded-xl bg-accent py-2 font-semibold text-black disabled:bg-zinc-600" onClick={() => void createProfile()}>{saving ? "作成中..." : "プロフィールを作成"}</button>
-        </div> : null}
-        {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}
-        {message && <p role="status" className="mt-3 text-sm text-emerald-400">{message}</p>}
-        {!loading && <button disabled={saving} className="mt-3 text-sm text-zinc-300 underline" onClick={() => void loadProfile()}>再読み込み</button>}
+        {loading&&<p role="status" className="mt-2 text-xs text-zinc-400">読み込み中…</p>}
+        {!loading&&canCreate&&<p className="mt-2 text-xs text-zinc-400">鉛筆から選手プロフィールを作成できます</p>}
+        {error&&!editing&&<p role="alert" className="mt-2 text-sm text-red-400">{error}</p>}
+        {message&&<p role="status" className="mt-2 text-xs text-accent">{message}</p>}
+        {!loading&&error&&!editing&&<button type="button" className="min-h-11 text-xs text-zinc-400 underline" onClick={()=>void loadProfile()}>再読み込み</button>}
+      </ProfileMediaPanel>
+      <Card title="総合戦績">
+        {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (
+          <div className="space-y-2 text-sm"><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-xs text-zinc-400">勝率</p><strong className="text-2xl text-accent">{stats.winRate.toFixed(1)}%</strong></div><div><p className="text-xs text-zinc-400">試合数</p><strong className="text-2xl">{stats.matches}</strong></div><div><p className="text-xs text-zinc-400">勝利数</p><strong className="text-2xl">{stats.wins}</strong></div></div><details><summary className="min-h-11 cursor-pointer text-xs text-zinc-400">戦績の詳細</summary>
+            <p>試合数: {stats.matches}</p>
+            <p>勝利数: {stats.wins}</p>
+            <p>勝率: {stats.winRate.toFixed(1)}%</p>
+            <p>平均得点: {stats.avgScored.toFixed(1)}</p>
+            <p>平均失点: {stats.avgConceded.toFixed(1)}</p>
+          </details></div>
+        ) : <p className="text-sm text-zinc-400">戦績を読み込めていません</p>}
       </Card>
-
-
-      <Card title="連携申請"><ProfileLinkRequests /></Card>
-      <Card title="アカウント・お知らせ"><div className="grid gap-2 text-sm"><Link className="min-h-11 p-2 underline" href="/notifications">通知・申請を確認する</Link><Link className="min-h-11 p-2 underline" href="/settings">アカウント・アプリ設定</Link><p className="p-2 text-zinc-400">フォロー・フォロワー：準備中</p></div></Card>
-
+      <div id="profile-groups" className="scroll-mt-4"><ProfileGroups owner={ownerId}/></div>
+      <AppDialog open={editing} title={photoView?"プロフィール写真を調整":"プロフィールを編集"} busy={saving||photoSaving} onClose={cancelEdit}>
+        {photoView&&ownerId&&profileId&&media.state.profile?<ProfilePhotoEditor key={`${ownerId}:${profileId}`} owner={ownerId} id={profileId} name={draft.display_name} media={media} onBusy={setPhotoSaving} onBack={returnFromPhoto} onSaved={text=>{setMessage(text);returnFromPhoto();}}/>:
+        <div className="min-h-0 overflow-y-auto overscroll-contain p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {profileId&&<button ref={photoButton} type="button" disabled={!media.state.profile||profiles.length!==1} className="mb-4 flex min-h-20 w-full items-center gap-3 rounded-xl bg-zinc-800/40 p-3 text-left disabled:opacity-40" onClick={()=>setPhotoView(true)}>
+          <ProfileAvatar image={media.state.image} name={draft.display_name} position={avatarPosition(media.state.profile)} className="h-14 w-14"/>
+          <span className="min-w-0 flex-1"><strong className="text-sm">プロフィール写真</strong><span className="mt-1 block text-xs text-zinc-400">タップして写真・表示位置を編集</span></span><span aria-hidden="true" className="text-zinc-400">›</span>
+        </button>}
+        {profiles.length>1&&<p role="alert" className="mb-3 text-xs text-amber-300">複数の有効な連携プロフィールがあるため、写真・Instagramの変更には正規プロフィールの確認が必要です。</p>}
+        <form onSubmit={e=>{e.preventDefault();if(profileId)void saveProfile();else void createProfile();}}><fieldset disabled={saving} className="space-y-3 text-sm">
+          <ProfileField label="表示名" value={<input aria-label="表示名" className="min-h-11 w-full rounded-xl bg-zinc-800 p-3" value={draft.display_name} onChange={e=>updateDraft("display_name",e.target.value)}/>}/>
+          {profileId&&<>
+          <ProfileField label="ひとこと" value={<textarea aria-label="ひとこと" className="w-full rounded-xl bg-zinc-800 p-3" rows={3} value={draft.bio} onChange={e=>updateDraft("bio",e.target.value)}/>}/>
+          <div className="grid grid-cols-2 gap-3"><ProfileField label="プレイレベル" value={<select aria-label="プレイレベル" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.play_level} onChange={e=>updateDraft("play_level",e.target.value)}><option value="">未設定</option>{PLAY_LEVEL_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/><ProfileField label="活動地域" value={<input aria-label="活動地域" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.activity_area} onChange={e=>updateDraft("activity_area",e.target.value)}/>}/></div>
+          <div className="grid grid-cols-2 gap-3"><ProfileField label="利き手" value={<select aria-label="利き手" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.dominant_hand} onChange={e=>updateDraft("dominant_hand",e.target.value)}><option value="">未設定</option>{DOMINANT_HAND_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/><ProfileField label="ポジション" value={<select aria-label="ポジション" className="min-h-11 w-full rounded-xl bg-zinc-800 p-2" value={draft.preferred_position} onChange={e=>updateDraft("preferred_position",e.target.value)}><option value="">未設定</option>{PREFERRED_POSITION_OPTIONS.map(x=><option key={x}>{x}</option>)}</select>}/></div>
+          <ProfileField label="Instagram ID（任意）" value={<input aria-label="Instagram ID" disabled={profiles.length!==1||!media.state.profile} maxLength={31} autoCapitalize="none" autoCorrect="off" placeholder="@ユーザーネーム" className="min-h-11 w-full rounded-xl bg-zinc-800 p-3 disabled:opacity-40" value={instagram} onChange={e=>setInstagram(e.target.value)}/>}/>
+          </>}
+          {error&&<p role="alert" className="text-xs text-red-400">{error}</p>}
+          {message&&<p role="status" className="text-xs text-accent">{message}</p>}
+          <div className="flex gap-2 pt-2"><button type="button" className="min-h-11 flex-1 rounded-xl border border-zinc-600" onClick={cancelEdit}>キャンセル</button><button type="submit" className="min-h-11 flex-1 rounded-xl bg-accent px-2 font-semibold text-black disabled:opacity-40">{saving?"保存中…":profileId?"変更を保存":"プロフィールを作成"}</button></div>
+        </fieldset></form></div>}
+      </AppDialog>
 
     </main>
   );

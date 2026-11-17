@@ -76,6 +76,27 @@ class BackupTests(unittest.TestCase):
         for name in ("SUPABASE_DB_URL", "PADEL_BACKUP_PASSPHRASE", "GH_TOKEN", "PGPASSWORD"):
             self.assertNotIn(name, env)
 
+class ProfileCheckRoundtripTests(unittest.TestCase):
+    @staticmethod
+    def catalog(definition, validated=True):
+        return {'tables':[{'schema':'public','name':'player_profile_private','definition':{'constraints':[['player_profile_private_instagram_username_check',definition,validated]]}}]}
+    def test_only_exact_reviewed_between_roundtrip_is_recreated(self):
+        target=backup.LocalRestore('padel-backup-test-shape')
+        with patch.object(target,'sql') as sql:
+            self.assertTrue(backup.restore_profile_check_shape(target,self.catalog(backup.PROFILE_IG_NESTED),self.catalog(backup.PROFILE_IG_FLAT)))
+            self.assertIn('BETWEEN 1 AND 30',sql.call_args.args[0]);self.assertTrue(sql.call_args.args[0].startswith('BEGIN;'));self.assertTrue(sql.call_args.args[0].endswith('COMMIT;'))
+    def test_unknown_or_unvalidated_constraints_are_rejected_without_ddl(self):
+        target=backup.LocalRestore('padel-backup-test-shape')
+        for actual in [self.catalog('CHECK (true)'),self.catalog(backup.PROFILE_IG_FLAT,False)]:
+            with patch.object(target,'sql') as sql:
+                with self.assertRaisesRegex(backup.BackupError,'unexpected_profile_check_definition'):backup.restore_profile_check_shape(target,self.catalog(backup.PROFILE_IG_NESTED),actual)
+                sql.assert_not_called()
+    def test_no_changes_when_already_exact_and_no_production_target(self):
+        data=self.catalog(backup.PROFILE_IG_NESTED);target=backup.LocalRestore('padel-backup-test-shape')
+        with patch.object(target,'sql') as sql:
+            self.assertFalse(backup.restore_profile_check_shape(target,data,data));sql.assert_not_called()
+        with self.assertRaisesRegex(backup.BackupError,'requires_isolated_database'):backup.restore_profile_check_shape(object(),data,data)
+
 
 if __name__ == "__main__":
     unittest.main()

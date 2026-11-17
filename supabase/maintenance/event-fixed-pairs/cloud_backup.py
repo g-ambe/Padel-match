@@ -523,6 +523,27 @@ def restore_application_roles(target, expected):
             target.sql("GRANT " + ident(role["name"]) + " TO " + ident(member) + " WITH " + flags + ";")
 
 
+# pg_dump deparses BETWEEN as a nested AND. The restore parser flattens that
+# AND, although its three-valued truth table is identical. Recreate only this
+# exact, reviewed 0048 constraint in the network-isolated DB; never ignore a
+# catalog difference or change the production constraint.
+PROFILE_IG_NESTED = "CHECK (((instagram_username IS NULL) OR (((length(instagram_username) >= 1) AND (length(instagram_username) <= 30)) AND (instagram_username ~ '^[A-Za-z0-9_](\\.?[A-Za-z0-9_])*$'::text))))"
+PROFILE_IG_FLAT = "CHECK (((instagram_username IS NULL) OR ((length(instagram_username) >= 1) AND (length(instagram_username) <= 30) AND (instagram_username ~ '^[A-Za-z0-9_](\\.?[A-Za-z0-9_])*$'::text))))"
+
+def restore_profile_check_shape(target, expected, actual):
+    if not isinstance(target, LocalRestore):
+        raise BackupError("check_shape_repair_requires_isolated_database")
+    def constraint(catalog):
+        table=next((t for t in catalog['tables'] if t['schema']=='public' and t['name']=='player_profile_private'),None)
+        return next((x for x in table['definition']['constraints'] if x[0]=='player_profile_private_instagram_username_check'),None) if table else None
+    before,after=constraint(expected),constraint(actual)
+    if before==after:return False
+    if before!=['player_profile_private_instagram_username_check',PROFILE_IG_NESTED,True] or after!=['player_profile_private_instagram_username_check',PROFILE_IG_FLAT,True]:
+        raise BackupError("unexpected_profile_check_definition_stop")
+    # BETWEEN is the original 0048 syntax and reconstructs the exact source tree.
+    target.sql("BEGIN;ALTER TABLE public.player_profile_private DROP CONSTRAINT player_profile_private_instagram_username_check,ADD CONSTRAINT player_profile_private_instagram_username_check CHECK(instagram_username IS NULL OR (length(instagram_username) BETWEEN 1 AND 30 AND instagram_username ~ '^[A-Za-z0-9_](\\.?[A-Za-z0-9_])*$'));COMMIT;")
+    return True
+
 def restore_files(target, files, manifest):
     target.file(files / "roles.sql")
     expected_roles = json.loads((files / "roles.json").read_text())
@@ -550,8 +571,12 @@ def restore_files(target, files, manifest):
     expected_rows = json.loads((files / "rows.json").read_text())
     if row_fingerprints(target.query, manifest["tables"]) != expected_rows:
         raise BackupError("restored_rows_or_values_mismatch")
-    if catalog(target.query, manifest["tables"], manifest["function_schemas"]) != expected_catalog:
-        raise BackupError("restored_rls_acl_or_definitions_mismatch")
+    actual_catalog = catalog(target.query, manifest["tables"], manifest["function_schemas"])
+    if actual_catalog != expected_catalog:
+        restore_profile_check_shape(target, expected_catalog, actual_catalog)
+        # The full strict comparison is retained, including the repaired definition.
+        if catalog(target.query, manifest["tables"], manifest["function_schemas"]) != expected_catalog:
+            raise BackupError("restored_rls_acl_or_definitions_mismatch")
     if target.query(ROLE_METADATA) != expected_roles:
         raise BackupError("restored_application_roles_mismatch")
     verify_foreign_keys(target, manifest["tables"])

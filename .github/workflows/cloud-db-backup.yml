@@ -20,7 +20,12 @@ jobs:
        github.event.label.name == 'クラウドDBバックアップ検証' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        github.event.pull_request.head.ref == 'codex/event-fixed-pairs') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.number == 210 &&
+       github.event.label.name == '210最新バックアップ' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'codex/profile-r2-instagram')
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -76,7 +81,9 @@ jobs:
         id: store
         env:
           GH_TOKEN: ${{ github.token }}
-          BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # PR210's backup release refers to deployed main. The actual backup-tool
+          # head is independently pinned by the 0049 release guard.
+          BACKUP_SOURCE_SHA: ${{ (github.event.pull_request.number == 210 && github.event.pull_request.base.sha) || github.event.pull_request.head.sha || github.sha }}
           PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/padel-db-backup
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py publish
 

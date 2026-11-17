@@ -73,3 +73,8 @@ test('画像の未完了操作中もInstagramを保存でき、画像確定はIn
  const f=await fixture();try{await f.as();await f.prepare(900,0);const ig=await f.call('save_my_instagram',[pid,0,'during_upload',await f.ticket()]);assert.equal(ig.avatar_version,0);const m=await f.commit(900);assert.equal(m.instagram_username,'during_upload');assert.equal(m.instagram_version,1);assert.equal(m.avatar_version,1);
  }finally{await f.db.close();}
 });
+
+test('最新本番互換性の専用SQLスモークは全書込みをROLLBACKする',async()=>{
+ const f=await fixture();try{await f.db.exec('alter table player_profiles add column display_name text not null default \'synthetic\'');const before=(await f.db.query('select * from player_profiles order by id')).rows;await f.db.exec(require('node:fs').readFileSync('supabase/maintenance/profile-media/03_smoke.sql','utf8'));assert.deepEqual((await f.db.query('select * from player_profiles order by id')).rows,before);assert.equal((await f.db.query('select count(*)::int n from profile_media_operations')).rows[0].n,0);
+ }finally{await f.db.close();}
+});

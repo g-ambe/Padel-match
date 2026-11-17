@@ -11,6 +11,8 @@
     "binding": "ASSETS"
   },
   "previews": {},
+  "r2_buckets": [{ "binding": "PROFILE_IMAGES", "bucket_name": "padel-match-profile-images" }],
+  "ratelimits": [{ "name": "PROFILE_MEDIA_RATE_LIMITER", "namespace_id": "4801", "simple": { "limit": 10, "period": 60 } }],
   "build": {
     "command": "node scripts/ensure-cloudflare-worker.cjs"
   }

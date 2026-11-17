@@ -1,0 +1,28 @@
+name: Profile media production read-only preflight
+on:
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+jobs:
+  preflight:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/profile-r2-instagram' &&
+      github.event.label.name == 'TASK01読み取り確認'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Existing official CA verification
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: Read-only catalog and permissions
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-supabase-ca.crt
+        run: python3 -B supabase/maintenance/profile-media/read_preflight.py

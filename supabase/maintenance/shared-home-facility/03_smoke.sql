@@ -1,9 +1,12 @@
 BEGIN;
-DO $$ DECLARE actor uuid:=gen_random_uuid();other_actor uuid:=gen_random_uuid();profile uuid:=gen_random_uuid();facility uuid;m jsonb;denied boolean;before jsonb;BEGIN
+DO $$ DECLARE actor uuid:=gen_random_uuid();other_actor uuid:=gen_random_uuid();profile uuid:=gen_random_uuid();facility uuid;m jsonb;denied boolean;before jsonb;affected integer;BEGIN
  SELECT id INTO STRICT facility FROM public.padel_facilities WHERE facility_key='jpa:padel-tokyo';
  INSERT INTO public.player_profiles(id,display_name,linked_auth_user_id,is_active) VALUES(profile,'施設ID一時検証',actor,true);
  PERFORM set_config('request.jwt.claim.sub',actor::text,true);PERFORM set_config('request.jwt.claims',json_build_object('sub',actor,'role','authenticated')::text,true);
  SET LOCAL ROLE authenticated;
+ -- 本番と同じ既存GRANTがあっても、SELECT専用RLSがmaster書込みを拒否する。
+ denied:=false;BEGIN UPDATE public.padel_facilities SET name=name WHERE id=facility;GET DIAGNOSTICS affected=ROW_COUNT;denied:=affected=0;EXCEPTION WHEN insufficient_privilege THEN denied:=true;END;IF NOT denied THEN RAISE EXCEPTION '0051_master_update_allowed';END IF;
+ denied:=false;BEGIN INSERT INTO public.padel_facilities(name,prefecture) VALUES('隔離専用の拒否検証','東京');EXCEPTION WHEN insufficient_privilege THEN denied:=true;END;IF NOT denied THEN RAISE EXCEPTION '0051_master_insert_allowed';END IF;
  before:=public.save_my_instagram(profile,0,'demo_facility',public.profile_media_attempt());
  m:=public.save_my_home_court_selection(profile,0,facility,'任意名は採用しない',public.profile_media_attempt());
  IF m->>'home_facility_id'<>facility::text OR (m->>'home_court_version')::int<>1 OR m->'home_facility'->>'id'<>facility::text OR (m-ARRAY['home_facility_id','home_facility','home_court_name','home_court_version','updated_at']) IS DISTINCT FROM (before-ARRAY['home_facility_id','home_facility','home_court_name','home_court_version','updated_at']) THEN RAISE EXCEPTION '0051_save_changed_other_fields';END IF;

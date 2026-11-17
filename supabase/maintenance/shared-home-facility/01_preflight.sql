@@ -7,7 +7,9 @@ DO $$ BEGIN
  IF NOT EXISTS(SELECT 1 FROM pg_class WHERE oid='public.player_profile_private'::regclass AND relrowsecurity)
   OR NOT EXISTS(SELECT 1 FROM pg_class WHERE oid='public.padel_facilities'::regclass AND relrowsecurity)
   OR has_table_privilege('anon','public.player_profile_private','SELECT') OR has_table_privilege('authenticated','public.player_profile_private','UPDATE')
-  OR has_table_privilege('authenticated','public.padel_facilities','UPDATE') OR has_table_privilege('authenticated','public.padel_facilities','INSERT')
+  OR EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='padel_facilities' AND cmd<>'SELECT')
+  OR EXISTS(SELECT 1 FROM pg_roles WHERE rolname IN('authenticated','anon') AND (rolsuper OR rolbypassrls))
+  OR EXISTS(SELECT 1 FROM pg_class WHERE oid='public.padel_facilities'::regclass AND (pg_has_role('authenticated',relowner,'MEMBER') OR pg_has_role('anon',relowner,'MEMBER')))
   OR NOT has_table_privilege('authenticated','public.padel_facilities','SELECT') THEN RAISE EXCEPTION '0051_existing_protection_differs';END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_constraint k WHERE k.conrelid='public.clubs'::regclass AND k.contype='f' AND k.confrelid='public.padel_facilities'::regclass AND k.convalidated) THEN RAISE EXCEPTION '0051_club_facility_reference_missing';END IF;
 END; $$;

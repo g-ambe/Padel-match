@@ -3,9 +3,11 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { getSupabaseClient } from "@/lib/supabase";
 import { compressProfileImage } from "@/lib/profile-media/compress";
 import { instagramUsername, mergePrivateProfile, type PrivateProfile } from "@/lib/profile-media/shared";
-type State = { profile?: PrivateProfile; image?: string; imageEnabled?: boolean; loading?: boolean; busy?: boolean; error?: string; message?: string; uncertain?: boolean };
+import { avatarPosition, sameAvatarPosition, type AvatarPosition } from "@/lib/profile-media/position";
+export type ProfileMediaState = { profile?: PrivateProfile; image?: string; imageEnabled?: boolean; loading?: boolean; busy?: boolean; error?: string; message?: string; uncertain?: boolean };
+type State = ProfileMediaState;
 type Job = { owner: string; profile: string; request: string; version: number; kind: "upload"|"delete"; blob?: Blob; file?: File; uncertain?: boolean };
-type MediaContext = { states: Record<string,State>; load: (owner:string,profile:string)=>Promise<void>; change:(owner:string,profile:string,file?:File)=>Promise<void>; retry:(owner:string,profile:string)=>Promise<void>; saveInstagram:(owner:string,profile:string,value:string)=>Promise<void> };
+type MediaContext = { states: Record<string,State>; load: (owner:string,profile:string)=>Promise<void>; change:(owner:string,profile:string,file?:File,expectedVersion?:number)=>Promise<PrivateProfile|null>; retry:(owner:string,profile:string,reconcileOnly?:boolean)=>Promise<PrivateProfile|null>; saveInstagram:(owner:string,profile:string,value:string,expectedVersion?:number)=>Promise<void>; savePosition:(owner:string,profile:string,position:AvatarPosition,avatarVersion:number,poseVersion:number)=>Promise<PrivateProfile> };
 const Context = createContext<MediaContext|null>(null);
 const keyFor=(owner:string,profile:string)=>`${owner}:${profile}`;
 export function ProfileMediaProvider({children}:{children:ReactNode}){
@@ -51,7 +53,7 @@ export function ProfileMediaProvider({children}:{children:ReactNode}){
   const work=(async()=>{update(owner,id,{loading:true});try{await read(owner,id);}catch(error){update(owner,id,{loading:false,error:(error as Error).message});}})();
   loading.current.set(key,work);try{await work;}finally{loading.current.delete(key);}
  };
- const run=async(job:Job)=>{
+ const run=async(job:Job):Promise<PrivateProfile|null>=>{
   const {owner,profile:id}=job,key=keyFor(owner,id);
   update(owner,id,{busy:true,error:"",message:"",uncertain:false});if(current.current===owner)setBanner(job.file&&!job.blob?"プロフィール画像を圧縮中…":"プロフィール画像を変更中…");
   try{
@@ -61,31 +63,34 @@ export function ProfileMediaProvider({children}:{children:ReactNode}){
    update(owner,id,{profile:result.profile,busy:false,message:job.kind==="delete"?"画像を削除しました":"画像を変更しました",uncertain:false});jobs.current.delete(key);
    try{await showImage(owner,id,result.profile);}catch{update(owner,id,{error:"画像は保存済みですが、表示を取得できませんでした。再表示してください"});}
    if(current.current===owner)setBanner(job.kind==="delete"?"プロフィール画像を削除しました":"プロフィール画像を変更しました");
+   return result.profile;
   }catch(error){
    job.uncertain=!!(error as Error&{uncertain?:boolean}).uncertain;
    // サーバーの応答自体が失われた場合も、操作IDからDBの確定状態を問い合わせる。
    try{const actual=await read(owner,id,job.request);if(actual.operation?.status==="committed"){
-    update(owner,id,{busy:false,uncertain:false,message:"画像の変更を確認しました",error:""});jobs.current.delete(key);if(current.current===owner)setBanner("画像の変更を確認しました");return;
+    update(owner,id,{busy:false,uncertain:false,message:"画像の変更を確認しました",error:""});jobs.current.delete(key);if(current.current===owner)setBanner("画像の変更を確認しました");return actual.profile;
    }job.uncertain=actual.operation?.status==="pending";}catch{job.uncertain=true;}
    update(owner,id,{busy:false,error:(error as Error).message,uncertain:job.uncertain});if(current.current===owner)setBanner((error as Error).message);
+   return null;
   }
  };
- const change=async(owner:string,id:string,file?:File)=>{
-  const key=keyFor(owner,id);if(cache.current[key]?.busy||jobs.current.has(key)&&jobs.current.get(key)?.uncertain)return;
-  const job:Job={owner,profile:id,kind:file?"upload":"delete",file,request:crypto.randomUUID(),version:cache.current[key]?.profile?.avatar_version??0};jobs.current.set(key,job);await run(job);
+ const change=async(owner:string,id:string,file?:File,expectedVersion?:number)=>{
+  const key=keyFor(owner,id);if(cache.current[key]?.busy||jobs.current.has(key)&&jobs.current.get(key)?.uncertain)return null;
+  const job:Job={owner,profile:id,kind:file?"upload":"delete",file,request:crypto.randomUUID(),version:expectedVersion??cache.current[key]?.profile?.avatar_version??0};jobs.current.set(key,job);return run(job);
  };
- const retry=async(owner:string,id:string)=>{
-  const key=keyFor(owner,id),job=jobs.current.get(key);if(cache.current[key]?.busy)return;
-  if(!job){try{await read(owner,id);}catch(error){update(owner,id,{error:(error as Error).message});}return;}
+ const retry=async(owner:string,id:string,reconcileOnly=false)=>{
+  const key=keyFor(owner,id),job=jobs.current.get(key);if(cache.current[key]?.busy)return null;
+  if(!job){try{return (await read(owner,id)).profile;}catch(error){update(owner,id,{error:(error as Error).message});}return null;}
   try{
    const actual=await read(owner,id,job.request);
-   if(actual.operation?.status==="committed"){jobs.current.delete(key);update(owner,id,{error:"",uncertain:false,message:"画像の変更を確認しました"});return;}
+   if(actual.operation?.status==="committed"){jobs.current.delete(key);update(owner,id,{error:"",uncertain:false,message:"画像の変更を確認しました"});return actual.profile;}
+   if(reconcileOnly&&actual.operation?.status!=="pending"){jobs.current.delete(key);update(owner,id,{uncertain:false,error:"画像の変更は確定していません。内容を確認して保存してください"});return null;}
    if(actual.operation?.status!=="pending"){job.request=crypto.randomUUID();job.version=actual.profile.avatar_version;}
-   await run(job);
-  }catch(error){update(owner,id,{error:(error as Error).message});}
+   return run(job);
+  }catch(error){update(owner,id,{error:(error as Error).message});return null;}
  };
- const saveInstagram=async(owner:string,id:string,value:string)=>{
-  const username=instagramUsername(value),version=cache.current[keyFor(owner,id)]?.profile?.instagram_version??0;
+ const saveInstagram=async(owner:string,id:string,value:string,expectedVersion?:number)=>{
+  const username=instagramUsername(value),version=expectedVersion??cache.current[keyFor(owner,id)]?.profile?.instagram_version??0;
   try{
    const result=await request(owner,`/api/profile-media/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:username??"",version})});
    update(owner,id,{profile:result.profile});
@@ -95,7 +100,22 @@ export function ProfileMediaProvider({children}:{children:ReactNode}){
    throw error;
   }
  };
- return <Context.Provider value={{states,load,change,retry,saveInstagram}}>{children}{banner&&<aside className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center gap-2 rounded-xl border border-zinc-600 bg-card p-3 text-sm shadow-lg"><p role="status" className="min-w-0 flex-1">{banner}</p><button type="button" aria-label="画像の通知を閉じる" className="min-h-11 min-w-11" onClick={()=>setBanner("")}>×</button></aside>}</Context.Provider>;
+ const savePosition=async(owner:string,id:string,position:AvatarPosition,avatarVersion:number,poseVersion:number)=>{
+  const check=(profile:PrivateProfile)=>profile.avatar_version===avatarVersion&&(profile.avatar_pose_version??0)>poseVersion&&sameAvatarPosition(avatarPosition(profile),position);
+  try{
+   const result=await request(owner,`/api/profile-media/${id}/position`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({position,avatarVersion,poseVersion})});
+   if(current.current!==owner)throw new Error("ログイン情報が変わりました");
+   update(owner,id,{profile:result.profile});
+   const actual=cache.current[keyFor(owner,id)]?.profile??result.profile;
+   if(!check(actual))throw new Error("写真または表示位置が別の画面で変更されています。再読み込みしてください");
+   return actual;
+  }catch(error){
+   const actual=await read(owner,id).catch(()=>null);
+   if(actual&&check(actual.profile))return actual.profile;
+   throw error;
+  }
+ };
+ return <Context.Provider value={{states,load,change,retry,saveInstagram,savePosition}}>{children}{banner&&<aside className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center gap-2 rounded-xl border border-zinc-600 bg-card p-3 text-sm shadow-lg"><p role="status" className="min-w-0 flex-1">{banner}</p><button type="button" aria-label="画像の通知を閉じる" className="min-h-11 min-w-11" onClick={()=>setBanner("")}>×</button></aside>}</Context.Provider>;
 }
 export function useProfileMedia(owner:string|null,id:string|null){
  const value=useContext(Context);if(!value)throw new Error("ProfileMediaProviderが必要です");

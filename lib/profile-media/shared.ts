@@ -1,6 +1,6 @@
 export const IMAGE_LIMIT = 200 * 1024;
-export type PrivateProfile = { profile_id: string; owner_id: string; instagram_username: string | null; instagram_version: number; avatar_key: string | null; avatar_version: number; updated_at?: string };
-export const emptyPrivateProfile = (profile: string, owner: string): PrivateProfile => ({ profile_id: profile, owner_id: owner, instagram_username: null, instagram_version: 0, avatar_key: null, avatar_version: 0 });
+export type PrivateProfile = { profile_id: string; owner_id: string; instagram_username: string | null; instagram_version: number; avatar_key: string | null; avatar_version: number; avatar_focus_x?: number; avatar_focus_y?: number; avatar_zoom?: number; avatar_pose_version?: number; updated_at?: string };
+export const emptyPrivateProfile = (profile: string, owner: string): PrivateProfile => ({ profile_id: profile, owner_id: owner, instagram_username: null, instagram_version: 0, avatar_key: null, avatar_version: 0, avatar_focus_x:0.5,avatar_focus_y:0.5,avatar_zoom:1,avatar_pose_version:0 });
 export function instagramUsername(value: string): string | null {
   const name = value.trim().replace(/^@/, "");
   if (!name) return null;
@@ -61,6 +61,15 @@ export function mergePrivateProfile(current: PrivateProfile | undefined, incomin
   if (!current || current.profile_id !== incoming.profile_id || current.owner_id !== incoming.owner_id) return incoming;
   const next = { ...incoming };
   if (current.avatar_version > incoming.avatar_version) { next.avatar_key=current.avatar_key; next.avatar_version=current.avatar_version; }
+  // 位置は画像の版に従属し、その画像内では独立した位置の版を比較する。
+  if (current.avatar_version > incoming.avatar_version || (current.avatar_version === incoming.avatar_version &&
+      ((incoming.avatar_pose_version === undefined && current.avatar_pose_version !== undefined) || (current.avatar_pose_version ?? 0) > (incoming.avatar_pose_version ?? 0)))) {
+    for (const key of ["avatar_focus_x","avatar_focus_y","avatar_zoom","avatar_pose_version"] as const) {
+      if (current[key] === undefined) delete next[key]; else next[key]=current[key];
+    }
+  } else if (incoming.avatar_version > current.avatar_version && incoming.avatar_pose_version === undefined) {
+    next.avatar_focus_x=0.5;next.avatar_focus_y=0.5;next.avatar_zoom=1;next.avatar_pose_version=0;
+  }
   if (current.instagram_version > incoming.instagram_version) { next.instagram_username=current.instagram_username; next.instagram_version=current.instagram_version; }
   if (current.updated_at && incoming.updated_at && Date.parse(current.updated_at)>Date.parse(incoming.updated_at)) next.updated_at=current.updated_at;
   return next;

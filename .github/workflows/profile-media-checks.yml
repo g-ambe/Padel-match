@@ -5,6 +5,14 @@ on:
       - 'app/profile/**'
       - 'app/api/profile-media/**'
       - 'components/profile-media-*.tsx'
+      - 'components/profile-avatar.tsx'
+      - 'components/profile-photo-editor.tsx'
+      - 'components/profile-groups.tsx'
+      - 'lib/profile-group-usage.ts'
+      - 'supabase/migrations/0049_profile_avatar_position.sql'
+      - 'supabase/maintenance/profile-avatar-position/**'
+      - 'tests/profile-avatar-position*.cjs'
+      - 'tests/fixtures/profile-media-db.cjs'
       - 'lib/profile-media/**'
       - 'supabase/migrations/0048_private_profile_media.sql'
       - 'supabase/maintenance/profile-media/**'
@@ -36,7 +44,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/bun-tool" --no-package-lock --no-audit --no-fund bun@1.2.15
           "$RUNNER_TEMP/bun-tool/node_modules/.bin/bun" install --frozen-lockfile
       - name: Related unit and isolated SQL tests
-        run: node --test tests/profile-media.test.cjs tests/profile-media-db.test.cjs tests/profile-media-api.test.cjs tests/profile-media-bindings.test.cjs
+        run: node --test tests/profile-media.test.cjs tests/profile-media-db.test.cjs tests/profile-media-api.test.cjs tests/profile-media-bindings.test.cjs tests/profile-avatar-position.test.cjs tests/profile-avatar-position-db.test.cjs
       - name: Real PostgreSQL multi-connection safety
         env:
           PROFILE_MEDIA_TEST_PG_URL: postgresql://postgres:synthetic-only@127.0.0.1:5432/profile_media_test

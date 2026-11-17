@@ -64,11 +64,11 @@ jobs:
           try:
               with urlopen(Request(base+'/profile',headers=headers),timeout=30) as r:
                   html=r.read(2*1024*1024).decode()
-                  results.append({'profile_html':r.status==200 and 'Instagram' in html and 'Application error' not in html})
+                  results.append({'profile_html':r.status==200 and 'プロフィール概要' in html and 'マイページ' in html and 'Application error' not in html})
           except Exception as e:
               print('::notice title=TASK01プロフィールHTTP診断::'+json.dumps({'error_type':type(e).__name__,'status':getattr(e,'code',None),'reason_type':type(getattr(e,'reason',None)).__name__}))
               results.append({'profile_html':False})
-          for suffix,method in [('', 'GET'),('/image','GET'),('','PUT'),('','PATCH'),('','DELETE')]:
+          for suffix,method in [('', 'GET'),('/image','GET'),('','PUT'),('','PATCH'),('','DELETE'),('/position','PATCH')]:
               status=0;cache=''
               try:
                   with urlopen(Request(base+'/api/profile-media/'+pid+suffix,headers=headers,method=method,data=b'' if method in ('PUT','PATCH') else None),timeout=30) as r:status=r.status

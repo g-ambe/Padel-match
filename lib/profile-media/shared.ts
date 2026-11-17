@@ -1,6 +1,7 @@
+import type { Facility } from "../padel-facilities";
 export const IMAGE_LIMIT = 200 * 1024;
-export type PrivateProfile = { profile_id: string; owner_id: string; instagram_username: string | null; instagram_version: number; avatar_key: string | null; avatar_version: number; avatar_focus_x?: number; avatar_focus_y?: number; avatar_zoom?: number; avatar_pose_version?: number; home_court_name?: string | null; home_court_version?: number; updated_at?: string };
-export const emptyPrivateProfile = (profile: string, owner: string): PrivateProfile => ({ profile_id: profile, owner_id: owner, instagram_username: null, instagram_version: 0, avatar_key: null, avatar_version: 0, avatar_focus_x:0.5,avatar_focus_y:0.5,avatar_zoom:1,avatar_pose_version:0,home_court_name:null,home_court_version:0 });
+export type PrivateProfile = { profile_id: string; owner_id: string; instagram_username: string | null; instagram_version: number; avatar_key: string | null; avatar_version: number; avatar_focus_x?: number; avatar_focus_y?: number; avatar_zoom?: number; avatar_pose_version?: number; home_facility_id?: string | null; home_facility?: Facility | null; home_court_name?: string | null; home_court_version?: number; updated_at?: string };
+export const emptyPrivateProfile = (profile: string, owner: string): PrivateProfile => ({ profile_id: profile, owner_id: owner, instagram_username: null, instagram_version: 0, avatar_key: null, avatar_version: 0, avatar_focus_x:0.5,avatar_focus_y:0.5,avatar_zoom:1,avatar_pose_version:0,home_court_name:null,home_court_version:0,home_facility_id:null,home_facility:null });
 export function instagramUsername(value: string): string | null {
   const name = value.trim().replace(/^@/, "");
   if (!name) return null;
@@ -74,7 +75,14 @@ export function mergePrivateProfile(current: PrivateProfile | undefined, incomin
   if ((incoming.home_court_version === undefined && current.home_court_version !== undefined) || (current.home_court_version ?? 0) > (incoming.home_court_version ?? 0)) {
     if(current.home_court_version !== undefined)next.home_court_version=current.home_court_version;
     if(current.home_court_name !== undefined)next.home_court_name=current.home_court_name;
+    if(current.home_facility_id !== undefined)next.home_facility_id=current.home_facility_id;
+    if(current.home_facility !== undefined)next.home_facility=current.home_facility;
   }
+  if(incoming.home_facility_id===undefined&&incoming.home_court_version===current.home_court_version&&current.home_facility_id!==undefined){next.home_facility_id=current.home_facility_id;if(current.home_facility!==undefined)next.home_facility=current.home_facility;}
+  if(next.home_facility_id !== current.home_facility_id) {
+    if(!next.home_facility_id)next.home_facility=null;
+    else if(next.home_facility?.id!==next.home_facility_id)delete next.home_facility;
+  } else if(next.home_facility_id&&incoming.home_facility===undefined&&current.home_facility?.id===next.home_facility_id)next.home_facility=current.home_facility;
   if (current.updated_at && incoming.updated_at && Date.parse(current.updated_at)>Date.parse(incoming.updated_at)) next.updated_at=current.updated_at;
   return next;
 }

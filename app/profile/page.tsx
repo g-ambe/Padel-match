@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProfileMediaPanel } from "@/components/profile-media-panel";
 import { ProfileHomeCourtField } from "@/components/profile-home-court-field";
+import type { HomeCourtSelection } from "@/lib/padel-facilities";
 import { BROAD_ACTIVITY_AREAS,PREFECTURES,legacyActivityArea,homeCourtName } from "@/lib/profile-options";
 import { Card } from "@/components/ui";
 import { ProfileGroups } from "@/components/profile-groups";
@@ -72,13 +73,13 @@ export default function ProfilePage() {
   const igBaseline=useRef({username:"",version:0});
   const photoButton=useRef<HTMLButtonElement>(null);
   const igLoaded=useRef(false);
-  const [statsOpen,setStatsOpen]=useState(false),[court,setCourt]=useState("");
-  const courtBaseline=useRef({name:"",version:0});
-  useEffect(()=>{if(editing&&!igLoaded.current&&media.state.profile){const p=media.state.profile;igBaseline.current={username:p.instagram_username??"",version:p.instagram_version};setInstagram(igBaseline.current.username);courtBaseline.current={name:p.home_court_name??"",version:p.home_court_version??0};setCourt(courtBaseline.current.name);igLoaded.current=true;}},[editing,media.state.profile]);
+  const [statsOpen,setStatsOpen]=useState(false),[court,setCourt]=useState<HomeCourtSelection>({facilityId:null,name:""});
+  const courtBaseline=useRef({name:"",facilityId:null as string|null,version:0});
+  useEffect(()=>{if(editing&&!igLoaded.current&&media.state.profile){const p=media.state.profile;igBaseline.current={username:p.instagram_username??"",version:p.instagram_version};setInstagram(igBaseline.current.username);courtBaseline.current={name:p.home_court_name??"",facilityId:p.home_facility_id??null,version:p.home_court_version??0};setCourt({name:courtBaseline.current.name,facilityId:courtBaseline.current.facilityId});igLoaded.current=true;}},[editing,media.state.profile]);
   const openEdit=()=>{
     setDraft(profileId?form:draft);setPhotoView(false);setError("");setMessage("");
     const profile=media.state.profile;igLoaded.current=!!profile;igBaseline.current={username:profile?.instagram_username??"",version:profile?.instagram_version??0};
-    courtBaseline.current={name:profile?.home_court_name??"",version:profile?.home_court_version??0};setCourt(courtBaseline.current.name);
+    courtBaseline.current={name:profile?.home_court_name??"",facilityId:profile?.home_facility_id??null,version:profile?.home_court_version??0};setCourt({name:courtBaseline.current.name,facilityId:courtBaseline.current.facilityId});
     setInstagram(igBaseline.current.username);setEditing(true);
   };
   const returnFromPhoto=()=>{setPhotoView(false);requestAnimationFrame(()=>photoButton.current?.focus({preventScroll:true}));};
@@ -181,8 +182,8 @@ export default function ProfilePage() {
     const trimmedName = draft.display_name.trim();
     if (!trimmedName) return setError("表示名を入力してください");
     let normalizedInstagram: string|null,normalizedCourt:string|null;
-    try { normalizedInstagram=instagramUsername(instagram);normalizedCourt=homeCourtName(court); } catch(cause) { return setError((cause as Error).message); }
-    const changeCourt=(normalizedCourt??"")!==courtBaseline.current.name;
+    try { normalizedInstagram=instagramUsername(instagram);normalizedCourt=homeCourtName(court.name); } catch(cause) { return setError((cause as Error).message); }
+    const changeCourt=court.facilityId!==courtBaseline.current.facilityId||(!court.facilityId&&(normalizedCourt??"")!==courtBaseline.current.name);
     const changeInstagram=(normalizedInstagram??"")!==igBaseline.current.username;
     if((changeInstagram||changeCourt)&&(profiles.length!==1||!media.state.profile))return setError("Instagram・ホームコートの変更には正規プロフィールの確認と読み込みが必要です");
     setSaving(true);
@@ -206,7 +207,7 @@ export default function ProfilePage() {
       setProfiles((rows) => rows.map((row) => row.id === saved.id ? saved : row));
       rememberPlayerProfile(ownerId, saved.id);
       publicSaved=true;
-      if(changeCourt){const savedCourt=await media.saveHomeCourt(ownerId,profileId,court,courtBaseline.current.version);courtBaseline.current={name:savedCourt.home_court_name??"",version:savedCourt.home_court_version??0};setCourt(courtBaseline.current.name);}
+      if(changeCourt){const savedCourt=await media.saveHomeCourt(ownerId,profileId,court,courtBaseline.current.version);courtBaseline.current={name:savedCourt.home_court_name??"",facilityId:savedCourt.home_facility_id??null,version:savedCourt.home_court_version??0};setCourt({name:courtBaseline.current.name,facilityId:courtBaseline.current.facilityId});}
       if(changeInstagram)await media.saveInstagram(ownerId,profileId,instagram,igBaseline.current.version);
       setEditing(false);
       setMessage("プロフィールを更新しました");

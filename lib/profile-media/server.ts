@@ -36,7 +36,7 @@ export async function mediaContext(request: Request, profile: string, mutation =
   if (ownerError) throw new MediaFailure("プロフィールを取得できませんでした", 503);
   if (!owner) throw new MediaFailure("プロフィールを確認できません", 404);
   const read = async (operation?: string) => {
-    const m = await db.from("player_profile_private").select("profile_id,owner_id,instagram_username,instagram_version,avatar_key,avatar_version,avatar_focus_x,avatar_focus_y,avatar_zoom,avatar_pose_version,updated_at").eq("profile_id", profile).maybeSingle();
+    const m = await db.from("player_profile_private").select("profile_id,owner_id,instagram_username,instagram_version,avatar_key,avatar_version,avatar_focus_x,avatar_focus_y,avatar_zoom,avatar_pose_version,home_court_name,home_court_version,updated_at").eq("profile_id", profile).maybeSingle();
     if (m.error) throw new MediaFailure("プロフィール拡張は準備中です", 503);
     let op: Operation | null = null;
     if (operation) {

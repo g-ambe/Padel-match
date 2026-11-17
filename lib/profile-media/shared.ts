@@ -1,6 +1,6 @@
 export const IMAGE_LIMIT = 200 * 1024;
-export type PrivateProfile = { profile_id: string; owner_id: string; instagram_username: string | null; instagram_version: number; avatar_key: string | null; avatar_version: number; avatar_focus_x?: number; avatar_focus_y?: number; avatar_zoom?: number; avatar_pose_version?: number; updated_at?: string };
-export const emptyPrivateProfile = (profile: string, owner: string): PrivateProfile => ({ profile_id: profile, owner_id: owner, instagram_username: null, instagram_version: 0, avatar_key: null, avatar_version: 0, avatar_focus_x:0.5,avatar_focus_y:0.5,avatar_zoom:1,avatar_pose_version:0 });
+export type PrivateProfile = { profile_id: string; owner_id: string; instagram_username: string | null; instagram_version: number; avatar_key: string | null; avatar_version: number; avatar_focus_x?: number; avatar_focus_y?: number; avatar_zoom?: number; avatar_pose_version?: number; home_court_name?: string | null; home_court_version?: number; updated_at?: string };
+export const emptyPrivateProfile = (profile: string, owner: string): PrivateProfile => ({ profile_id: profile, owner_id: owner, instagram_username: null, instagram_version: 0, avatar_key: null, avatar_version: 0, avatar_focus_x:0.5,avatar_focus_y:0.5,avatar_zoom:1,avatar_pose_version:0,home_court_name:null,home_court_version:0 });
 export function instagramUsername(value: string): string | null {
   const name = value.trim().replace(/^@/, "");
   if (!name) return null;
@@ -71,6 +71,10 @@ export function mergePrivateProfile(current: PrivateProfile | undefined, incomin
     next.avatar_focus_x=0.5;next.avatar_focus_y=0.5;next.avatar_zoom=1;next.avatar_pose_version=0;
   }
   if (current.instagram_version > incoming.instagram_version) { next.instagram_username=current.instagram_username; next.instagram_version=current.instagram_version; }
+  if ((incoming.home_court_version === undefined && current.home_court_version !== undefined) || (current.home_court_version ?? 0) > (incoming.home_court_version ?? 0)) {
+    if(current.home_court_version !== undefined)next.home_court_version=current.home_court_version;
+    if(current.home_court_name !== undefined)next.home_court_name=current.home_court_name;
+  }
   if (current.updated_at && incoming.updated_at && Date.parse(current.updated_at)>Date.parse(incoming.updated_at)) next.updated_at=current.updated_at;
   return next;
 }

@@ -9,6 +9,12 @@ on:
       - 'components/profile-photo-editor.tsx'
       - 'components/profile-groups.tsx'
       - 'lib/profile-group-usage.ts'
+      - 'lib/profile-options.ts'
+      - 'components/profile-home-court-field.tsx'
+      - 'supabase/migrations/0050_private_profile_home_court.sql'
+      - 'supabase/maintenance/profile-home-court/**'
+      - 'tests/profile-home-court-db.test.cjs'
+      - 'tests/profile-v4.test.cjs'
       - 'supabase/migrations/0049_profile_avatar_position.sql'
       - 'supabase/maintenance/profile-avatar-position/**'
       - 'tests/profile-avatar-position*.cjs'
@@ -44,7 +50,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/bun-tool" --no-package-lock --no-audit --no-fund bun@1.2.15
           "$RUNNER_TEMP/bun-tool/node_modules/.bin/bun" install --frozen-lockfile
       - name: Related unit and isolated SQL tests
-        run: node --test tests/profile-media.test.cjs tests/profile-media-db.test.cjs tests/profile-media-api.test.cjs tests/profile-media-bindings.test.cjs tests/profile-avatar-position.test.cjs tests/profile-avatar-position-db.test.cjs
+        run: node --test tests/profile-media.test.cjs tests/profile-media-db.test.cjs tests/profile-media-api.test.cjs tests/profile-media-bindings.test.cjs tests/profile-avatar-position.test.cjs tests/profile-avatar-position-db.test.cjs tests/profile-v4.test.cjs tests/profile-home-court-db.test.cjs
       - name: Real PostgreSQL multi-connection safety
         env:
           PROFILE_MEDIA_TEST_PG_URL: postgresql://postgres:synthetic-only@127.0.0.1:5432/profile_media_test

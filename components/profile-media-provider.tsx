@@ -3,11 +3,12 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { getSupabaseClient } from "@/lib/supabase";
 import { compressProfileImage } from "@/lib/profile-media/compress";
 import { instagramUsername, mergePrivateProfile, type PrivateProfile } from "@/lib/profile-media/shared";
+import { homeCourtName } from "@/lib/profile-options";
 import { avatarPosition, sameAvatarPosition, type AvatarPosition } from "@/lib/profile-media/position";
 export type ProfileMediaState = { profile?: PrivateProfile; image?: string; imageEnabled?: boolean; loading?: boolean; busy?: boolean; error?: string; message?: string; uncertain?: boolean };
 type State = ProfileMediaState;
 type Job = { owner: string; profile: string; request: string; version: number; kind: "upload"|"delete"; blob?: Blob; file?: File; uncertain?: boolean };
-type MediaContext = { states: Record<string,State>; load: (owner:string,profile:string)=>Promise<void>; change:(owner:string,profile:string,file?:File,expectedVersion?:number)=>Promise<PrivateProfile|null>; retry:(owner:string,profile:string,reconcileOnly?:boolean)=>Promise<PrivateProfile|null>; saveInstagram:(owner:string,profile:string,value:string,expectedVersion?:number)=>Promise<void>; savePosition:(owner:string,profile:string,position:AvatarPosition,avatarVersion:number,poseVersion:number)=>Promise<PrivateProfile> };
+type MediaContext = { saveHomeCourt:(owner:string,profile:string,value:string,version:number)=>Promise<PrivateProfile>; states: Record<string,State>; load: (owner:string,profile:string)=>Promise<void>; change:(owner:string,profile:string,file?:File,expectedVersion?:number)=>Promise<PrivateProfile|null>; retry:(owner:string,profile:string,reconcileOnly?:boolean)=>Promise<PrivateProfile|null>; saveInstagram:(owner:string,profile:string,value:string,expectedVersion?:number)=>Promise<void>; savePosition:(owner:string,profile:string,position:AvatarPosition,avatarVersion:number,poseVersion:number)=>Promise<PrivateProfile> };
 const Context = createContext<MediaContext|null>(null);
 const keyFor=(owner:string,profile:string)=>`${owner}:${profile}`;
 export function ProfileMediaProvider({children}:{children:ReactNode}){
@@ -115,7 +116,19 @@ export function ProfileMediaProvider({children}:{children:ReactNode}){
    throw error;
   }
  };
- return <Context.Provider value={{states,load,change,retry,saveInstagram,savePosition}}>{children}{banner&&<aside className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center gap-2 rounded-xl border border-zinc-600 bg-card p-3 text-sm shadow-lg"><p role="status" className="min-w-0 flex-1">{banner}</p><button type="button" aria-label="画像の通知を閉じる" className="min-h-11 min-w-11" onClick={()=>setBanner("")}>×</button></aside>}</Context.Provider>;
+ const saveHomeCourt=async(owner:string,id:string,value:string,version:number)=>{
+  const name=homeCourtName(value);
+  const confirmed=(profile:PrivateProfile)=>(profile.home_court_version??0)>version&&profile.home_court_name===name;
+  try{
+   const result=await request(owner,`/api/profile-media/${id}/home-court`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:name??"",version})});
+   if(current.current!==owner)throw new Error("ログイン情報が変わりました");
+   update(owner,id,{profile:result.profile});
+   const actual=cache.current[keyFor(owner,id)]?.profile??result.profile;
+   if(!confirmed(actual))throw new Error("ホームコートが別の画面で変更されています。再読み込みしてください");
+   return actual;
+  }catch(error){const actual=await read(owner,id).catch(()=>null);if(actual&&confirmed(actual.profile))return actual.profile;throw error;}
+ };
+ return <Context.Provider value={{states,load,change,retry,saveInstagram,savePosition,saveHomeCourt}}>{children}{banner&&<aside className="fixed inset-x-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-40 mx-auto flex max-w-md items-center gap-2 rounded-xl border border-zinc-600 bg-card p-3 text-sm shadow-lg"><p role="status" className="min-w-0 flex-1">{banner}</p><button type="button" aria-label="画像の通知を閉じる" className="min-h-11 min-w-11" onClick={()=>setBanner("")}>×</button></aside>}</Context.Provider>;
 }
 export function useProfileMedia(owner:string|null,id:string|null){
  const value=useContext(Context);if(!value)throw new Error("ProfileMediaProviderが必要です");

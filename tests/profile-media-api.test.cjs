@@ -48,3 +48,14 @@ test('位置保存の応答喪失はDB再取得で確認し、別画像/別位�
  actual={...confirmed,avatar_version:3};await assert.rejects(save('owner',pid,position,2,3),/lost response/);
  actual={...confirmed,avatar_focus_x:.2};await assert.rejects(save('owner',pid,position,2,3),/lost response/);
 });
+test('ホームコートAPIは本人用RPCとCASを利用し、R2へアクセスせず不正本文を拒否',async()=>{
+ const {homeCourtName}=require('../lib/profile-options.ts');const code=fs.readFileSync('app/api/profile-media/[id]/home-court/route.ts','utf8').replaceAll('export ','');let calls=0,allowed=true;
+ const patch=evaluate(code,'PATCH',{homeCourtName,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>{if(!allowed)throw new MediaFailure('auth',401);return {ticket:'t',get env(){throw Error('R2 not allowed');},rpc:async(n,a)=>{calls++;assert.equal(n,'save_my_home_court');assert.equal(a.p_expected,2);assert.equal(a.p_name,'コート');assert.equal(a.p_ticket,'t');return {home_court_name:'コート',home_court_version:3};}};}});
+ const ctx={params:Promise.resolve({id:pid})},req=b=>new Request('https://app.invalid',{method:'PATCH',body:JSON.stringify(b)});
+ assert.equal((await patch(req({name:' コート ',version:2}),ctx)).status,200);for(const b of [{name:'a'.repeat(81),version:2},{name:'x\ny',version:2},{name:'x',version:-1},null])assert.equal((await patch(req(b),ctx)).status,400);assert.equal(calls,1);allowed=false;assert.equal((await patch(req({name:'コート',version:2}),ctx)).status,401);
+});
+test('ホームコート保存の応答喪失は実際の版と値で確認し、競合を成功扱いしない',async()=>{
+ const {homeCourtName}=require('../lib/profile-options.ts');const code=fs.readFileSync('components/profile-media-provider.tsx','utf8');let actual={home_court_name:'コート',home_court_version:3};
+ const save=evaluate(code,'saveHomeCourt',{homeCourtName,current:{current:'owner'},request:async()=>{throw Error('通信断');},read:async()=>({profile:actual}),cache:{current:{}},keyFor:(a,b)=>a+b,update:()=>{}});
+ assert.deepEqual(await save('owner',pid,'コート',2),actual);actual={home_court_name:'他端末',home_court_version:3};await assert.rejects(save('owner',pid,'コート',2),/通信断/);
+});

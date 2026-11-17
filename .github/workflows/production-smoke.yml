@@ -68,7 +68,7 @@ jobs:
           except Exception as e:
               print('::notice title=TASK01プロフィールHTTP診断::'+json.dumps({'error_type':type(e).__name__,'status':getattr(e,'code',None),'reason_type':type(getattr(e,'reason',None)).__name__}))
               results.append({'profile_html':False})
-          for suffix,method in [('', 'GET'),('/image','GET'),('','PUT'),('','PATCH'),('','DELETE'),('/position','PATCH')]:
+          for suffix,method in [('', 'GET'),('/image','GET'),('','PUT'),('','PATCH'),('','DELETE'),('/position','PATCH'),('/home-court','PATCH')]:
               status=0;cache=''
               try:
                   with urlopen(Request(base+'/api/profile-media/'+pid+suffix,headers=headers,method=method,data=b'' if method in ('PUT','PATCH') else None),timeout=30) as r:status=r.status

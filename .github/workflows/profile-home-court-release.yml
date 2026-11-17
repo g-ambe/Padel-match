@@ -1,0 +1,72 @@
+name: マイページホームコート0050の実バックアップ検証・適用
+on:
+  pull_request:
+    types: [labeled]
+concurrency:
+  group: padel-profile-home-court-0050-release
+  cancel-in-progress: false
+permissions:
+  contents: read
+  pull-requests: read
+  checks: read
+  actions: read
+  statuses: read
+jobs:
+  verify-and-apply-0050:
+    if: >-
+      github.event.pull_request.number == 211 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/profile-r2-instagram' &&
+      (github.event.label.name == '211隔離検証' || github.event.label.name == '211本番0050適用')
+    permissions:
+      contents: write # GitHub requires write access to read private draft-release assets.
+      pull-requests: read
+      checks: read
+      actions: read
+      statuses: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      BACKUP_RUN_ID: '44051227379'
+      PADEL_BACKUP_WORKDIR: /tmp/padel-position211-${{ github.run_id }}-${{ github.run_attempt }}
+      PADEL_BACKUP_CA_FILE: /tmp/padel-position211-ca.crt
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: 適用ガードの試験
+        run: python3 -B -m unittest discover -s supabase/maintenance/profile-home-court -p test_cloud_release.py -v
+      - name: 公式CAを照合
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 本番カタログ・未適用状態の読み取り確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+        run: python3 -B supabase/maintenance/profile-home-court/cloud_release.py preflight
+      - name: 最新実バックアップと復元成功を固定照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/profile-home-court/cloud_release.py select-backup
+      - name: 暗号化実ファイルを取得・照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 検証済みCLIを準備
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: 実データ隔離復元・0050・不変性・位置保存・復旧リハーサル
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: python3 -B supabase/maintenance/profile-home-court/cloud_release.py rehearse
+      - name: 検証済み0050のみ原子的に本番適用・事後確認
+        if: github.event.label.name == '211本番0050適用'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_RELEASE_AUTHORIZED: PR211-0050-20261117
+        run: python3 -B supabase/maintenance/profile-home-court/cloud_release.py apply

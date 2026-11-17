@@ -138,7 +138,7 @@ jobs:
               except urllib.error.HTTPError as e:
                   return e.code,{}
           results=[]
-          for name,sha in [('head',os.environ['TEST_HEAD']),('main',os.environ['TEST_MAIN'])]:
+          for name,sha in [('head',os.environ['TEST_HEAD']),('main',os.environ['TEST_MAIN']),('original','f4108a9c82608363ba9dceab9a20561df470a431')]:
               tag='db-storage-probe-'+os.environ['GITHUB_RUN_ID']+'-'+name
               status,value=api('/releases','POST',{'tag_name':tag,'target_commitish':sha,'name':tag,'draft':True,'body':'空の非公開保管権限確認。DBデータは含みません。'})
               record={'target':name,'create_http':status}
@@ -153,9 +153,9 @@ jobs:
           # Exercise the same gh create/upload path as cloud_backup.publish, without DB data.
           import subprocess, tempfile, re
           tag='db-backup-'+os.environ['GITHUB_RUN_ID']+'-cli-probe'
-          payload={'tag_name':tag,'target_commitish':'f4108a9c82608363ba9dceab9a20561df470a431','name':'空の非公開保管調査 '+tag,'draft':True,'body':'DBデータを含まない保管API調査です。'}
+          payload={'tag_name':tag,'target_commitish':os.environ['TEST_MAIN'],'name':'空の非公開保管調査 '+tag,'draft':True,'body':'DBデータを含まない保管API調査です。'}
           created=subprocess.run(['gh','api','--method','POST','repos/g-ambe/Padel-match/releases','--input','-'],input=json.dumps(payload).encode(),capture_output=True)
-          record={'target':'original_tool_sha_via_gh','create_exit':created.returncode,'http_codes':re.findall(r'HTTP (\d{3})',created.stderr.decode())}
+          record={'target':'main_via_gh','create_exit':created.returncode,'http_codes':re.findall(r'HTTP (\d{3})',created.stderr.decode())}
           if created.returncode==0:
               value=json.loads(created.stdout)
               if not value.get('draft') or value.get('assets'):raise SystemExit('unexpected_cli_probe_state')

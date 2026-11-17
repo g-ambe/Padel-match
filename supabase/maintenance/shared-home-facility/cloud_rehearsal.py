@@ -39,8 +39,26 @@ def select_backup():
     print('PASS: latest_main_encrypted_backup_actual_restore_and_hash_fixed',flush=True)
 
 def preflight_sql():return c.body(HERE/'01_preflight.sql')+c.body(HERE.parent/'profile-home-court/02_verify.sql')
+def diagnose():
+    # 真偽値だけ。接続情報・実データ・権限を持つユーザーIDは出力しない。
+    flags=p.Production().query("""SELECT json_build_object(
+      'history0050',EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version='0050' AND name='private_profile_home_court'),
+      'history0051or0052',EXISTS(SELECT 1 FROM supabase_migrations.schema_migrations WHERE version IN('0051','0052')),
+      'new_columns_present',EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND ((table_name='player_profile_private' AND column_name='home_facility_id') OR (table_name='padel_facilities' AND column_name IN('facility_key','aliases','availability','usage_note','verified_on')))),
+      'private_rls',(SELECT relrowsecurity FROM pg_class WHERE oid='public.player_profile_private'::regclass),
+      'master_rls',(SELECT relrowsecurity FROM pg_class WHERE oid='public.padel_facilities'::regclass),
+      'anon_private_select',has_table_privilege('anon','public.player_profile_private','SELECT'),
+      'authenticated_private_update',has_table_privilege('authenticated','public.player_profile_private','UPDATE'),
+      'authenticated_master_select',has_table_privilege('authenticated','public.padel_facilities','SELECT'),
+      'authenticated_master_update',has_table_privilege('authenticated','public.padel_facilities','UPDATE'),
+      'authenticated_master_insert',has_table_privilege('authenticated','public.padel_facilities','INSERT'),
+      'master_nonselect_policies',EXISTS(SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='padel_facilities' AND cmd<>'SELECT'),
+      'club_facility_fk',EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='public.clubs'::regclass AND contype='f' AND confrelid='public.padel_facilities'::regclass AND convalidated))""")
+    print('::notice title=PR212読取診断::'+json.dumps(flags,sort_keys=True),flush=True)
 def preflight():
-    authority();c.source_sql('BEGIN READ ONLY;'+b.SQL_SETTINGS+preflight_sql()+'ROLLBACK;')
+    authority()
+    try:c.source_sql('BEGIN READ ONLY;'+b.SQL_SETTINGS+preflight_sql()+'ROLLBACK;')
+    except b.BackupError:diagnose();raise
     print('PASS: readonly_production_0050_RLS_GRANT_FK_and_unapplied_0051_0052',flush=True)
 
 def install():

@@ -144,7 +144,8 @@ def rehearse():
     target.sql('SET ROLE postgres;BEGIN;'+install()+check+'COMMIT;')
     catalog_unchanged(before_catalog,b.catalog(target.query,manifest['tables'],manifest['function_schemas']))
     authority()
-    b.json_file(root/'212-rehearsal-proof.json',{'head':os.environ['BACKUP_SOURCE_SHA'],'main':MAIN,'migrations':MIGRATIONS,'backup':os.environ['BACKUP_SHA256'],'production_mutations':False,'existing_ids_and_rows_preserved':True,'held_new_facilities':15})
+    after=v.probes(target,manifest)
+    b.json_file(root/'212-rehearsal-proof.json',{'head':os.environ['BACKUP_SOURCE_SHA'],'main':MAIN,'migrations':MIGRATIONS,'backup':os.environ['BACKUP_SHA256'],'manifest':manifest,'before':before,'after':after,'rows':rows,'expected_facilities':expected,'before_catalog':before_catalog,'original_facilities':facilities,'isolation_container':target.container,'production_mutations':False,'existing_ids_and_rows_preserved':True,'held_new_facilities':15})
     print('::notice title=PR212隔離検証::PASS actual_backup_restore_0051_0052_idempotence_RLS_GRANT_all_old_data_FK_CAS_rollback_reapply; production_writes_NONE; new15_HELD',flush=True)
 
 if __name__=='__main__':

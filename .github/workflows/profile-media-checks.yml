@@ -61,7 +61,7 @@ jobs:
       - name: Related unit and isolated SQL tests
         run: node --test tests/profile-media.test.cjs tests/profile-media-db.test.cjs tests/profile-media-api.test.cjs tests/profile-media-bindings.test.cjs tests/profile-avatar-position.test.cjs tests/profile-avatar-position-db.test.cjs tests/profile-v4.test.cjs tests/profile-home-court-db.test.cjs tests/padel-facilities.test.cjs tests/shared-home-facility-db.test.cjs tests/jpa-facility-data.test.cjs
       - name: JPA snapshot and facility migration guards
-        run: python3 -B -m unittest discover -s supabase/maintenance/shared-home-facility -p test_rehearsal.py -v
+        run: python3 -B -m unittest discover -s supabase/maintenance/shared-home-facility -p 'test_*.py' -v
       - name: Real PostgreSQL multi-connection safety
         env:
           PROFILE_MEDIA_TEST_PG_URL: postgresql://postgres:synthetic-only@127.0.0.1:5432/profile_media_test

@@ -152,7 +152,7 @@ def diagnose_backup():
                         if old!=new:
                             item={'section':section,'object':name,'field':field}
                             # ACL entries are role/privilege metadata only; no row values/definitions.
-                            if field in ('acl','column_acl','owner','rls','force_rls'):item.update(before=old,after=new)
+                            if field in ('acl','column_acl','owner','rls','force_rls') or (name=='public.player_profile_private' and field=='constraints'):item.update(before=old,after=new)
                             differences.append(item)
                 else:
                     before={f['name']+'('+f['arguments']+')':f for f in left[name]['definitions']}

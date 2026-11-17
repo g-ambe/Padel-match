@@ -28,6 +28,11 @@ class Guards(unittest.TestCase):
  def test_invalid_backup_fails_before_download(self):
   with patch.dict(os.environ,{'BACKUP_RUN_ID':'1'}),patch.object(r.b,'api',return_value={'conclusion':'failure'}):
    with self.assertRaisesRegex(r.b.BackupError,'actual_backup_restore_not_successful'):r.select_backup()
+ def test_only_fixed_successful_backup_tool_head_attempt_and_PR_are_allowed(self):
+  good={'conclusion':'success','head_sha':r.BACKUP_TOOL_SHA,'run_attempt':r.BACKUP_ATTEMPT,'path':'.github/workflows/cloud-db-backup.yml','head_repository':{'full_name':r.b.REPOSITORY},'pull_requests':[{'number':210}]}
+  for changes in [{'head_sha':r.MAIN},{'run_attempt':1},{'pull_requests':[]},{'conclusion':'failure'}]:
+   with patch.dict(os.environ,{'BACKUP_RUN_ID':'44031769738'}),patch.object(r.b,'api',return_value={**good,**changes}):
+    with self.assertRaisesRegex(r.b.BackupError,'actual_backup_restore_not_successful'):r.select_backup()
  def test_production_sql_has_no_R2_or_image_rewrite(self):
   sql=r.install();self.assertNotIn('DROP ',sql);self.assertNotIn('commit_secret_sha256',sql);self.assertNotIn('UPDATE public.profile_media_operations',sql)
 if __name__=='__main__':unittest.main()

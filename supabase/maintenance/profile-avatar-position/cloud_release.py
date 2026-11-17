@@ -15,6 +15,8 @@ MIGRATION=ROOT/'supabase/migrations/0049_profile_avatar_position.sql'
 SHA='2c2d00e8f4ba98fd6b8efa757083b96eee4db100968ca6b0bd60e9e315b05f75'
 MAIN='a5f4f8e5242d40218fa68cb9f056d60eb60f8ce9'
 PR=210
+BACKUP_TOOL_SHA='f4108a9c82608363ba9dceab9a20561df470a431'
+BACKUP_ATTEMPT=2
 HISTORY=v.HISTORY
 FIELDS={'avatar_focus_x','avatar_focus_y','avatar_zoom','avatar_pose_version'}
 RPCS={'save_my_avatar_position','get_my_profile_group_usage','reset_avatar_position'}
@@ -33,7 +35,7 @@ def authority():
 def select_backup():
     run_id=os.environ['BACKUP_RUN_ID'];require(run_id.isdigit(),'0049_backup_run_invalid')
     run=b.api('/actions/runs/'+run_id)
-    require(run['conclusion']=='success' and run['head_sha']==MAIN and run['run_attempt']==1 and run['path']=='.github/workflows/cloud-db-backup.yml','0049_actual_backup_restore_not_successful')
+    require(run['conclusion']=='success' and run['head_sha']==BACKUP_TOOL_SHA and run['run_attempt']==BACKUP_ATTEMPT and run['path']=='.github/workflows/cloud-db-backup.yml' and run['head_repository']['full_name']==b.REPOSITORY and any(pr['number']==PR for pr in run['pull_requests']),'0049_actual_backup_restore_not_successful')
     releases=[r for r in b.api('/releases?per_page=100') if r['draft'] and r['name'].endswith(' '+run_id)]
     require(len(releases)==1,'0049_unique_private_backup_missing')
     release=releases[0];require('復元確認：成功' in release['body'],'0049_real_restore_not_verified')

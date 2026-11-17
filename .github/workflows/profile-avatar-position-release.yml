@@ -150,5 +150,21 @@ jobs:
                       if ref.get('object',{}).get('sha')!=sha:raise SystemExit('unexpected_probe_tag_state')
                       record['tag_cleanup_http']=api('/git/refs/tags/'+tag,'DELETE')[0]
               results.append(record)
+          # Exercise the same gh create/upload path as cloud_backup.publish, without DB data.
+          import subprocess, tempfile, re
+          tag='db-backup-'+os.environ['GITHUB_RUN_ID']+'-cli-probe'
+          payload={'tag_name':tag,'target_commitish':'f4108a9c82608363ba9dceab9a20561df470a431','name':'空の非公開保管調査 '+tag,'draft':True,'body':'DBデータを含まない保管API調査です。'}
+          created=subprocess.run(['gh','api','--method','POST','repos/g-ambe/Padel-match/releases','--input','-'],input=json.dumps(payload).encode(),capture_output=True)
+          record={'target':'original_tool_sha_via_gh','create_exit':created.returncode,'http_codes':re.findall(r'HTTP (\d{3})',created.stderr.decode())}
+          if created.returncode==0:
+              value=json.loads(created.stdout)
+              if not value.get('draft') or value.get('assets'):raise SystemExit('unexpected_cli_probe_state')
+              try:
+                  with tempfile.NamedTemporaryFile() as file:
+                      file.write(b'empty synthetic storage probe; no database data');file.flush()
+                      uploaded=subprocess.run(['gh','api','--method','POST','https://uploads.github.com/repos/g-ambe/Padel-match/releases/'+str(value['id'])+'/assets?name=storage-probe.txt','--header','Content-Type: application/octet-stream','--input',file.name],capture_output=True)
+                      record.update(upload_exit=uploaded.returncode,upload_http_codes=re.findall(r'HTTP (\d{3})',uploaded.stderr.decode()))
+              finally:record['cleanup_http']=api('/releases/'+str(value['id']),'DELETE')[0]
+          results.append(record)
           print('::notice title=バックアップ保管API権限::'+json.dumps(results))
           PY

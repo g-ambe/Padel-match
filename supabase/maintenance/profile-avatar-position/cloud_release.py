@@ -38,7 +38,7 @@ def select_backup():
     require(run['conclusion']=='success' and run['head_sha']==BACKUP_TOOL_SHA and run['run_attempt']==BACKUP_ATTEMPT and run['path']=='.github/workflows/cloud-db-backup.yml' and run['head_repository']['full_name']==b.REPOSITORY and any(pr['number']==PR for pr in run['pull_requests']),'0049_actual_backup_restore_not_successful')
     releases=[r for r in b.api('/releases?per_page=100') if r['draft'] and r['name'].endswith(' '+run_id)]
     require(len(releases)==1,'0049_unique_private_backup_missing')
-    release=releases[0];require('復元確認：成功' in release['body'],'0049_real_restore_not_verified')
+    release=releases[0];require('復元確認：成功' in release['body'] and release['target_commitish']==MAIN,'0049_real_restore_not_verified')
     record=json.loads(release['body'].split('\n\n')[-1]);assets=[x for x in release['assets'] if x['name']=='backup.tar.gpg']
     require(len(assets)==1 and bool(re.fullmatch('[0-9a-f]{64}',record['sha256'])),'0049_backup_asset_invalid')
     for key,value in {'BACKUP_RELEASE_ID':str(release['id']),'BACKUP_ASSET_ID':str(assets[0]['id']),'BACKUP_SHA256':record['sha256']}.items():
@@ -130,44 +130,7 @@ def apply():
     c.source_sql('BEGIN READ ONLY;'+b.SQL_SETTINGS+post+'ROLLBACK;',phase='0049_post_smoke_verification_failed_stop')
     authority();print('::notice title=0049本番適用::PASS 0049_applied_existing_data_RLS_GRANT_unchanged_dedicated_smoke_rolled_back',flush=True)
 
-def diagnose_backup():
-    # Failed backup is allowed ONLY for offline diagnosis, never as an apply proof.
-    authority()
-    root=b.workdir();files,manifest=b.unpack(root)
-    target=b.start_isolated_database(root)
-    try:
-        b.restore_files(target,files,manifest)
-        print('::notice title=0049復元差分::'+json.dumps({'restore_matches':True}),flush=True)
-    except b.BackupError as error:
-        if str(error)!='restored_rls_acl_or_definitions_mismatch':raise
-        expected=json.loads((files/'catalog.json').read_text())
-        actual=b.catalog(target.query,manifest['tables'],manifest['function_schemas'])
-        differences=[]
-        for section,identity in [('tables',lambda x:x['schema']+'.'+x['name']),('schemas',lambda x:x['schema']),('functions',lambda x:x['schema'])]:
-            left={identity(x):x for x in expected[section]};right={identity(x):x for x in actual[section]}
-            for name in sorted(left.keys()|right.keys()):
-                if left.get(name)==right.get(name):continue
-                if name not in left or name not in right:differences.append({'section':section,'object':name,'missing':name not in right});continue
-                if section!='functions':
-                    for field in sorted(left[name]['definition'].keys()|right[name]['definition'].keys()):
-                        old=left[name]['definition'].get(field);new=right[name]['definition'].get(field)
-                        if old!=new:
-                            item={'section':section,'object':name,'field':field}
-                            # ACL entries are role/privilege metadata only; no row values/definitions.
-                            if field in ('acl','column_acl','owner','rls','force_rls') or (name=='public.player_profile_private' and field=='constraints'):item.update(before=old,after=new)
-                            differences.append(item)
-                else:
-                    before={f['name']+'('+f['arguments']+')':f for f in left[name]['definitions']}
-                    after={f['name']+'('+f['arguments']+')':f for f in right[name]['definitions']}
-                    for function in sorted(before.keys()|after.keys()):
-                        if before.get(function)==after.get(function):continue
-                        fields=[k for k in sorted(set(before.get(function,{}) )|set(after.get(function,{}))) if before.get(function,{}).get(k)!=after.get(function,{}).get(k)]
-                        differences.append({'section':section,'object':name+'.'+function,'fields':fields})
-        print('::notice title=0049復元差分::'+json.dumps({'restore_matches':False,'differences':differences},ensure_ascii=False),flush=True)
-        # Diagnostic only; do not mark a failed restore as verified.
-        require(bool(differences),'0049_catalog_mismatch_not_explained')
-
 if __name__=='__main__':
-    try:{'preflight':preflight,'select-backup':select_backup,'rehearse':rehearse,'apply':apply,'diagnose-backup':diagnose_backup}[sys.argv[1]]()
+    try:{'preflight':preflight,'select-backup':select_backup,'rehearse':rehearse,'apply':apply}[sys.argv[1]]()
     except b.BackupError as error:print('::error title=0049安全停止::'+str(error),flush=True);sys.exit(1)
     except Exception:print('::error title=0049安全停止::unexpected_release_error_details_withheld',flush=True);sys.exit(1)

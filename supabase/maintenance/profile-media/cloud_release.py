@@ -19,12 +19,26 @@ HISTORY=v.HISTORY
 RPCS={'profile_media_ready','profile_media_attempt','save_my_instagram','prepare_profile_image','commit_profile_image','abort_profile_image','profile_media_gc_candidates','claim_profile_media_gc','finish_profile_media_gc'}
 TRIGGERS={'profile_media_detach','profile_media_remove'}
 
+def all_checks(sha):
+    checks=[];page=1
+    while True:
+        values=b.api('/commits/'+sha+'/check-runs?per_page=100&page='+str(page))['check_runs']
+        checks.extend(values)
+        if len(values)<100:return checks
+        page+=1
+
+def require_isolated_checks():
+    sha=os.environ['BACKUP_SOURCE_SHA']
+    # Label workflows can put the required job beyond the API's default first 30 rows.
+    checks=b.api('/commits/'+sha+'/check-runs?check_name=private-media&filter=latest&per_page=100')['check_runs']
+    require(bool(checks) and all(x['name']=='private-media' and x['head_sha']==sha and x['status']=='completed' and x['conclusion']=='success' for x in checks),'0048_required_isolated_checks_not_successful')
+
 def authority():
     require(hashlib.sha256(MIGRATION.read_bytes()).hexdigest()==SHA,'0048_reviewed_sql_changed')
     pr=b.api('/pulls/207')
     require(pr['state']=='open' and not pr['merged'] and pr['head']['repo']['full_name']==b.REPOSITORY and pr['head']['ref']=='codex/profile-r2-instagram' and pr['head']['sha']==os.environ['BACKUP_SOURCE_SHA'],'0048_pr_head_changed')
     require(b.api('/commits/main')['sha']==MAIN,'0048_main_changed')
-    checks=b.api('/commits/'+pr['head']['sha']+'/check-runs')['check_runs']
+    checks=all_checks(pr['head']['sha'])
     require(not any(x['status']=='completed' and x['conclusion'] not in ('success','neutral','skipped') and x['name']!='Workers Builds: padel-match-staging' for x in checks),'0048_github_check_failed')
     statuses=b.api('/commits/'+pr['head']['sha']+'/status')['statuses']
     require(not any(x['state'] in ('failure','error') and 'padel-match-staging' not in x['context'] for x in statuses),'0048_github_status_failed')
@@ -111,8 +125,7 @@ def rehearse():
 def apply():
     require(os.environ.get('PADEL_RELEASE_AUTHORIZED')=='PR207-0048-20261117','0048_production_not_authorized')
     authority();select_backup()
-    checks=b.api('/commits/'+os.environ['BACKUP_SOURCE_SHA']+'/check-runs')['check_runs']
-    require(any(x['name']=='private-media' and x['status']=='completed' and x['conclusion']=='success' for x in checks),'0048_required_isolated_checks_not_successful')
+    require_isolated_checks()
     proof=json.loads((b.workdir()/'profile207-proof.json').read_text())
     require(proof['head']==os.environ['BACKUP_SOURCE_SHA'] and proof['main']==MAIN and proof['migration']==SHA and proof['secret_hash']==SECRET_SHA and proof['backup']==os.environ['BACKUP_SHA256'],'0048_rehearsal_proof_changed')
     history(Production())

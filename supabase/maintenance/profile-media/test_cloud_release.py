@@ -35,5 +35,19 @@ class ReleaseGuards(unittest.TestCase):
         self.assertIn(r.SECRET_SHA,r.install())
         self.assertIn('decode(',r.install())
         self.assertNotIn('DROP ',r.install())
+    def test_required_job_is_selected_explicitly_and_head_must_match(self):
+        good={'name':'private-media','head_sha':'a'*40,'status':'completed','conclusion':'success'}
+        with patch.dict(os.environ,{'BACKUP_SOURCE_SHA':'a'*40}),patch.object(r.b,'api',return_value={'check_runs':[good]}) as api:
+            r.require_isolated_checks()
+            self.assertIn('check_name=private-media',api.call_args[0][0])
+            for changes in [{'head_sha':'b'*40},{'status':'in_progress'},{'conclusion':'failure'}]:
+                api.return_value={'check_runs':[{**good,**changes}]}
+                with self.assertRaises(r.b.BackupError):r.require_isolated_checks()
+            api.return_value={'check_runs':[]}
+            with self.assertRaises(r.b.BackupError):r.require_isolated_checks()
+    def test_all_check_pages_are_read(self):
+        with patch.object(r.b,'api',side_effect=[{'check_runs':[{'name':'skip'}]*100},{'check_runs':[{'name':'failure'}]}]) as api:
+            self.assertEqual(len(r.all_checks('a'*40)),101)
+            self.assertIn('page=2',api.call_args[0][0])
 
 if __name__=='__main__':unittest.main()

@@ -109,3 +109,46 @@ jobs:
           PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
           SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
         run: python3 -B supabase/maintenance/profile-avatar-position/cloud_release.py diagnose-backup
+
+  diagnose-storage:
+    if: >-
+      github.event.pull_request.number == 210 &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/profile-r2-instagram' &&
+      github.event.label.name == '210保管権限調査'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: 空の非公開保管先だけでAPI権限確認（DB接続・公開なし）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_HEAD: ${{ github.event.pull_request.head.sha }}
+          TEST_MAIN: ${{ github.event.pull_request.base.sha }}
+        run: |
+          python3 -B - <<'PY'
+          import json, os, urllib.request, urllib.error
+          base='https://api.github.com/repos/g-ambe/Padel-match'
+          def api(path,method='GET',data=None):
+              request=urllib.request.Request(base+path,method=method,data=None if data is None else json.dumps(data).encode(),headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json'})
+              try:
+                  with urllib.request.urlopen(request,timeout=30) as r:return r.status,json.loads(r.read() or b'{}')
+              except urllib.error.HTTPError as e:
+                  return e.code,{}
+          results=[]
+          for name,sha in [('head',os.environ['TEST_HEAD']),('main',os.environ['TEST_MAIN'])]:
+              tag='db-storage-probe-'+os.environ['GITHUB_RUN_ID']+'-'+name
+              status,value=api('/releases','POST',{'tag_name':tag,'target_commitish':sha,'name':tag,'draft':True,'body':'空の非公開保管権限確認。DBデータは含みません。'})
+              record={'target':name,'create_http':status}
+              if status==201:
+                  if not value.get('draft') or value.get('assets'):raise SystemExit('unexpected_probe_release_state')
+                  record['cleanup_http']=api('/releases/'+str(value['id']),'DELETE')[0]
+                  tag_status,ref=api('/git/ref/tags/'+tag)
+                  if tag_status==200:
+                      if ref.get('object',{}).get('sha')!=sha:raise SystemExit('unexpected_probe_tag_state')
+                      record['tag_cleanup_http']=api('/git/refs/tags/'+tag,'DELETE')[0]
+              results.append(record)
+          print('::notice title=バックアップ保管API権限::'+json.dumps(results))
+          PY

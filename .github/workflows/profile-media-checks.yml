@@ -7,6 +7,7 @@ on:
       - 'components/profile-media-*.tsx'
       - 'lib/profile-media/**'
       - 'supabase/migrations/0048_private_profile_media.sql'
+      - 'supabase/maintenance/profile-media/**'
       - 'tests/profile-media*.cjs'
       - 'tests/integration/profile-media-postgres.py'
       - '.github/workflows/profile-media-checks.yml'

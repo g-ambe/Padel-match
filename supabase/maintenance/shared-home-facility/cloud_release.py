@@ -44,7 +44,7 @@ def apply_sql(proof):
 
 def apply():
     authority();r.select_backup()
-    proof=json.loads((b.workdir()/'212-rehearsal-proof.json').read_text());check_proof(proof)
+    proof=json.loads((b.workdir()/'212-atomic-proof.json').read_text());check_proof(proof)
     # レスポンス喪失も停止。再適用や本番復元を推測で行わない。
     c.source_sql(apply_sql(proof),readonly=False,phase='212_atomic_apply_failed_or_response_unknown_preserve_database')
     c.source_sql('BEGIN READ ONLY;'+b.SQL_SETTINGS+postconditions(proof)+'ROLLBACK;',phase='212_postcommit_verification_failed_preserve_database')
@@ -60,10 +60,10 @@ def rehearse_apply():
     target.sql(apply_sql(proof))
     target.sql('BEGIN READ ONLY;'+b.SQL_SETTINGS+postconditions(proof)+'ROLLBACK;')
     proof.update(atomic_apply_rehearsed=True,atomic_sql_sha256=hashlib.sha256(apply_sql(proof).encode()).hexdigest())
-    b.json_file(b.workdir()/'212-rehearsal-proof.json',proof)
+    b.json_file(b.workdir()/'212-atomic-proof.json',proof)
     print('::notice title=PR212本番SQL事前リハーサル::PASS exact_atomic_apply_SQL_on_actual_isolated_restore; production_writes_NONE',flush=True)
 
 if __name__=='__main__':
     try:{'apply':apply,'rehearse-apply':rehearse_apply}[sys.argv[1]]()
     except b.BackupError as error:print('::error title=PR212本番安全停止::'+str(error),flush=True);sys.exit(1)
-    except Exception:print('::error title=PR212本番安全停止::unexpected_release_error_details_withheld',flush=True);sys.exit(1)
+    except Exception as error:print('::error title=PR212本番安全停止::unexpected_'+type(error).__name__+'_details_withheld',flush=True);sys.exit(1)

@@ -1,4 +1,4 @@
-import importlib.util, os, unittest
+import importlib.util, os, tempfile, unittest
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +12,14 @@ def proof():
  return p
 
 class Guards(unittest.TestCase):
+ def test_atomic_rehearsal_preserves_exclusive_original_receipt_and_creates_new_receipt(self):
+  p=proof();p.update(isolation_container='padel-backup-test-fixture',before_catalog={},original_facilities=[]);p.pop('atomic_apply_rehearsed');p.pop('atomic_sql_sha256')
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);s.b.json_file(root/'212-rehearsal-proof.json',p);original=(root/'212-rehearsal-proof.json').read_bytes()
+   with patch.dict(os.environ,{'BACKUP_SOURCE_SHA':'head','BACKUP_SHA256':'backup'}),patch.object(s.r,'authority'),patch.object(s.r,'select_backup'),patch.object(s.r,'rollback_isolated'),patch.object(s.b,'workdir',return_value=root),patch.object(s.b,'LocalRestore') as target,patch('builtins.print'):
+    s.rehearse_apply();self.assertEqual(target.return_value.sql.call_count,3)
+    result=s.json.loads((root/'212-atomic-proof.json').read_text());s.check_proof(result)
+   self.assertEqual((root/'212-rehearsal-proof.json').read_bytes(),original)
  def test_authorization_before_any_connection(self):
   with patch.dict(os.environ,{},clear=True),patch.object(s.r,'authority') as called:
    with self.assertRaisesRegex(s.b.BackupError,'not_authorized'):s.apply()

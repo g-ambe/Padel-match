@@ -61,6 +61,21 @@ def preflight():
     except b.BackupError:diagnose();raise
     print('PASS: readonly_production_0050_RLS_GRANT_FK_and_unapplied_0051_0052',flush=True)
 
+def diagnose_drift():
+    authority();select_backup();diagnose()
+    files,manifest=b.unpack(b.workdir());baseline=json.loads((files/'rows.json').read_text())
+    parts=[]
+    for row in baseline:
+        relation=b.ident(row['schema'])+'.'+b.ident(row['name'])
+        parts.append('SELECT '+q(row['schema'])+'::text AS schema,'+q(row['name'])+'::text AS name,'+c.row_expression(relation)+' AS value')
+    current=p.Production().query("SELECT coalesce(json_agg(t),'[]'::json) FROM ("+' UNION ALL '.join(parts)+') t')
+    previous={(x['schema'],x['name']):x for x in baseline};changed=[]
+    for row in current:
+        old=previous[(row['schema'],row['name'])];value=row['value']
+        if old['rows']!=value['rows'] or old['sha256']!=value['sha256']:
+            changed.append({'relation':row['schema']+'.'+row['name'],'count_changed':old['rows']!=value['rows'],'content_changed':old['sha256']!=value['sha256']})
+    print('::notice title=PR212停止後の読取差分::'+json.dumps({'changed_tables':changed,'production_mutations':False},sort_keys=True),flush=True)
+
 def install():
     out=''
     for version,name,_ in MIGRATIONS:
@@ -149,6 +164,6 @@ def rehearse():
     print('::notice title=PR212隔離検証::PASS actual_backup_restore_0051_0052_idempotence_RLS_GRANT_all_old_data_FK_CAS_rollback_reapply; production_writes_NONE; new15_HELD',flush=True)
 
 if __name__=='__main__':
-    try:{'preflight':preflight,'select-backup':select_backup,'rehearse':rehearse}[sys.argv[1]]()
+    try:{'preflight':preflight,'select-backup':select_backup,'rehearse':rehearse,'diagnose-drift':diagnose_drift}[sys.argv[1]]()
     except b.BackupError as error:print('::error title=PR212安全停止::'+str(error),flush=True);sys.exit(1)
     except Exception:print('::error title=PR212安全停止::unexpected_rehearsal_error_details_withheld',flush=True);sys.exit(1)

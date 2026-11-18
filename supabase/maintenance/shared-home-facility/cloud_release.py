@@ -31,7 +31,24 @@ def receipt():
     return 'DO $receipt$ BEGIN '+''.join(parts)+'END $receipt$;'
 
 def postconditions(proof):
-    return r.verify()+receipt()+r.v.guard(proof['after'])+r.rows_guard(proof['rows'],True)+r.facility_guard(proof['expected_facilities'])
+    return r.verify()+receipt()+r.v.guard(proof['after'])+r.facility_guard(proof['expected_facilities'])
+
+def reviewed_data_guard(proof):
+    critical={('public','padel_facilities'),('supabase_migrations','schema_migrations')}
+    rows=[x for x in proof['rows'] if (x['schema'],x['name']) in critical]
+    require({(x['schema'],x['name']) for x in rows}==critical,'212_reviewed_data_inventory_missing')
+    return r.rows_guard(rows)
+
+def live_rows_guard(proof):
+    parts=[]
+    for table in proof['manifest']['tables']:
+        schema,name=table['schema'],table['name']
+        if (schema,name)==('public','padel_facilities'):continue # 別の全行ガードで承認済み9件の補正だけを許可。
+        relation=b.ident(schema)+'.'+b.ident(name);expr=c.row_expression(relation)
+        if (schema,name)==('public','player_profile_private'):expr=expr.replace('to_jsonb(t)',"(to_jsonb(t)-'home_facility_id')")
+        if schema+'.'+name==r.v.HISTORY:expr=expr.replace('FROM '+relation+' t)','FROM '+relation+" t WHERE t.version NOT IN('0051','0052'))")
+        parts.append("IF NOT EXISTS(SELECT 1 FROM release_rows_before WHERE schema="+q(schema)+' AND name='+q(name)+") OR EXISTS(SELECT 1 FROM release_rows_before WHERE schema="+q(schema)+' AND name='+q(name)+' AND value IS DISTINCT FROM '+expr+") THEN RAISE EXCEPTION '212_live_data_changed_by_migration';END IF;")
+    return 'DO $live$ BEGIN '+''.join(parts)+'END $live$;'
 
 def apply_sql(proof):
     tables=[t for t in proof['manifest']['tables'] if t['schema']=='public' or t['schema']+'.'+t['name']==r.v.HISTORY]
@@ -39,7 +56,8 @@ def apply_sql(proof):
     require(bool(locks),'212_lock_inventory_missing')
     return ("BEGIN ISOLATION LEVEL REPEATABLE READ;SET LOCAL lock_timeout='5s';"+b.SQL_SETTINGS+
         'SET LOCAL ROLE postgres;LOCK TABLE '+locks+' IN SHARE ROW EXCLUSIVE MODE;SELECT pg_advisory_xact_lock(212005152);'+
-        r.v.guard(proof['before'])+r.rows_guard(proof['rows'])+r.preflight_sql()+r.install()+postconditions(proof)+
+        r.v.guard(proof['before'])+reviewed_data_guard(proof)+r.preflight_sql()+c.current_rows_sql(proof['manifest']['tables'])+
+        r.install()+postconditions(proof)+live_rows_guard(proof)+
         "SELECT json_build_object('0051_0052_applied',true,'existing_data_RLS_GRANT_ID_unchanged',true,'new_facilities',0);COMMIT;")
 
 def apply():

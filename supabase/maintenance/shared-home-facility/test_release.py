@@ -7,7 +7,8 @@ s=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(s)
 
 def proof():
- p={'head':'head','main':s.r.MAIN,'migrations':[list(x) for x in s.r.MIGRATIONS],'backup':'backup','production_mutations':False,'existing_ids_and_rows_preserved':True,'held_new_facilities':15,'manifest':{'captured_at':datetime.now(timezone.utc).isoformat(),'tables':[{'schema':'public','name':'clubs'},{'schema':'supabase_migrations','name':'schema_migrations'}]},'before':[],'after':[],'rows':[],'expected_facilities':[],'atomic_apply_rehearsed':True}
+ tables=[{'schema':'public','name':n} for n in ['clubs','events','player_profile_private','padel_facilities']]+[{'schema':'supabase_migrations','name':'schema_migrations'}]
+ p={'head':'head','main':s.r.MAIN,'migrations':[list(x) for x in s.r.MIGRATIONS],'backup':'backup','production_mutations':False,'existing_ids_and_rows_preserved':True,'held_new_facilities':15,'manifest':{'captured_at':datetime.now(timezone.utc).isoformat(),'tables':tables},'before':[],'after':[],'rows':[{**t,'rows':0,'sha256':'0'*64} for t in tables],'expected_facilities':[],'atomic_apply_rehearsed':True}
  p['atomic_sql_sha256']=s.hashlib.sha256(s.apply_sql(p).encode()).hexdigest()
  return p
 
@@ -34,8 +35,17 @@ class Guards(unittest.TestCase):
    with self.assertRaisesRegex(s.b.BackupError,'not_recent'):s.check_proof(p)
  def test_atomic_sql_locks_expected_tables_and_only_installs_approved_migrations(self):
   sql=s.apply_sql(proof());self.assertTrue(sql.startswith('BEGIN ISOLATION LEVEL REPEATABLE READ;'));self.assertTrue(sql.endswith('COMMIT;'));self.assertIn('SHARE ROW EXCLUSIVE MODE',sql);self.assertIn("lock_timeout='5s'",sql);self.assertIn('212005152',sql)
-  self.assertNotIn('DROP ',sql);self.assertNotIn('INSERT INTO public.padel_facilities',sql);self.assertNotIn('UPDATE public.clubs',sql);self.assertIn('212_migration_receipt_changed',sql)
+  self.assertNotIn('DROP TABLE',sql);self.assertNotIn('DROP FUNCTION',sql);self.assertNotIn('INSERT INTO public.padel_facilities',sql);self.assertNotIn('UPDATE public.clubs',sql);self.assertIn('212_migration_receipt_changed',sql)
+  self.assertIn('CREATE TEMP TABLE release_rows_before ON COMMIT DROP',sql);self.assertIn('212_live_data_changed_by_migration',sql)
   for version,name,_ in s.r.MIGRATIONS:self.assertIn(name,sql);self.assertIn(version,sql)
+ def test_reviewed_master_and_history_are_fixed_but_all_live_rows_are_protected(self):
+  p=proof();fixed=s.reviewed_data_guard(p);live=s.live_rows_guard(p)
+  self.assertIn('"public"."padel_facilities"',fixed);self.assertIn('"supabase_migrations"."schema_migrations"',fixed);self.assertNotIn('"public"."events"',fixed)
+  for name in ['events','clubs','player_profile_private']:self.assertIn('"public"."'+name+'"',live)
+  self.assertIn("to_jsonb(t)-'home_facility_id'",live);self.assertIn("NOT IN('0051','0052')",live)
+  self.assertIn('212_unexpected_facility_data_or_id_change',s.postconditions(p))
+  p['rows']=[]
+  with self.assertRaisesRegex(s.b.BackupError,'inventory_missing'):s.reviewed_data_guard(p)
  def test_failed_postcheck_never_rolls_back_or_reapplies_production(self):
   p=proof();calls=[]
   def source(sql,**kwargs):

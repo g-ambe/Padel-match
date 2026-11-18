@@ -1,0 +1,33 @@
+name: TASK08 catalog read-only
+on:
+  push:
+    branches: ['codex/task-08-group-foundation']
+    paths:
+      - 'supabase/maintenance/group-foundation/01_preflight.sql'
+      - 'supabase/maintenance/group-foundation/read_catalog.py'
+      - '.github/workflows/task08-catalog.yml'
+permissions:
+  contents: read
+jobs:
+  catalog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Verify existing official CA
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: Read catalog only
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-ca.crt
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          TASK08_CATALOG_OUTPUT: ${{ runner.temp }}/task08-catalog.json
+        run: python3 -B supabase/maintenance/group-foundation/read_catalog.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: task08-catalog
+          path: ${{ runner.temp }}/task08-catalog.json
+          retention-days: 1

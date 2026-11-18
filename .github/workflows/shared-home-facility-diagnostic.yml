@@ -1,0 +1,46 @@
+name: PR212本番停止後の読み取り診断（書込みなし）
+on:
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+jobs:
+  facility-readonly-diagnostic:
+    if: >-
+      github.event.pull_request.number == 212 &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/profile-r2-instagram' &&
+      github.event.label.name == '212停止後読取診断'
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BACKUP_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+      BACKUP_RUN_ID: '44203293217'
+      PADEL_BACKUP_WORKDIR: /tmp/padel-facility212-readonly-${{ github.run_id }}-${{ github.run_attempt }}
+      PADEL_BACKUP_CA_FILE: /tmp/padel-facility212-readonly-ca.crt
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.BACKUP_SOURCE_SHA }}
+          persist-credentials: false
+      - name: 公式CAを照合
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 検証済みバックアップの固定照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/shared-home-facility/cloud_rehearsal.py select-backup
+      - name: 暗号化実ファイルの取得とハッシュ照合
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py download
+      - name: 適用履歴と変化したテーブル名だけを読取確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+        run: python3 -B supabase/maintenance/shared-home-facility/cloud_rehearsal.py diagnose-drift

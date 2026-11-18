@@ -59,3 +59,18 @@ test('ホームコート保存の応答喪失は実際の版と値で確認し�
  const save=evaluate(code,'saveHomeCourt',{homeCourtName,current:{current:'owner'},request:async()=>{throw Error('通信断');},read:async()=>({profile:actual}),cache:{current:{}},keyFor:(a,b)=>a+b,update:()=>{}});
  assert.deepEqual(await save('owner',pid,'コート',2),actual);actual={home_court_name:'他端末',home_court_version:3};await assert.rejects(save('owner',pid,'コート',2),/通信断/);
 });
+test('施設ID保存APIは不正IDを拒否し、補助読込み失敗でもRPCの確定値を返す',async()=>{
+ const {homeCourtName}=require('../lib/profile-options.ts');const code=fs.readFileSync('app/api/profile-media/[id]/home-court/route.ts','utf8').replaceAll('export ','');let calls=0;
+ const profile={home_facility_id:request,home_court_name:'正式施設名',home_court_version:3};
+ const patch=evaluate(code,'PATCH',{homeCourtName,isUuid,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>({ticket:'t',get env(){throw Error('R2 forbidden');},rpc:async(n,a)=>{calls++;assert.equal(n,'save_my_home_court_selection');assert.equal(a.p_facility,request);assert.equal(a.p_expected,2);assert.equal(a.p_ticket,'t');return profile;},read:async()=>{throw Error('補助読込み失敗');}})});
+ const ctx={params:Promise.resolve({id:pid})},req=facilityId=>new Request('https://app.invalid',{method:'PATCH',body:JSON.stringify({name:'入力候補名',version:2,facilityId})});
+ let r=await patch(req(request),ctx);assert.equal(r.status,200);assert.deepEqual((await r.json()).profile,profile);
+ for(const id of ['bad-id','',{},12])assert.equal((await patch(req(id),ctx)).status,400);assert.equal(calls,1);
+});
+test('施設選択の応答喪失では改称を許容し、施設IDが違う競合を成功扱いしない',async()=>{
+ const {homeCourtName}=require('../lib/profile-options.ts');const code=fs.readFileSync('components/profile-media-provider.tsx','utf8');let actual={home_facility_id:request,home_court_name:'改称後の施設名',home_court_version:3};
+ const save=evaluate(code,'saveHomeCourt',{homeCourtName,current:{current:'owner'},request:async()=>{throw Error('通信断');},read:async()=>({profile:actual}),cache:{current:{}},keyFor:(a,b)=>a+b,update:()=>{}});
+ const selection={facilityId:request,name:'改称前の施設名'};assert.deepEqual(await save('owner',pid,selection,2),actual);
+ actual={...actual,home_facility_id:pid};await assert.rejects(save('owner',pid,selection,2),/通信断/);
+ actual={home_facility_id:null,home_court_name:'以前の自由入力',home_court_version:4};assert.deepEqual(await save('owner',pid,{facilityId:null,name:'以前の自由入力'},3),actual);
+});

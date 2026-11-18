@@ -1,0 +1,149 @@
+[
+  {
+    "jpa_listing_no": 1,
+    "decision": "hold",
+    "reason": "季節営業の可能性。営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 2,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:padel-tokyo",
+    "existing_name": "パデル東京",
+    "previous_prefecture": "東京"
+  },
+  {
+    "jpa_listing_no": 3,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:padelone-tokorozawa",
+    "existing_name": "パデルワンところざわ",
+    "previous_prefecture": "埼玉"
+  },
+  {
+    "jpa_listing_no": 4,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:harenochihare",
+    "existing_name": "パデル＆フットサル 晴れのち晴れ",
+    "previous_prefecture": "東京"
+  },
+  {
+    "jpa_listing_no": 5,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:giardino",
+    "existing_name": "GIARDINO",
+    "previous_prefecture": "千葉"
+  },
+  {
+    "jpa_listing_no": 6,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:academia-sakura",
+    "existing_name": "パデルアカデミア佐倉",
+    "previous_prefecture": "千葉"
+  },
+  {
+    "jpa_listing_no": 7,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:chigasaki",
+    "existing_name": "茅ヶ崎パデルクラブ",
+    "previous_prefecture": "神奈川"
+  },
+  {
+    "jpa_listing_no": 8,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:tsubasa-chofu",
+    "existing_name": "キャプテン翼パデル 調布",
+    "previous_prefecture": "東京"
+  },
+  {
+    "jpa_listing_no": 9,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:assemble-omiya",
+    "existing_name": "アッセンブル大宮",
+    "previous_prefecture": "埼玉"
+  },
+  {
+    "jpa_listing_no": 10,
+    "decision": "correct_existing",
+    "reason": "既存9施設との同一性を名称/既存候補対応で照合。JPA掲載情報のみ補正し、営業確認は未完了。",
+    "facility_key": "jpa:tokyo-mizumachi",
+    "existing_name": "パデル東京ミズマチ",
+    "previous_prefecture": "東京"
+  },
+  {
+    "jpa_listing_no": 11,
+    "decision": "hold",
+    "reason": "住所欄はJPA原文の都道府県・市区重複を保持。正規化前に要確認"
+  },
+  {
+    "jpa_listing_no": 12,
+    "decision": "hold",
+    "reason": "JPA施設URL表記はhhttp://padel-school.com/（不正形式）。営業/閉業情報と矛盾する可能性があるため新規投入保留"
+  },
+  {
+    "jpa_listing_no": 13,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 14,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 15,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 16,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 17,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 18,
+    "decision": "hold",
+    "reason": "住所はJPA原文。Unicode異体字あり、正規化前に要確認"
+  },
+  {
+    "jpa_listing_no": 19,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 20,
+    "decision": "hold",
+    "reason": "住所はJPA原文。Unicode異体字あり、正規化前に要確認"
+  },
+  {
+    "jpa_listing_no": 21,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 22,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 23,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  },
+  {
+    "jpa_listing_no": 24,
+    "decision": "hold",
+    "reason": "営業状態は未検証"
+  }
+]

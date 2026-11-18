@@ -1,0 +1,39 @@
+name: JPA掲載15施設の追加のみ
+on:
+  pull_request:
+    types: [labeled]
+permissions:
+  contents: read
+concurrency:
+  group: jpa-facilities-0053-addition
+  cancel-in-progress: false
+jobs:
+  add-facilities:
+    if: >-
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'codex/profile-r2-instagram' &&
+      github.event.label.name == 'JPA15施設追加'
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: 既存の公式CAを準備
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-jpa-addition-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: 承認済み15施設を未確認状態で追加（テスト/動作確認なし）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/padel-jpa-addition-ca.crt
+          FACILITY_ADDITION_AUTHORIZED: JPA15-20261118
+          FACILITY_PR_NUMBER: ${{ github.event.pull_request.number }}
+          FACILITY_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 -B supabase/maintenance/jpa-facility-additions/apply.py

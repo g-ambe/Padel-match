@@ -1,5 +1,15 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：H13初期登録と並列2件の正規Auth HTTP結果
+
+**H13をステージングのみ適用・検証。** [`22_h13_staging_owner_insert_apply.sql`](22_h13_staging_owner_insert_apply.sql)で、`clubs`/ `club_members`に必要な列だけのINSERTを許可し、本人owner・本人の連携済み選手・初回`main_admin`・既存所属なしをRLS/SECURITY DEFINER関数で制限。ownerクラブ行を`FOR UPDATE`してから重複を確認する。既存アプリの2段階グループ作成UIは変更なし。Stage Migration `task08_h13_staging_owner_bootstrap_insert`を適用し**履歴50件**。
+
+[GitHub Actions #44498384116](https://github.com/g-ambe/Padel-match/actions/runs/44498384116)で、通常読み取り専用B0 **16判定PASS**に加え、専用の正規Auth/HTTP書き込み試験`23_h13_staging_http_write_smoke.mjs`で**10判定PASS**。本人グループ作成とmain管理者登録はHTTP201。誤role・他人の選手ID・重複・他actorの管理者登録は**仕様どおり拒否（PASS）**であり、予期しない不具合ではない。**並列2 POST**は1件201成功・1件403/42501、保存所属1件でPASS。高並列/他分離レベルまでを証明するものではない。
+
+[24の安全な回収SQL](24_h13_stage_http_fixture_cleanup.sql)でテスト専用クラブ2件・所属2件だけを回収（残存0）。既存所属8件＋A/B fixture所属4件は維持。H13書き込み試験は**ワークフローから撤去済み**で、通常の読み取り専用B0へ復帰。本番SQL・Cloudflare・マージ・デプロイは未変更、PR #265 Draft継続。
+
+**今後の結果の表記ルール：**「仕様どおり拒否・PASS」「想定外の拒否・FAIL」「想定外の許可・FAIL」「未確認」の区別を徹底し、可能な限りRLS/既存トリガーなどの根拠を示す。H13完了はP0全件完了を意味しない。次にH08本人最終承認/参照統合の隔離したROLLBACKテストを検討。詳細は[STAGING_HTTP_PLAN.md 0.10節](STAGING_HTTP_PLAN.md)を正とする。
+
 ## 2026-11-19 更新：旧申請RPC・連携詳細/一覧のステージング対策とH13候補
 
 **ステージングのみの追加修正：** 旧`submit_profile_join_request`直接EXECUTEを拒否（新`submit_public_club_claim`は維持）、`get_player_profile_link_request`を管理者向け最小10項目に制限・受取人の`scoped_preview`/同意tokenは維持、`list_player_profile_link_requests`から不要な`target_auth_user_id`だけを除外（申請中表示に必要な`source_player_profile_id`は維持）。本番の既存関数/権限・アプリ機能は変更していない。

@@ -1,6 +1,6 @@
 # TASK-08 P0: staging-only, manually triggered by editing the inert trigger file.
 # Secrets are NEVER exposed to a forked PR or an arbitrary push path.
-# No deployment, production access, app database writes, or PR merge.
+# No deployment, production access, or PR merge. H13 does staged synthetic writes only.
 name: TASK-08 staging B0 Auth HTTP
 on:
   push:
@@ -72,3 +72,21 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
+
+      # One-time controlled H13 fixture writes. Stage-only group names are hardcoded
+      # in the script. This job intentionally does NOT delete the fixtures itself;
+      # cleanup is done separately with guarded SQL file 24 after reviewing results.
+      - name: Check isolated H13 test syntax
+        run: node --check supabase/maintenance/group-foundation/23_h13_staging_http_write_smoke.mjs
+
+      - name: Run H13 dedicated stage-only write smoke
+        shell: bash
+        env:
+          TASK08_STAGE_H13_WRITE: '1'
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cp supabase/maintenance/group-foundation/23_h13_staging_http_write_smoke.mjs "$RUNNER_TEMP/task08-b0/h13.mjs"
+          node "$RUNNER_TEMP/task08-b0/h13.mjs"

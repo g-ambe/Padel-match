@@ -72,6 +72,7 @@ export default function GroupDetailPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [inactiveMembers, setInactiveMembers] = useState<Member[]>([]);
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
+  const [myMemberId, setMyMemberId] = useState<string | null>(null);
   const [myAuthUserId, setMyAuthUserId] = useState<string | null>(null);
   const [isSuperUser, setIsSuperUser] = useState(false);
   const [myRole, setMyRole] = useState<Role>("member");
@@ -86,6 +87,10 @@ export default function GroupDetailPage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [confirmLeave, setConfirmLeave] = useState<Member | null>(null);
+  const [confirmSelfLeave, setConfirmSelfLeave] = useState(false);
+  const [selfLeaveConfirmed, setSelfLeaveConfirmed] = useState(false);
+  const [selfLeaveBusy, setSelfLeaveBusy] = useState(false);
+  const [selfLeaveError, setSelfLeaveError] = useState("");
   const [confirmGroupDelete, setConfirmGroupDelete] = useState(false);
   const [confirmChecked, setConfirmChecked] = useState(false);
 
@@ -220,6 +225,7 @@ export default function GroupDetailPage() {
     setVisibilityInput(((group as any).visibility ?? "private") as "private" | "public");
 
     const own=(await readMyMemberships(s)).find(m=>m.club_id===id&&m.is_active);
+    setMyMemberId(own?.id ?? null);
     let rows: Member[];
     if(own||superUser){
       const data=await readClubRoster(s,id);
@@ -369,6 +375,33 @@ export default function GroupDetailPage() {
     } catch (cause) { logMemberError("非表示／退会に失敗しました", cause); setError(`非表示／退会に失敗しました。${profileErrorMessage(cause)}`); }
     finally { setLoading(false); }
   };
+  const leaveMyClub = async () => {
+    if (!id || !myMemberId || !isMemberOfGroup || !selfLeaveConfirmed || selfLeaveBusy || loading) return;
+    const s = getSupabaseClient();
+    if (!s) { setSelfLeaveError("退会の準備ができませんでした"); return; }
+    setSelfLeaveBusy(true); setSelfLeaveError("");
+    try {
+      // Only the server resolves identity, owner and last-main guards. The UI
+      // never performs a direct club_members UPDATE and never touches history.
+      const { data, error: leaveError } = await s.rpc("leave_my_club", {
+        p_club_id: id, p_member_id: myMemberId,
+      });
+      if (leaveError || data !== myMemberId) {
+        const owner = leaveError?.message?.includes("オーナー");
+        const lastMain = leaveError?.message?.includes("メイン管理者");
+        setSelfLeaveError(owner
+          ? "オーナーの引継ぎが完了してから退会してください"
+          : lastMain
+            ? "メイン管理者は最低1人必要です。先に管理権限を引き継いでください"
+            : "退会できませんでした。所属状態を確認して再度お試しください");
+        return;
+      }
+      setConfirmSelfLeave(false); setSelfLeaveConfirmed(false);
+      router.replace("/profile#profile-groups");
+    } catch {
+      setSelfLeaveError("通信に失敗しました。所属状態を確認して再度お試しください");
+    } finally { setSelfLeaveBusy(false); }
+  };
   const restoreMember = async (member: Member) => {
     const s = getSupabaseClient(); if (!s || loading) return;
     if (!canManageTargetMember(roleCtx, member.role)) return deny();
@@ -459,6 +492,14 @@ export default function GroupDetailPage() {
       </div>
 
       {tab === "グループ管理" && <Card title="グループ管理"><div className="space-y-3">{/* TODO: グループ画像機能は将来再公開予定。現時点ではUIのみ非表示。 */}<div><p className="mb-1 text-xs text-zinc-400">グループ名</p>{editingGroupName ? <div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupName()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingGroupName(false); setGroupNameInput(groupName); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p>{groupName}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingGroupName(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">グループ説明</p>{editingDescription ? <div className="space-y-2"><textarea className="w-full rounded-xl bg-zinc-800 p-3" value={groupDescriptionInput} onChange={(e) => setGroupDescriptionInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupDescription()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingDescription(false); setGroupDescriptionInput(groupDescription); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{groupDescription || "説明なし"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingDescription(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">メインの活動場所</p>{editingFacility ? <div className="space-y-2"><FacilitySelector facilities={facilities} value={facilityId} onChange={setFacilityId} disabled={loading}/><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black" onClick={() => void saveFacility()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setEditingFacility(false)}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{facilities.find((f) => f.id === facilityId)?.name ?? "未選択"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingFacility(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">公開設定</p>{editingVisibility ? <div className="space-y-2"><select className="w-full rounded-xl bg-zinc-800 p-3" value={visibilityInput} onChange={(e) => setVisibilityInput(e.target.value as "private" | "public")}><option value="private">非公開</option><option value="public">公開</option></select><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black" onClick={() => void saveVisibility()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingVisibility(false); setVisibilityInput(visibility); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">現在: {visibility === "public" ? "公開" : "非公開"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingVisibility(true)}>編集</button>}</div>}</div>{canDeleteGroupAction && <button className="w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => { setConfirmGroupDelete(true); setConfirmChecked(false); }}>グループ削除</button>}</div></Card>}
+
+      {isMemberOfGroup && myMemberId && tab === "グループ管理" && (
+        <button type="button" disabled={loading || selfLeaveBusy}
+          className="w-full rounded-xl border border-red-500/70 p-3 text-sm text-red-300 disabled:opacity-50"
+          onClick={() => { setConfirmSelfLeave(true); setSelfLeaveConfirmed(false); setSelfLeaveError(""); }}>
+          このグループを退会する
+        </button>
+      )}
 
       {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} onRename={renameMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManageTargetMember(roleCtx, x.role)) return deny(); setError(""); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManageTargetMember(roleCtx, m.role) && <button disabled={loading} className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
 
@@ -552,6 +593,27 @@ export default function GroupDetailPage() {
       {joinRequests.some(r => r.requester_auth_user_id === myAuthUserId) && <Card title="自分の加入申請"><div className="space-y-2">{joinRequests.filter(r => r.requester_auth_user_id === myAuthUserId).map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p>{linkStatusLabel[r.status]}</p><p className="text-xs text-zinc-400">対象：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.status === "pending" && <button disabled={loading} onClick={() => void reviewJoinRequest(r,"cancelled")} className="mt-2 rounded-lg border border-zinc-500 p-2">申請を取り消す</button>}</div>)}</div></Card>}
       {canManage && <Card title="連携申請一覧"><div className="space-y-2">{linkRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : linkRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><Link href={`/profile/links/${r.id}`} className="underline">{r.source_display_name} / {linkStatusLabel[r.status]}</Link>{r.status === "pending" && <button disabled={loading} className="mt-2 block rounded-lg border border-zinc-500 p-2" onClick={() => void cancelLinkRequest(r)}>申請を取り消す</button>}</div>)}</div></Card>}
       {canManage && <Card title="加入申請一覧"><div className="space-y-2">{joinRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : joinRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3"><p className="font-semibold">{r.requester_display_name}</p><p className="text-xs text-zinc-300">{linkStatusLabel[r.status]} / 希望メンバー：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.target_club_member_id && <p className="text-xs text-amber-200">{r.consent_at ? "本人の統合同意を記録済み" : "旧申請：本人の同意を再確認して再申請が必要です"}</p>}<p className="text-xs text-zinc-300">メッセージ：{r.message ?? "なし"}</p>{r.status === "pending" && <div className="mt-2 flex gap-2"><button disabled={loading} className="w-1/2 rounded-lg bg-accent py-2 text-black" onClick={() => void reviewJoinRequest(r,"approved")}>承認</button><button disabled={loading} className="w-1/2 rounded-lg border border-zinc-500 py-2" onClick={() => void reviewJoinRequest(r,"rejected")}>拒否</button></div>}</div>)}</div></Card>}
+
+      <AppDialog open={confirmSelfLeave} title="グループを退会しますか？" busy={selfLeaveBusy}
+        onClose={() => { setConfirmSelfLeave(false); setSelfLeaveConfirmed(false); setSelfLeaveError(""); }}>
+        <div className="space-y-4 overflow-y-auto p-4">
+          <p className="text-sm text-zinc-200">「{groupName}」の在籍一覧から外れます。過去の試合・戦績と本人プロフィール、他のグループの所属は残ります。</p>
+          <p className="text-xs text-zinc-400">オーナーは引継ぎを完了してから退会できます。最後のメイン管理者も退会できません。</p>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={selfLeaveConfirmed} disabled={selfLeaveBusy}
+              onChange={(event) => setSelfLeaveConfirmed(event.target.checked)} />
+            内容を確認しました
+          </label>
+          {selfLeaveError && <p role="alert" className="text-sm text-red-300">{selfLeaveError}</p>}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" disabled={selfLeaveBusy} className="min-h-11 rounded-xl border border-zinc-500 p-3"
+              onClick={() => { setConfirmSelfLeave(false); setSelfLeaveConfirmed(false); setSelfLeaveError(""); }}>キャンセル</button>
+            <button type="button" disabled={selfLeaveBusy || !selfLeaveConfirmed || loading}
+              className="min-h-11 rounded-xl bg-red-600 p-3 text-white disabled:opacity-50"
+              onClick={() => void leaveMyClub()}>{selfLeaveBusy ? "退会処理中..." : "退会する"}</button>
+          </div>
+        </div>
+      </AppDialog>
 
       <AppDialog open={confirmGroupDelete} title="グループを削除しますか？" busy={loading} onClose={() => { setConfirmGroupDelete(false); setConfirmChecked(false); }}>
         <div className="space-y-4 overflow-y-auto p-4">

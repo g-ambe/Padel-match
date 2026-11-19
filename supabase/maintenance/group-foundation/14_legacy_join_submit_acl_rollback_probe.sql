@@ -18,7 +18,7 @@ BEGIN
       AND md5(pg_get_functiondef(p.oid))='41a7616c55203d4bd6c9f3020ecc744e'
       AND has_function_privilege('authenticated',p.oid,'EXECUTE'))
  OR (SELECT COUNT(*) FROM public.join_requests WHERE status='pending')<>0
- THEN RAISE EXCEPTION 'TASK08 H08 legacy submit isolation preflight changed'; END IF;
+ THEN RAISE EXCEPTION 'TASK08 legacy submit isolation preflight changed'; END IF;
 END $guard$;
 DO $fixture$
 DECLARE c uuid;m uuid;pub uuid; uid uuid;

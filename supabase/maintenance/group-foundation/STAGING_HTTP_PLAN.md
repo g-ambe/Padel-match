@@ -15,6 +15,44 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.4. 2026-11-19：06修正候補の実ステージングROLLBACK試験・実Auth HTTP実行器
+
+**対象は既存ステージング `zzjwpresqkefnyjyisgd` のみ。本番SQL未実行。** 直前工程のテスト用グループA/B・Auth3アカウントに付随するアプリデータを利用し、連携の漏えい検査を進めた。
+
+### 06を一時的に有効化した候補SQL試験（実DBだがHTTPではない）
+
+- 既存[`06_staging_link_detail_candidate.sql`](06_staging_link_detail_candidate.sql)をGitHubから取得、現物ハッシュ/owner/内部helper権限のガードを維持したまま、**1つのDBトランザクション内で**申請の作成→既存関数の挙動測定→候補関数の一時的`CREATE OR REPLACE`→同じ申請で再検査→**必ず`ROLLBACK`**する試験を実施。
+- 事前の実DBの旧関数MD5は`7a8056ebfc2eddadf1dcff41c42a22cc`。候補を使ったSQLロール模擬試験は、**A管理者・申請受取人・無関係なoutsiderの3役**で完了。
+- 修正前：A管理者用詳細に`target_auth_user_id`・`source_player_profile_id`・`review_token`が返ることを再現（値自体はログ/外部保存しない）。
+- 修正候補中：A管理者には`detail_scope=manager`・対象Aの所属role情報・選手の名称を返し、認証ID/内部選手ID/review_token/全所属リスト/本人source/統合先IDを返さない。Bのクラブ名を含まない。**管理者DTOのキー数10**。
+- 申請受取人には`detail_scope=recipient`・本人同意source/所属プレビューが維持。**`review_token`は修正前後で同じ値**（DB内のハッシュ一致比較のみ、値は返却しない）。プレビュー所属数は修正前後とも1。outsiderが同じ申請の詳細を取得すると拒否。
+- 終了後の別のREAD ONLYクエリで、旧詳細RPC定義MD5は適用前と同じ、連携申請0件、既存所属8件・追加テスト所属4件、fixtureクラブA/B 2件が残っていることを確認。**候補06は実ステージングへ永続適用していない**。`03`の元候補も変更なし。
+
+### 管理UPDATE RETURNINGと初期INSERTのロール模擬確認
+
+- 同様に`BEGIN`〜`ROLLBACK`内のトランザクションローカルAuth ID＋`SET LOCAL ROLE authenticated`で、Aのmain管理者の仮選手所属を一時UPDATEすると**RETURNING行が取得できた**。無関係なoutsiderではUPDATEは0行。
+- Aのmain管理者が所属レコードを新規INSERTしようとすると**SQLSTATE 42501**で拒否。既知の`club_members` INSERTポリシーがステージングで欠落している差分を、実ロール模擬でも確認した。**本番の初期所属INSERTが動作しないという意味ではない**。RLSのコピーやGRANT拡張で安易に解消しない。
+- 変更はROLLBACKし、テストグループの役職/所属件数は維持。H09相当のSQL正例・負例は一部確認、H13は**ステージング側の要修正前提**として記録。**どちらも実HTTP試験の合格ではない**。
+
+### 検証用の実Auth/PostgREST HTTPクライアント
+
+- 新規[`08_staging_auth_http_smoke.mjs`](08_staging_auth_http_smoke.mjs) は、既存`@supabase/supabase-js`を使う**実Auth HTTP専用**スクリプト。外部URLは`https://zzjwpresqkefnyjyisgd.supabase.co`に固定。明示的な環境変数がすべて設定されない限りネットワーク試験は開始しない。アプリDBの書込は行わない。入力パスワード・アクセストークン・内部ID・応答本文を出力しない。
+- 必要な環境変数：`TASK08_STAGING_PUBLISHABLE_KEY`（本番キーは不可）、`TASK08_STAGING_MAIN_A_PASSWORD`、`TASK08_STAGING_RECIPIENT_PASSWORD`、`TASK08_STAGING_OUTSIDER_PASSWORD`。**GitHub Secret・Codex環境の秘密値管理等で設定し、チャット・PR・Issue・ログへ値を貼らない**。ステージングにはmodern publishable keyが存在することを管理連携から確認済み（キー値は保存していない）。
+- 実行時はプロジェクトの依存を準備した環境から `node supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs`。実ユーザーパスワードを使ってGoTrueログイン＋`getUser`検証、Data APIによる基底表SELECT、名簿/公開名簿RPC、旧`preview_profile_join`、ステージング固有の匿名Viewアクセスを確認し、レスポンスは状態・真偽・件数だけを出す。旧漏えい観測は`OBSERVED_NOT_ACCEPTED`として**P0受入合格に数えない**。
+- **現在の実Auth HTTP結果：全件未実施。** ChatGPTの接続済み管理ツールはAuthパスワード/ユーザーセッションを扱わず、こちらに試験用パスワードは渡されていない。スクリプトは準備済みだが、本番相当の修正版/B1・権限切替後/B2テストではない。Node構文や実ネットワークの動作確認も未実施であり、実行時は結果を別途記録する。
+
+### 新たな匿名View経路の具体的な影響
+
+- テストユーザーのリンク済みプロフィール3件が追加された後、**ステージングのSQL `SET LOCAL ROLE anon`で`public.public_player_profiles`から3行を取得できることを件数のみで確認**。3件とも`TASK08-P0`の合成表示名。avatar URL表示対象0件。以前の「匿名可視0行」という観測は**fixture作成前**だったため更新。
+- このViewはステージングにのみ存在、`security_invoker`未指定、anonのView列SELECT可。基底表の匿名拒否を迂回し得る。**元の個人名ではなく合成fixture名が可視**だが、実HTTPのH03/H04に加えて確認する。Viewの利用箇所・公開仕様未確認のまま削除/権限変更はしない。
+
+### 現在のゲート
+
+1. **B0本物のAuth+PostgREST HTTP**を安全な秘密環境から実行し、JWTと権限を観測する（未実施）。
+2. 仮選手Uの二所属/役職差を含め、修正候補06の実SQL負例と同意tokenの一貫性は確認したが、HTTP+永続適用の検証は別ゲート。
+3. H13新規グループの初期所属INSERTや本番と異なる旧SELECT/RLSの意味差、Viewの公開影響、元0039に依存する処理・復旧方法を整理。**今回ステージングRLS/ACL/旧関数の永続変更なし**。
+4. PR #265はDraft、Issue #264はOPEN、P0未完了。**本番Migration・Cloudflare本番デプロイ・マージ禁止**。
+
 ## 0.3. 2026-11-19：既存ステージングに実Auth登録3アカウント・合成グループA/Bの検証データを準備
 
 ユーザーがSupabaseの**既存ステージングだけ**で検証用Authユーザー3名を作成し、ChatGPT管理接続から3名のAuthレコード・メール確認済み状態を読み取り専用で確認。パスワード・JWT・APIキーは取得していない。その後、アプリ側のプロフィール/所属は未作成（3名とも0件）であることと、既存ステージングのクラブ1件・所属8件・選手8件を確認してから新しいfixtureを準備した。

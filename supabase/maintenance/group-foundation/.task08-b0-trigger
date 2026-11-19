@@ -3,4 +3,4 @@
 # FOUR dedicated staging GitHub Actions repository secrets.
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
-# Status: TRIGGERED_H12_SHARED_TEAM_DTO_AND_TOKEN_UI_B0_TYPESCRIPT_2026-11-19_2
+# Status: TRIGGERED_H12_REAL_ANON_HTTP_POSITIVE_FRIENDLY_MIXED_OFFICIAL_2026-11-19_3

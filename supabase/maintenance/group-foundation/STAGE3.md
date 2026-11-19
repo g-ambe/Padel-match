@@ -3,6 +3,9 @@
 2026-11-19。仕様正本：Issue #264、設計コメント6975098709。作業先：
 `codex/task-08-group-foundation` / Draft PR #265。**第3段階は未完了。適用用SQLではない。**
 
+実Auth/HTTP試験の準備状況は[STAGING_HTTP_PLAN.md](STAGING_HTTP_PLAN.md)に記録。
+この準備工程でもMigration適用/Auth作成/候補SQLの確定適用はしておらず、以下の停止条件を維持する。
+
 ## 追加依頼：架空DBでの旧連携RPC再現と修正案
 
 本節は以下の停止記録の後に実施した進捗。実DB照合/HTTP試験の停止条件は解除しない。

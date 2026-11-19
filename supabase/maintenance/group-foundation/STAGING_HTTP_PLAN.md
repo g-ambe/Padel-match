@@ -15,6 +15,19 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.2. 2026-11-19：ステージング固有scoped_previewの維持候補とREAD ONLY確認
+
+既存ステージングの旧詳細RPCは `profile_link_private.scoped_preview(p_source uuid,p_user uuid,p_club uuid)` を使用し、旧連携5関数の定義が本番と異なる。前節の差分を踏まえ、**ステージング用の隔離検証候補** [`06_staging_link_detail_candidate.sql`](06_staging_link_detail_candidate.sql) を追加した。元の本番系 `03_link_detail_candidate.sql` は不変。
+
+- `06`は管理者へ対象グループ限定のDTOを返す`03`の方針を保持し、**受取人の枝のみをステージング既存の`scoped_preview(source,user,club)`へ差し替え**る。受取人兼管理者は受取人用の同意を優先する。
+- 対象旧RPCのowner/SECURITY DEFINERと**ステージング現物の定義MD5 `7a8056ebfc2eddadf1dcff41c42a22cc`**を前提条件に固定。内部`scoped_preview(uuid,uuid,uuid)`がpostgres所有/SECURITY DEFINERかつanon/authenticatedへ直接EXECUTE不可であることも検査。現物が変わればエラー停止する。**本番へは適用禁止**。
+- 候補SQLは`BEGIN`／`ROLLBACK`で終わり、適用可能な番号付きMigrationではない。既存ステージング・本番の関数/ACL/RLSはこの工程で**上書きしていない**。元の同意・承認・統合関数も未変更。
+- 新規 [`07_staging_scoped_preview_preflight.sql`](07_staging_scoped_preview_preflight.sql) を既存ステージングへ**READ ONLYでそのまま実行**した。架空ターゲットUUIDと既存の有効な未連携プロフィール1件を用い、実プロフィールID・氏名・preview本文・tokenを一切結果に含めず、返却キー/トークンの存在・一致/件数のみ比較した。
+- 結果：`read_only=on`、標本あり、全previewとscoped previewの**トップレベルのキー集合は一致**、双方に`review_token`が存在しトークン値は等しい。所属件数はどちらも1。**既存の対象者が単一グループ所属であるという限定試験**なので、複数グループを跨ぐ管理者情報非漏えいの証明ではない。
+- 実Auth/実HTTP・2グループfixture、候補の隔離DBへの適用・ロール別負例、適用後のHTTPの実行と復旧リハーサルは**未実施**。現状のステージングではAuthユーザー0件のため、実JWTログインは未実施。SQL `SET ROLE`や既存プロフィールの形状試験を実HTTPとして数えない。
+- Supabaseの接続済み管理ツールはAuthユーザーの作成機能を提供していない。専用架空アカウントを正規のSupabase Auth管理経路から作るには、追加の承認済み管理操作手段が必要。**auth.usersへの直接INSERTはしない**。
+- **次の判定**：別クラブの所属/役職がある状態で管理者用DTOの非返却、受取人の同意レビュー/token一致、無権限の直接旧RPC/基底表・列SELECT、および管理UPDATE RETURNINGを隔離SQLで検証したのち、復旧手段と実HTTP試験環境が確立してからステージングの確定適用を別途判断する。旧公開SELECT/RPC全体の閉鎖はさらに後段であり、P0未完了。
+
 ## 0.1. 2026-11-19：旧連携RPC・RLSの読取専用意味フラグ比較
 
 この節は**ステージングへの0054/0055適用後**に、GitHub上の `05_legacy_link_acl_semantics.sql` と等価な読取専用SQLを、両実DBへ個別実行して得た追加調査。SQLは `BEGIN READ ONLY`／`ROLLBACK`、関数本文・RLS式そのもの・Authやアプリの行データは返さず、定義ハッシュと検出フラグ・ACL/ポリシー名だけを比較する。テキスト検出の成否だけでは関数の安全性を証明しない。実Auth・HTTPは未実施。

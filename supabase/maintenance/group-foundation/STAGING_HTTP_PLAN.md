@@ -15,6 +15,35 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.6. 2026-11-19：実Auth/PostgREST B0初回実行の確認済み結果
+
+ユーザーがGitHub Actionsの [run #44483674678](https://github.com/g-ambe/Padel-match/actions/runs/44483674678) を提示し、GitHub連携から**run本体、jobステップ、実ジョブログ**を直接確認した。対象は既存ブランチ `codex/task-08-group-foundation`・トリガーコミット `020f8fe5bd01b41911469eb5b477f196c151a6e9`。Workflow名 `TASK-08 staging B0 Auth HTTP`、event `push`、2026-11-19 07:57:59〜07:58:19 UTC、run/jobとも `completed/success`、attempt=1。**本物のGoTrueログインとJWT付きPostgREST HTTPが実行された**。チェックアウト/Node22/Secrets存在検査/構文検査/隔離SDKインストール/HTTP本試験の各step成功。
+
+**14判定の内訳：PASS 12、`OBSERVED_NOT_ACCEPTED` 1、`OBSERVE_PRIVACY_RISK` 1。0件の `FAIL` / `BLOCKED`。** 14は判定の行数であり、**H01〜H14の全14ケースを実装・消化した意味ではない**。
+
+| 対象 | 本物のHTTP観測 | 判定 |
+| --- | --- | --- |
+| H01、main-A/recipient/outsider | 3名ともメール＋パスワードログイン成功、`getUser`整合 | PASS 3 |
+| H02、匿名 | `club_members`直接SELECTはHTTP401、code42501 | PASS |
+| H02、main-A | A所属はHTTP200、2件 | PASS |
+| H02、recipient/outsider | A所属はHTTP200、各0件 | PASS 2 |
+| H11、main-A | A内部名簿RPCはHTTP200、2件 | PASS |
+| H11、recipient/outsider | A内部名簿RPCはHTTP403、code42501 | PASS 2 |
+| H07、匿名 | 公開名簿RPCはHTTP401、code42501（匿名で取得できる設計ではない） | PASS |
+| H07、outsider | 公開名簿RPCはHTTP200、2件、許可済みの最小フィールドのみ | PASS |
+| **H06、outsider** | **旧`preview_profile_join`を内部メンバーID指定で呼ぶとHTTP200、`source`と`review_token`を返却、所属1件** | **OBSERVED_NOT_ACCEPTED：未解消** |
+| **H03、匿名** | **`public.public_player_profiles`へHTTP200、3件取得でき、3件とも合成fixture表示名** | **OBSERVE_PRIVACY_RISK：公開要件の再評価が必要** |
+
+**重要：GitHub Actionsの緑色のSuccessはスモーク実行成功を意味するだけで、P0の認可・データ公開が安全という結論ではない。** 現行B0は旧公開経路の再現を狙うためH06/H03の「問題を観測」もexit codeを非失敗にしている。これらを受入PASSに算入しない。テストにおいてJWT/パスワード/response本文/内部IDをIssue/計画に保存しない。ジョブログではテストスクリプトのBoolean/件数/statusのみを読んだ。GitHubが一部のactor表示を自動マスキングしたため、テストスクリプトの固定実行順・パラメータ名で判定した。
+
+### 次に進むゲート
+
+- **P0の最優先対策候補：H06**。旧`preview_profile_join`は、所属先グループの管理者・申請受取人でないテスト利用者へsource/同意tokenを返す実HTTP経路。返却内容/呼出者権限とUI利用箇所を確認し、単純なEXECUTE一括REVOKEで本人導線まで壊さず、狭いDTO・必要な権限で拒否できる対策を**新規の隔離検証候補**として設計する。既存`06_staging_link_detail_candidate.sql`は別の`get_player_profile_link_request`用であり、**H06の対策済みとは扱わない**。
+- **H03**：既存Viewの目的が本来「公開プロフィール」かをアプリ利用箇所/仕様から確認する。現状の`security_invoker=true`は匿名を42501で拒否することをROLLBACK試験したが、正当な公開機能まで壊す可能性がある。Viewを無条件DROP/REVOKE/ALTERしない。
+- B0で成功したH01/H02/H07/H11も本番とのACL/RLS差があるため、本番相当のB1/B2とは区別。H01〜H14の未実装ケース（新規所属INSERT/UPDATE RETURNING・本人申請・マネージャ詳細/統合・共有イベント等）は引き続き未実施。必要なら後続の**読み取り専用**HTTP/B1/B2検証を別のゲートとして増やす。
+- 実Authログインに伴う`auth.users`のサインイン関連メタデータは変化し得るが、B0スクリプトはアプリDBのUPDATE/INSERT/DELETE、連携申請、承認/統合、本番デプロイを行わない。
+- **今回のステージング・本番DB DDL/RLS/GRANT/データ変更はなし**（B0 Authログインの通常のセッション履歴以外）。`03`/`06`は既定ROLLBACKの検証候補のまま未適用。P0未完了、PR #265 Draftを維持、マージ/本番DB SQL/デプロイ禁止。
+
 ## 0.5. 2026-11-19：秘密値をChatGPTに渡さないB0 HTTP GitHub Actions起動手順
 
 **ここは実行手段の整備のみ。GitHub Actions上での実Auth・PostgREST HTTP試験は依然として未実施。** ステージング用3ユーザーの既存パスワードはチャット、PR、Issue、README、GitHubコメントへ転記しない。

@@ -62,6 +62,7 @@ jobs:
       - name: Run B0 real Auth and PostgREST smoke (staging only)
         shell: bash
         env:
+          TASK08_EXPECT_H06_CLOSED: '1'
           TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
           TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
           TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}

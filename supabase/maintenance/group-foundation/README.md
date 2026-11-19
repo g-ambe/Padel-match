@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：H12共有リンクとH14戦績不変性の監査（残り5領域）
+
+**H12共有token：** Stageには`get_shared_event(p_token,p_kind)`（匿名から実行可能なtoken限定DTO）があり、基底`events/matches/official_events`等の匿名直接取得はできない。[46のROLLBACK-only合成通常・公式イベント試験](46_h12_share_token_rollback_probe.sql)は**有効tokenの結果・スコア、無効token・OFF・別種類の非返却、基底表拒否が全てPASS**。Stageの実イベント/公式イベントは0件なので、本物の正規tokenのHTTP正例は未確認。
+
+[47の匿名・ヘッダーなしREAD ONLY監査](47_h12_no_header_anon_acl_probe.sql)をStage/Prod両方に実行。Stageは基底events/official_events/official_matches/official_opponentsすべて42501拒否。**本番は共有ヘッダーなしでもofficial_events 1件・official_matches 12件・official_opponents 4件を閲覧可能**。**本番未修正・リリース停止条件**としてIssueに記録。公式共有ページ[`app/share/official-events/[token]/page.tsx`](../../../app/share/official-events/[token]/page.tsx)は匿名token専用RPC取得に切替したが、**本番にはそのRPCが存在しない**ためPRはDraft・未デプロイ。通常共有ページはチーム混合の追加DTOが不足するため未切替。[Actions #44514563412](https://github.com/g-ambe/Padel-match/actions/runs/44514563412)でTypeScript/共有unit/B0が成功。[Actions #44515044820](https://github.com/g-ambe/Padel-match/actions/runs/44515044820)で**恒常B0 20/20 PASS**（H12匿名の無効token・直接SELECT拒否の実HTTP 4件を追加）。
+
+**H14戦績：** [48のREAD ONLY整合性監査](48_h14_history_integrity_readonly.sql)をStage/Prodに実行。本番**イベント89、通常試合498、保存済み結果329、公式試合15**。孤立・重複結果、参加イベント不一致、未完了試合の結果などは0件。一方で旧レコードの**負数スコア1件（6対-1）と同点2対2でB勝利の5件**はGP等の旧仕様確認が必要であり、現時点では不具合確定・修復対象とせず記録を維持。現在非在籍でも過去イベント参加がある所属1件を確認。退会者の過去戦績削除禁止。
+
+**残りの作業領域（概算5領域）：** ①H12共有画面/正規token HTTP/本番匿名漏洩対策 ②H14旧スコア例外・ランキング/退会者履歴 ③グループ固有表示名/自主退会/所有権引継ぎ/限定写真/3タブUI ④Stage/本番のACL/RLS/RPC/表互換 ⑤H01〜H14通し受入・本番適用準備。招待#262・英数字ID#263は別タスク。**時間見積ではない**。
+
+本番DB/Cloudflare/PRマージ/デプロイは未変更。PR #265 Draft、Issue #264 OPEN。正規tokenの実HTTP正例と通常/チーム混合共有画面は**未完了**。詳細は[`STAGING_HTTP_PLAN.md` 0.13節](STAGING_HTTP_PLAN.md)。
+
 ## 2026-11-19 更新：H09メイン管理者保護＋H10本人限定プロフィールRPCの実JWT試験
 
 **H09：最後のメイン管理者をDBでも保護。** 旧`club_members`UPDATEでは最後のメイン管理者がAPI直接操作で自身を非アクティブにできた（**想定外の許可・FAIL**）。[`38`](38_h09_members_update_returning_rollback_probe.sql)で再現、[`39`](39_h09_last_main_guard_rollback_candidate.sql)・[`40`](40_h09_last_main_role_status_rollback_probe.sql)でROLLBACK正負例を検証後、[`41`](41_h09_last_main_stage_apply.sql)を**ステージング限定**で適用。最後のmainの退会・降格・ステータス変更は**42501＝仕様どおり拒否・PASS**、別main引継ぎ後は正常許可。一般/サブ管理者の既存UPDATE/RETURNINGも維持。

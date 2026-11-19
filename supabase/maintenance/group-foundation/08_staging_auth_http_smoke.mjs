@@ -104,6 +104,61 @@ async function main() {
         raw.error?.code === '42501' && [401,403].includes(raw.status) && raw.data === null
           ? 'PASS' : 'FAIL', safeResult(raw));
     }
+    // Stage-only one-off positive HTTP cases: all names/tokens are synthetic.
+    // Must run only while fixtures 51 are installed; run cleanup 52 immediately afterwards.
+    if (process.env.TASK08_H12_TEST_POSITIVE === '1') {
+      const fixtures = [
+        ['H12_HTTP_FRIENDLY', 'TASK08H12HTTPFRIENDLYONLY', 'event', (d) =>
+          d?.event?.name === 'TASK08-H12-HTTP-FRIENDLY-ONLY' &&
+          d.participants?.length === 4 && d.matches?.length === 1 &&
+          d.matches[0].result?.score_a === 4 && d.matches[0].result?.score_b === 2 &&
+          d.matches[0].match_players?.length === 4 &&
+          !('share_token' in d.event)],
+        ['H12_HTTP_MIXED', 'TASK08H12HTTPMIXEDONLY', 'event', (d) => {
+          const m = d?.team_matches?.[0];
+          return d?.event?.event_mode === 'team' &&
+            d.team_sides?.length === 2 && d.team_guests?.length === 4 &&
+            d.team_matches?.length === 1 && m?.generation_mode === 'mixed' &&
+            m.round_number === 1 && m.court_number === 1 && m.match_order === 1 &&
+            m.pair_1_score === 4 && m.pair_2_score === 2 &&
+            m.pair_result === 'win' && m.result === 'undecided' &&
+            m.team_a_score === null && m.team_b_score === null &&
+            m.team_a_player1_source_side === 'team_a' &&
+            m.team_a_player2_source_side === 'team_b' &&
+            m.team_b_player1_source_side === 'team_a' &&
+            m.team_b_player2_source_side === 'team_b' &&
+            typeof m.team_a_player1_guest_id === 'string' &&
+            m.team_a_player1_guest_id.length === 32 &&
+            d.team_guests.every(x => typeof x.id === 'string' && x.id.length === 32) &&
+            !('share_token' in d.event) &&
+            !JSON.stringify(d).includes('TASK08H12HTTPMIXEDONLY');
+        }],
+        ['H12_HTTP_OFFICIAL', 'TASK08H12HTTPOFFICIALONLY', 'official', (d) =>
+          d?.event?.title === 'TASK08-H12-HTTP-OFFICIAL-ONLY' &&
+          d.opponents?.length === 1 && d.matches?.length === 1 &&
+          d.matches[0].our_score === 4 && d.matches[0].opponent_score === 2 &&
+          !('share_token' in d.event)],
+      ];
+      for (const [id, token, kind, valid] of fixtures) {
+        const res = await anonymous.rpc('get_shared_event', { p_token: token, p_kind: kind });
+        const expected = !res.error && res.status === 200 && !!valid(res.data);
+        mark(id, 'anonymous', expected ? 'PASS' : 'FAIL', {
+          http_status: res.status ?? null, error_code: res.error?.code ?? null,
+          dto_valid: !!expected,
+        });
+      }
+      for (const [table, name] of [
+        ['event_team_matches','H12_HTTP_RAW_TEAM_MATCHES_DENIED'],
+        ['event_team_guests','H12_HTTP_RAW_TEAM_GUESTS_DENIED'],
+        ['event_video_links','H12_HTTP_RAW_VIDEOS_DENIED'],
+      ]) {
+        const raw = await anonymous.from(table).select('id').limit(1);
+        mark(name, 'anonymous',
+          raw.error?.code === '42501' && [401,403].includes(raw.status) && raw.data === null
+            ? 'PASS' : 'FAIL', safeResult(raw));
+      }
+    }
+
     const clubAQuery = await clients.mainA.from('clubs').select('id')
       .eq('name', 'TASK08-P0-20261119-A');
     const clubBQuery = await clients.recipient.from('clubs').select('id')

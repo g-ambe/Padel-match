@@ -6,26 +6,26 @@ BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='30s';
 DO $cleanup$
-DECLARE rid uuid; n_count int; n_removed int; req_removed int; user_id uuid;main_id uuid;source_id uuid;club_id uuid;member_id uuid;target_id uuid;
+DECLARE rid uuid; n_count int; n_removed int; req_removed int; user_id uuid;main_id uuid;source_id uuid;v_club_id uuid;member_id uuid;target_id uuid;
 BEGIN
  IF current_user<>'postgres' THEN RAISE EXCEPTION 'postgres required'; END IF;
  SELECT id INTO STRICT user_id FROM auth.users WHERE lower(email)='outsider@example.com';
  SELECT id INTO STRICT main_id FROM auth.users WHERE lower(email)='main-a@example.com';
  SELECT id INTO STRICT source_id FROM public.player_profiles
   WHERE display_name='TASK08-P0 provisional U' AND linked_auth_user_id IS NULL AND is_active;
- SELECT id INTO STRICT club_id FROM public.clubs WHERE name='TASK08-P0-20261119-A';
+ SELECT id INTO STRICT v_club_id FROM public.clubs WHERE name='TASK08-P0-20261119-A';
  SELECT cm.id INTO STRICT member_id FROM public.club_members cm
-  WHERE cm.club_id=club_id AND cm.player_profile_id=source_id AND cm.is_active;
+  WHERE cm.club_id=v_club_id AND cm.player_profile_id=source_id AND cm.is_active;
  SELECT id INTO STRICT target_id FROM public.player_profiles WHERE linked_auth_user_id=user_id AND is_active;
  IF (SELECT count(*) FROM public.join_requests jr
-  WHERE jr.club_id=club_id AND jr.target_club_member_id=member_id
+  WHERE jr.club_id=v_club_id AND jr.target_club_member_id=member_id
     AND jr.requester_auth_user_id=user_id
     AND jr.consent_source_player_profile_id=source_id AND jr.status='pending'
     AND jr.consent_at IS NOT NULL AND jr.consent_snapshot IS NOT NULL
     AND jr.message='TASK08 isolated H08 negative HTTP review')<>1
  THEN RAISE EXCEPTION 'H08 exact fixture request not pending; abort cleanup'; END IF;
  SELECT jr.id INTO STRICT rid FROM public.join_requests jr
- WHERE jr.club_id=club_id AND jr.target_club_member_id=member_id
+ WHERE jr.club_id=v_club_id AND jr.target_club_member_id=member_id
   AND jr.requester_auth_user_id=user_id
   AND jr.consent_source_player_profile_id=source_id
   AND jr.status='pending' AND jr.message='TASK08 isolated H08 negative HTTP review'

@@ -1,5 +1,13 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：scoped_preview維持のステージング専用候補
+
+[`06_staging_link_detail_candidate.sql`](06_staging_link_detail_candidate.sql) を検証候補として追加。従来の`03_link_detail_candidate.sql`は変更せず、受取人のpreview取得だけをステージング固有の`profile_link_private.scoped_preview(source,user,club)`へ切替。旧関数の現物MD5/所有者、非公開helperの所有者/EXECUTEを事前検査し、**末尾ROLLBACK、ステージングDBにも未適用**とする。
+
+[`07_staging_scoped_preview_preflight.sql`](07_staging_scoped_preview_preflight.sql)は、実ステージングへREAD ONLYで実行成功。既存の単一グループ所属の未連携プロフィール1件について、通常previewとscoped previewのトップレベル項目・`review_token`一致を、値を一切返さずに確認。**複数グループでの非漏えい、実Auth/HTTP、候補の修正確定は未検証**。元SQLと新候補の管理者限定DTO・ROLLBACK・ACL不変更の静的比較11項目もPASS。
+
+既存のAuthユーザーはステージングに0件。管理連携にAuthユーザー作成操作はなく、`auth.users`直接INSERTは行わない。実Auth用の専用アカウントは承認された正規管理経路から別途準備する。P0の旧公開SELECT/旧RPC閉鎖や本番変更には進まない。
+
 ## 2026-11-19 更新：旧連携RPC・RLSの追加比較（READ ONLY）
 
 新規 [`05_legacy_link_acl_semantics.sql`](05_legacy_link_acl_semantics.sql) は、両環境の旧連携関数とRLS/表・列権限の**メタデータだけ**をREAD ONLYで比較する。関数本文/RLS式/データ行は返さず、戻り値は関数ハッシュ・キーワード検出フラグ・ポリシー名/指紋等に限定。両実DBで同等SQLを実行成功（関数5件のハッシュは不一致、RLSも不一致）。詳細は [STAGING_HTTP_PLAN.md の0.1節](STAGING_HTTP_PLAN.md) を参照。

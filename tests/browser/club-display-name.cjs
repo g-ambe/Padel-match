@@ -30,7 +30,7 @@ const base=process.env.CLUB_NAME_TEST_URL||'http://127.0.0.1:3070',remote='http:
    if(name==='get_public_club_directory')return answer(200,f.tables.club_members.filter(m=>m.club_id===b.p_club_id&&m.is_active).flatMap(m=>{const p=f.tables.player_profiles.find(p=>p.id===m.player_profile_id);return !p.linked_auth_user_id||m.public_name_confirmed?[{reference:'opaque-'+m.id,display_name:m.club_display_name??p.display_name,is_unlinked:!p.linked_auth_user_id}]:[]}));
    if(name==='save_club_member_display_name'){
     if(hold)await new Promise(r=>release=r);
-    if(fail){fail=false;own.club_display_name='別の端末の名前';return answer(409,{code:'40001',message:'conflict'});}
+    if(fail){fail=false;own.club_display_name='別の端末の名前';return answer(409,{code:'PT409',message:'conflict'});}
     const m=f.tables.club_members.find(m=>m.id===b.p_member_id&&m.club_id===b.p_club_id);
     assert(m);assert.equal(b.p_expected_club_display_name,m.club_display_name);assert(m.is_active);
     const publicName=m.player_profile_id===player&&f.tables.clubs.find(g=>g.id===m.club_id).visibility==='public';
@@ -55,9 +55,11 @@ const base=process.env.CLUB_NAME_TEST_URL||'http://127.0.0.1:3070',remote='http:
   await dialog().getByRole('checkbox').check();hold=true;await dialog().getByRole('button',{name:'保存',exact:true}).click();await p.waitForTimeout(100);
   assert.equal(count(),1);assert(await dialog().getByRole('button',{name:'保存中…',exact:true}).isDisabled());hold=false;release();await dialog().waitFor({state:'hidden'});
   await rows().getByText('Aでの本人（本人）',{exact:true}).waitFor();assert.equal(otherAlias.club_display_name,'Bだけの名前');
-  await open();await dialog().getByLabel('グループ内表示名',{exact:true}).fill('競合でも保持');await dialog().getByRole('checkbox').check();fail=true;await dialog().getByRole('button',{name:'保存',exact:true}).click();
+  await open();await dialog().getByLabel('グループ内表示名',{exact:true}).fill('競合でも保持');await dialog().getByRole('checkbox').check();const beforeConflict=count(),beforeReload=calls.filter(c=>c.name==='get_club_roster').length;fail=true;await dialog().getByRole('button',{name:'保存',exact:true}).click();
   await dialog().getByRole('alert').filter({hasText:'表示名が更新されています'}).waitFor();assert.equal(await dialog().getByLabel('グループ内表示名',{exact:true}).inputValue(),'競合でも保持');
+  assert.equal(count(),beforeConflict+1);assert.equal(calls.filter(c=>c.name==='get_club_roster').length,beforeReload);
   await dialog().getByRole('button',{name:'最新の状態を確認'}).click();await dialog().getByText('現在のグループ内表示名：別の端末の名前',{exact:true}).waitFor();
+  assert.equal(calls.filter(c=>c.name==='get_club_roster').length,beforeReload+1);
   assert.equal(await dialog().getByLabel('グループ内表示名',{exact:true}).inputValue(),'競合でも保持');assert(!(await dialog().getByRole('checkbox').isChecked()));
   await dialog().getByRole('checkbox').check();await dialog().getByRole('button',{name:'保存',exact:true}).click();await dialog().waitFor({state:'hidden'});
   f.tables.clubs.find(g=>g.id===clubA).visibility='private';await p.reload();await p.getByRole('button',{name:'メンバー管理',exact:true}).click();await open();

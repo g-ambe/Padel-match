@@ -41,8 +41,18 @@ test('privateと未連携はpublic確認を送らず、別グループ/aliasのC
  assert.deepEqual(calls.map(c=>[c.p_club_id,c.p_expected_club_display_name,c.p_public_confirmation]),[['club-A','Aの旧名',false],['club-B','Bの旧名',false],['club-A',null,false]]);
  assert(!requiresPublicNameConfirmation(member,{...context,visibility:'private'}));
 });
-test('40001・403・RPC未適用・不正応答・通信断を成功扱いせず、旧表fallbackなし',async()=>{
- for(const code of ['40001','42501','PGRST202'])await assert.rejects(saveClubDisplayName(client(async()=>({error:{code}})),member,context,'入力を保持',true),e=>e.code===code);
+test('PT409と旧40001は同じ競合案内を返し、自動再試行や追加取得をしない',async()=>{
+ for(const code of ['PT409','40001']){
+  let attempts=0;const before=structuredClone(member);
+  const db=client(async(name,args)=>{attempts++;assert.equal(name,'save_club_member_display_name');assert.equal(args.p_expected_club_display_name,null);return{error:{code}}});
+  await assert.rejects(saveClubDisplayName(db,member,context,'入力を保持',true),e=>{
+   assert.equal(e.code,code);assert.equal(e.message,'表示名が更新されています。最新の状態を確認してから再度保存してください');return true;
+  });
+  assert.equal(attempts,1);assert.deepEqual(member,before);
+ }
+});
+test('403・RPC未適用・不正応答・通信断を成功扱いせず、旧表fallbackなし',async()=>{
+ for(const code of ['42501','PGRST202'])await assert.rejects(saveClubDisplayName(client(async()=>({error:{code}})),member,context,'入力を保持',true),e=>e.code===code);
  for(const data of [null,[],{member_id:'other',club_display_name:'入力を保持',public_name_confirmed:true},{member_id:member.id,club_display_name:'入力を保持',public_name_confirmed:false}])await assert.rejects(saveClubDisplayName(client(async()=>({data})),member,context,'入力を保持',true),/保存結果/);
  await assert.rejects(saveClubDisplayName(client(async()=>{throw Error('network')}),member,context,'入力を保持',true),/network/);
 });

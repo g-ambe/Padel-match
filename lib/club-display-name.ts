@@ -46,7 +46,7 @@ export async function saveClubDisplayName(db: SupabaseClient, member: ClubNameMe
     p_expected_club_display_name: member.club_display_name,
     p_public_confirmation: publicConfirmation && confirmation,
   });
-  if (error) throw new ClubDisplayNameError(error.code === "40001"
+  if (error) throw new ClubDisplayNameError(error.code === "PT409" || error.code === "40001"
     ? "表示名が更新されています。最新の状態を確認してから再度保存してください"
     : "表示名を保存できませんでした。入力は保持されています。所属・権限を確認して再度お試しください", error.code);
   if (!data || data.member_id !== member.id || data.club_display_name !== name || data.public_name_confirmed !== publicConfirmation) {

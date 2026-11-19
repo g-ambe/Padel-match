@@ -51,6 +51,17 @@ jobs:
       - name: Check B0 script syntax
         run: node --check supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs
 
+      - name: H12 token-only UI and minimal DTO regression checks
+        run: node --test tests/shared-event-page-rpc.test.cjs
+
+      - name: TypeScript compile validation (no deployment)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/task08-bun" --no-package-lock --no-audit --no-fund --ignore-scripts bun@1.2.15
+          "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
+          "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" x tsc --noEmit
+
       - name: Isolated test dependency install
         shell: bash
         run: |

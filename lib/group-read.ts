@@ -3,9 +3,13 @@ export type DirectoryMember = { reference: string; display_name: string; is_unli
 export type ContextName = { id: string; display_name: string; kind: "player" | "account" };
 // No fallback to the old globally-readable profile tables on RPC failure.
 async function rows<T>(db: SupabaseClient, rpc: string, args?: Record<string, unknown>): Promise<T[]> {
-  const result = await db.rpc(rpc, args);
-  if (result.error || !Array.isArray(result.data)) throw new Error("必要な情報を取得できませんでした。再度読み込んでください");
-  return result.data as T[];
+  const all:T[]=[];
+  for(let start=0;;start+=500){
+    const result=await db.rpc(rpc,args).range(start,start+499);
+    if(result.error||!Array.isArray(result.data))throw new Error("必要な情報を取得できませんでした。再度読み込んでください");
+    all.push(...result.data as T[]);
+    if(result.data.length<500)return all;
+  }
 }
 export const readPublicDirectory = (db: SupabaseClient, club: string) => rows<DirectoryMember>(db, "get_public_club_directory", { p_club_id: club });
 export const readMyMemberships = (db: SupabaseClient) => rows<{ id: string; club_id: string; role: string; is_active: boolean; status: string }>(db, "get_my_club_memberships");

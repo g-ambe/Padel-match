@@ -90,3 +90,7 @@ CloudflareログAPIは現在の接続で12006 Invalid token、GitHubチェック
 
 第2段階の最終検証結果：関連9ファイル（SQL読取/公開参照/管理者DTO、所属、プロフィール管理、旧戦績との比較、本人連携DB、共有、バランスペア履歴、Workerビルド補助）のテスト成功。追加の退会済みイベント作成者の負例も再実行成功。TypeScript成功。`npm run build`→修正後のWorker補助処理というCloudflare相当順序でローカル生成成功。最終差分での`npm run cf:build`も成功し、Worker/assetsのBUILD_ID一致を確認した。
 Cloudflare側の修正コミットのプレビュー結果、実ユーザーでのHTTP/画面操作、未適用Migrationを使う実環境の保存・取得は別途未検証。本番データを試験に使用していない。旧SELECT/旧RPCの切替後試験は次段階であり、本試験の成功をP0全体の完了扱いにしない。
+
+大量行の互換性：読取RPCは安定したORDER BYと500行単位のページングを使う。1,201行が欠落しないことと途中ページの失敗を部分成功にしないことを追加確認した。関連の所属/管理/戦績/SQLテストも再実行して成功。旧公開表へ取り直すフォールバックはない。
+
+Cloudflare側の確認：コミット1191e4bのステージングプレビューBuild `3b36b12b-64a4-41f9-9208-34d9b7dd464f` がGitHubチェックでCOMPLETED/SUCCESS。提供ログで特定したstandalone manifest不足は、実際のCloudflare環境でも修正後成功を確認した。以後のページング追加分は別コミットとしてローカルの関連試験/型/Cloudflare互換ビルドを実行済み。最新headのCloudflareチェックは別途区別して確認する。

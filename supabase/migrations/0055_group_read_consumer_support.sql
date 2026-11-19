@@ -20,7 +20,7 @@ BEGIN
  IF auth.uid() IS NULL OR NOT EXISTS(SELECT 1 FROM public.official_events e WHERE e.id=p_event_id AND NOT coalesce(e.is_deleted,false)
  AND (public.is_super_user() OR group_read_private.member(e.club_id) OR (e.club_id IS NULL AND e.created_by_auth_user_id=auth.uid()))) THEN
  RAISE EXCEPTION 'イベントの閲覧権限がありません' USING ERRCODE='42501'; END IF;
- RETURN QUERY SELECT pp.id,pp.display_name FROM public.player_profiles pp WHERE EXISTS(SELECT 1 FROM public.official_matches m WHERE m.official_event_id=p_event_id AND pp.id IN(m.our_player1_profile_id,m.our_player2_profile_id));
+ RETURN QUERY SELECT pp.id,pp.display_name FROM public.player_profiles pp WHERE EXISTS(SELECT 1 FROM public.official_matches m WHERE m.official_event_id=p_event_id AND pp.id IN(m.our_player1_profile_id,m.our_player2_profile_id)) ORDER BY pp.id;
 END $$;
 REVOKE ALL ON FUNCTION public.get_club_stats_members(uuid),public.get_club_selection_candidates(uuid),public.get_official_player_names(uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.get_club_stats_members(uuid),public.get_club_selection_candidates(uuid),public.get_official_player_names(uuid) TO authenticated;
@@ -56,20 +56,20 @@ CREATE FUNCTION public.get_club_join_request_names(p_club_id uuid) RETURNS TABLE
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'ログインしてください' USING ERRCODE='42501'; END IF;
- RETURN QUERY SELECT p.id,p.display_name FROM public.profiles p WHERE EXISTS(SELECT 1 FROM public.join_requests r WHERE r.club_id=p_club_id AND r.requester_auth_user_id=p.id AND (r.requester_auth_user_id=auth.uid() OR public.can_manage_player_profile_club(p_club_id)));
+ RETURN QUERY SELECT p.id,p.display_name FROM public.profiles p WHERE EXISTS(SELECT 1 FROM public.join_requests r WHERE r.club_id=p_club_id AND r.requester_auth_user_id=p.id AND (r.requester_auth_user_id=auth.uid() OR public.can_manage_player_profile_club(p_club_id))) ORDER BY p.id;
 END $$;
 CREATE FUNCTION public.get_admin_group_member_counts() RETURNS TABLE(club_id uuid,member_count bigint)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  IF auth.uid() IS NULL OR NOT public.is_super_user() THEN RAISE EXCEPTION '管理権限がありません' USING ERRCODE='42501'; END IF;
- RETURN QUERY SELECT cm.club_id,count(*) FROM public.club_members cm WHERE cm.is_active GROUP BY cm.club_id;
+ RETURN QUERY SELECT cm.club_id,count(*) FROM public.club_members cm WHERE cm.is_active GROUP BY cm.club_id ORDER BY cm.club_id;
 END $$;
 CREATE FUNCTION public.get_admin_account_names(p_ids uuid[]) RETURNS TABLE(id uuid,display_name text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  IF auth.uid() IS NULL OR NOT public.is_super_user() THEN RAISE EXCEPTION '管理権限がありません' USING ERRCODE='42501'; END IF;
  IF coalesce(cardinality(p_ids),0)>100 THEN RAISE EXCEPTION '取得件数が多すぎます' USING ERRCODE='22023'; END IF;
- RETURN QUERY SELECT p.id,p.display_name FROM public.profiles p WHERE p.id=ANY(p_ids);
+ RETURN QUERY SELECT p.id,p.display_name FROM public.profiles p WHERE p.id=ANY(p_ids) ORDER BY p.id;
 END $$;
 REVOKE ALL ON FUNCTION public.get_club_join_request_names(uuid),public.get_admin_group_member_counts(),public.get_admin_account_names(uuid[]) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.get_club_join_request_names(uuid),public.get_admin_group_member_counts(),public.get_admin_account_names(uuid[]) TO authenticated;
@@ -80,7 +80,7 @@ BEGIN
  RETURN QUERY SELECT r.id,r.club_id,CASE WHEN public.can_manage_player_profile_club(p_club_id) THEN r.target_club_member_id ELSE d.public_ref END,r.requester_auth_user_id,
  CASE WHEN public.can_manage_player_profile_club(p_club_id) THEN r.requester_player_profile_id ELSE NULL::uuid END,r.message,r.status,r.created_at,r.expires_at,r.consent_at,r.requester_display_name_snapshot
  FROM public.join_requests r LEFT JOIN group_read_private.directory_refs d ON d.member_id=r.target_club_member_id
- WHERE r.club_id=p_club_id AND (r.requester_auth_user_id=auth.uid() OR public.can_manage_player_profile_club(p_club_id)) ORDER BY r.created_at DESC;
+ WHERE r.club_id=p_club_id AND (r.requester_auth_user_id=auth.uid() OR public.can_manage_player_profile_club(p_club_id)) ORDER BY r.created_at DESC,r.id;
 END $$;
 REVOKE ALL ON FUNCTION public.get_club_join_requests(uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.get_club_join_requests(uuid) TO authenticated;

@@ -78,7 +78,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  SELECT ep.player_profile_id pid FROM public.event_participants ep WHERE ep.event_id=p_event
  UNION SELECT v.pid FROM public.event_team_matches m CROSS JOIN LATERAL (VALUES(m.team_a_player1_profile_id),(m.team_a_player2_profile_id),(m.team_b_player1_profile_id),(m.team_b_player2_profile_id)) v(pid) WHERE m.event_id=p_event)
  SELECT pp.id,pp.display_name,'player'::text FROM public.player_profiles pp JOIN wanted w ON w.pid=pp.id
- UNION ALL SELECT p.id,p.display_name,'account'::text FROM public.profiles p WHERE EXISTS(SELECT 1 FROM public.event_participants ep WHERE ep.event_id=p_event AND ep.profile_id=p.id)
+ UNION ALL SELECT p.id,p.display_name,'account'::text FROM public.profiles p WHERE EXISTS(SELECT 1 FROM public.event_participants ep WHERE ep.event_id=p_event AND ep.profile_id=p.id) ORDER BY 3,1
 $$;
 CREATE FUNCTION public.get_event_player_names(p_event_id uuid) RETURNS TABLE(id uuid,display_name text,kind text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
@@ -102,14 +102,14 @@ BEGIN
  IF nullif(p_token,'') IS NULL THEN RAISE EXCEPTION '共有リンクは無効です' USING ERRCODE='42501'; END IF;
  SELECT e.id INTO eid FROM public.official_events e WHERE e.share_token=p_token AND e.share_enabled AND e.status='closed' AND NOT coalesce(e.is_deleted,false);
  IF eid IS NULL THEN RAISE EXCEPTION '共有リンクは無効です' USING ERRCODE='42501'; END IF;
- RETURN QUERY SELECT pp.id,pp.display_name FROM public.player_profiles pp WHERE EXISTS(SELECT 1 FROM public.official_matches m WHERE m.official_event_id=eid AND pp.id IN(m.our_player1_profile_id,m.our_player2_profile_id));
+ RETURN QUERY SELECT pp.id,pp.display_name FROM public.player_profiles pp WHERE EXISTS(SELECT 1 FROM public.official_matches m WHERE m.official_event_id=eid AND pp.id IN(m.our_player1_profile_id,m.our_player2_profile_id)) ORDER BY pp.id;
 END $$;
 CREATE FUNCTION public.get_club_stats_player_names(p_club_id uuid) RETURNS TABLE(id uuid,display_name text)
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  PERFORM group_read_private.require_member(p_club_id);
  RETURN QUERY SELECT pp.id,pp.display_name FROM public.player_profiles pp WHERE EXISTS(SELECT 1 FROM public.club_members cm WHERE cm.club_id=p_club_id AND cm.player_profile_id=pp.id)
- OR EXISTS(SELECT 1 FROM public.event_participants ep JOIN public.events e ON e.id=ep.event_id WHERE e.club_id=p_club_id AND ep.player_profile_id=pp.id);
+ OR EXISTS(SELECT 1 FROM public.event_participants ep JOIN public.events e ON e.id=ep.event_id WHERE e.club_id=p_club_id AND ep.player_profile_id=pp.id) ORDER BY pp.id;
 END $$;
 -- Internal helpers cannot be called through the public API. Explicit ACLs on every new function.
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA group_read_private FROM PUBLIC,anon,authenticated;

@@ -183,6 +183,101 @@ async function main() {
       }
     }
 
+    // Stage H15 one-shot authorized write test. Only the synthetic 62 fixture
+    // is modified; immediately run cleanup 63 after reviewing the CI result.
+    if (process.env.TASK08_H15_SELF_EXIT_HTTP === '1') {
+      const club = await clients.mainA.from('clubs').select('id')
+        .eq('name', 'TASK08-H15-SELF-EXIT-HTTP-20261119');
+      const clubId = !club.error && club.data?.length === 1 ? club.data[0].id : null;
+      const actors = { mainA: clients.mainA, outsider: clients.outsider, recipient: clients.recipient };
+      const initial = {};
+      if (clubId) {
+        for (const [actor, client] of Object.entries(actors)) {
+          const res = await client.rpc('get_my_club_memberships');
+          initial[actor] = !res.error && Array.isArray(res.data) ? res.data : [];
+          if (res.error) mark('H15_FIXTURE_MEMBERSHIP', actor, 'BLOCKED', safeResult(res));
+        }
+      }
+      const own = {};
+      for (const actor of Object.keys(actors)) {
+        const ownRows = (initial[actor] ?? []).filter(row =>
+          row.club_id === clubId && row.is_active === true && row.status === 'active');
+        own[actor] = ownRows.length === 1 ? ownRows[0] : null;
+      }
+      if (!clubId || Object.values(own).some(row => !row) ||
+          own.mainA.role !== 'main_admin' || own.outsider.role !== 'sub_admin' ||
+          own.recipient.role !== 'member') {
+        mark('H15_FIXTURE_ROLES', 'stage', 'BLOCKED', { valid: false });
+      } else {
+        const denied = res => res.error?.code === '42501' &&
+          [401, 403].includes(res.status) && res.data === null;
+        const mainBlocked = await clients.mainA.rpc('leave_my_club', {
+          p_club_id: clubId, p_member_id: own.mainA.id,
+        });
+        mark('H15_OWNER_REQUIRES_TRANSFER', 'mainA',
+          denied(mainBlocked) ? 'PASS' : 'FAIL', safeResult(mainBlocked));
+
+        const thirdPartyBlocked = await clients.outsider.rpc('leave_my_club', {
+          p_club_id: clubId, p_member_id: own.recipient.id,
+        });
+        mark('H15_THIRD_PARTY_DENIED', 'outsider',
+          denied(thirdPartyBlocked) ? 'PASS' : 'FAIL', safeResult(thirdPartyBlocked));
+
+        const anonDenied = await anonymous.rpc('leave_my_club', {
+          p_club_id: clubId, p_member_id: own.recipient.id,
+        });
+        mark('H15_ANON_DENIED', 'anonymous',
+          denied(anonDenied) ? 'PASS' : 'FAIL', safeResult(anonDenied));
+
+        const regular = await clients.recipient.rpc('leave_my_club', {
+          p_club_id: clubId, p_member_id: own.recipient.id,
+        });
+        mark('H15_REGULAR_LEAVE', 'recipient',
+          !regular.error && regular.status === 200 && regular.data === own.recipient.id ? 'PASS' : 'FAIL',
+          { status: regular.status ?? null, code: regular.error?.code ?? null, success: regular.data === own.recipient.id });
+
+        const replay = await clients.recipient.rpc('leave_my_club', {
+          p_club_id: clubId, p_member_id: own.recipient.id,
+        });
+        mark('H15_REPLAY_DENIED', 'recipient',
+          denied(replay) ? 'PASS' : 'FAIL', safeResult(replay));
+
+        const sub = await clients.outsider.rpc('leave_my_club', {
+          p_club_id: clubId, p_member_id: own.outsider.id,
+        });
+        mark('H15_SUB_ADMIN_LEAVE', 'outsider',
+          !sub.error && sub.status === 200 && sub.data === own.outsider.id ? 'PASS' : 'FAIL',
+          { status: sub.status ?? null, code: sub.error?.code ?? null, success: sub.data === own.outsider.id });
+
+        const roster = await clients.mainA.rpc('get_club_roster',{ p_club_id: clubId });
+        const rows = Array.isArray(roster.data) ? roster.data : [];
+        const persisted = !roster.error && roster.status === 200 && rows.length === 3 &&
+          rows.some(row => row.id === own.mainA.id && row.is_active && row.role === 'main_admin') &&
+          rows.some(row => row.id === own.recipient.id && row.is_active === false && row.role === 'member') &&
+          rows.some(row => row.id === own.outsider.id && row.is_active === false && row.role === 'sub_admin');
+        mark('H15_HISTORY_MEMBERSHIP_RETAINED', 'mainA',
+          persisted ? 'PASS' : 'FAIL', { roster_count: rows.length, inactive_count: rows.filter(row => !row.is_active).length,
+            owner_active: rows.some(row => row.id === own.mainA.id && row.is_active) });
+
+        const outsiderAfter = await clients.outsider.rpc('get_club_roster', { p_club_id: clubId });
+        mark('H15_WITHDRAWN_MEMBER_NO_ROSTER', 'outsider',
+          denied(outsiderAfter) ? 'PASS' : 'FAIL', safeResult(outsiderAfter));
+
+        let otherGroupsUnchanged = true;
+        for (const [actor, client] of Object.entries(actors)) {
+          const after = await client.rpc('get_my_club_memberships');
+          const normalize = rows => rows.filter(row => row.club_id !== clubId)
+            .map(row => [row.id,row.club_id,row.role,row.is_active,row.status].join('|')).sort();
+          if (after.error || !Array.isArray(after.data) ||
+              JSON.stringify(normalize(after.data)) !== JSON.stringify(normalize(initial[actor] ?? []))) {
+            otherGroupsUnchanged = false;
+          }
+        }
+        mark('H15_OTHER_GROUPS_UNCHANGED','stage',otherGroupsUnchanged ? 'PASS':'FAIL',
+          { unchanged: otherGroupsUnchanged });
+      }
+    }
+
     // H12: permanent read-only stage regression. Bad tokens must return no data,
     // and anonymous REST access to raw event tables must remain forbidden.
     for (const kind of ['event','official']) {

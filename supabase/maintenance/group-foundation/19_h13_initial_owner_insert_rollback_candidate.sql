@@ -16,15 +16,23 @@ BEGIN
 END $guard$;
 CREATE FUNCTION security_private.task08_initial_owner_member_allowed(
  p_club uuid,p_profile uuid,p_player uuid,p_role text,p_is_active boolean,p_status text)
-RETURNS boolean LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path='' AS $$
- SELECT auth.uid() IS NOT NULL AND p_profile=auth.uid()
-  AND p_role='main_admin' AND p_is_active AND p_status='active'
-  AND EXISTS (SELECT 1 FROM public.clubs c WHERE c.id=p_club
-        AND c.owner_id=auth.uid() AND c.is_active AND NOT c.is_deleted)
-  AND EXISTS (SELECT 1 FROM public.player_profiles p WHERE p.id=p_player
-        AND p.linked_auth_user_id=auth.uid() AND p.is_active)
-  AND NOT EXISTS (SELECT 1 FROM public.club_members cm WHERE cm.club_id=p_club);
-$$;
+RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path='' AS $
+DECLARE owner_ok boolean;
+BEGIN
+ IF auth.uid() IS NULL OR p_profile IS DISTINCT FROM auth.uid()
+    OR p_role IS DISTINCT FROM 'main_admin'
+    OR p_is_active IS DISTINCT FROM true OR p_status IS DISTINCT FROM 'active'
+ THEN RETURN false; END IF;
+ -- Lock the owner club row before the initial-membership absence check,
+ -- so concurrently attempted initial inserts serialize on the club.
+ SELECT true INTO owner_ok FROM public.clubs c
+  WHERE c.id=p_club AND c.owner_id=auth.uid() AND c.is_active AND NOT c.is_deleted
+  FOR UPDATE;
+ IF NOT coalesce(owner_ok,false) THEN RETURN false; END IF;
+ RETURN EXISTS (SELECT 1 FROM public.player_profiles p WHERE p.id=p_player
+                 AND p.linked_auth_user_id=auth.uid() AND p.is_active)
+        AND NOT EXISTS (SELECT 1 FROM public.club_members cm WHERE cm.club_id=p_club);
+END $;
 REVOKE ALL ON FUNCTION security_private.task08_initial_owner_member_allowed(uuid,uuid,uuid,text,boolean,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION security_private.task08_initial_owner_member_allowed(uuid,uuid,uuid,text,boolean,text) TO authenticated;
 GRANT INSERT(name,description,owner_id,is_active,visibility) ON public.clubs TO authenticated;

@@ -15,6 +15,39 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.13. 2026-11-19：H12共有token境界とH14履歴監査のREAD ONLY検証
+
+**今回のH12/H14は、既存のStage/本番データへの書き換えを行わない事前監査を主体とする。** 本番での匿名公開リスクを確認したが、**本番のACL/RLS/関数/アプリ・Cloudflareは未変更**。グループ基盤の既存Draft PR #265だけを更新し、新規PR/branch/merge/deployなし。
+
+### H12：既存の共有画面とStageの実際の権限に差がある
+
+- `app/share/events/[token]/page.tsx`（通常/フレンドリーチーム結果共有）は`events`, `event_participants`, `matches`, `match_players`, `match_results`, `event_team_*`, `event_video_links`を**匿名クライアントから直接SELECT**する。通常イベント側は`x-padel-share-token`ヘッダー付きの独立した匿名クライアントを使用するが、Stageの`events/matches/match_results/event_participants`は`anon SELECT`を許可しないため**Stageでは既存画面の読み取りが成立しない**。
+- Stageには既存の限定`public.get_shared_event(p_token text,p_kind text)`＋`security_private.shared_event`がある。元の`p_token`と共有enabled・closed・削除されていない状態・club有効性を検証して、イベント名/参加者表示名/試合スコア、または公式イベントの相手・スコア・氏名の必要項目だけをJSONで返す。通常テーブルへの匿名SELECT権限は不要。共有試合内のplayerプロフィール識別子は変換され、Auth ID・メール・プロフィール内部情報を返さない設計。
+- **本番にはこの`get_shared_event` RPCが存在しない**（Stageの限定RPCを本番へ未移行）。UIをRPCへ変更しても、本番移行に先立ってRPC SQLの互換Migrationと本番同等の実データ試験が必須。現行フレンドリー共有の**チーム混合（generation_mode/pair_1/2_score/pair_result）・ラウンド・ゲスト判定**はStage RPCのDTOだけでは完全再現できないため、通常共有ページの直接SELECTを無断でRPCへ一括置換していない。
+- `app/share/official-events/[token]/page.tsx`はもともと本人セッションを保持するクライアントで`official_events/official_opponents/official_matches`の直接SELECTと公開プロフィール名RPCを使用。**この共有ページのデータ取得に限り**独立した匿名トークン専用`getSharedEventClient(token)`による`get_shared_event(token,'official')`へ切り替えた（既存の動画クリック計測は変更しない）。表示名は共有限定RPCが返す試合行の安全な名前を使用。**PRはDraft、本番にRPCがないため未マージ・未デプロイ**。
+- [`46_h12_share_token_rollback_probe.sql`](46_h12_share_token_rollback_probe.sql)はStageのイベント0件・公式イベント0件を確認した後、**合成通常イベント2件（共有有効/無効）、合成公式イベント1件、通常参加者4件・試合1件・得点4-2・公式試合1件・得点4-2**を単一トランザクションだけに作成。SET LOCAL ROLE anonで**正規tokenの通常/公式結果・スコア取得、無効token・共有OFF・種類違い・未対応kindの非返却、匿名基底表の取得拒否**の8真偽値全てtrueを確認し、最後に**ROLLBACK**。実データ/試合/戦績を保存・変更していない。**これはDBロール模擬であり本当のHTTP通信の正例ではない**。
+- [`47_h12_no_header_anon_acl_probe.sql`](47_h12_no_header_anon_acl_probe.sql)をStage/Prodの**同一SQL**で`BEGIN READ ONLY`、`request.headers={}`、`SET LOCAL ROLE anon`で実行：Stageは`events/official_events/official_opponents/official_matches`全て**42501で直接拒否＝仕様どおり拒否PASS**。本番は通常`events`0件表示だが、**official_events 1件、official_opponents 4件、official_matches 12件をトークンなしで参照できる**ことを確認。後者は「リンクを知る人だけ共有」の想定に反するなら**プライバシー・セキュリティリスク（未修正）**。本番の公開権限をこの段階で変更していない。
+- Stageの既存B0 Auth HTTPスクリプト`08_staging_auth_http_smoke.mjs`に**匿名の無効トークン2件（友好/公式）、匿名基底表直接アクセス拒否2件**を恒常回帰として追加。実HTTP [GitHub Actions #44515044820](https://github.com/g-ambe/Padel-match/actions/runs/44515044820) で**既存16+新H12 4＝20/20 PASS**（無効tokenはHTTP200/null、直接SELECTは401/42501）。本物の正規共有token HTTPはStageに永続のイベントfixtureがなく**未実施**。
+- 公式共有ページの変更は一時的なread-only CIで[GitHub Actions #44514563412](https://github.com/g-ambe/Padel-match/actions/runs/44514563412) の**TypeScript`tsc --noEmit`＋共有関連unit tests**がPASS。終了後、CIの一時チェック手順は削除し、恒常B0は読み取り専用のまま。**未配信**。
+
+### H14：本番データの整合性READ ONLY検査
+
+- [`48_h14_history_integrity_readonly.sql`](48_h14_history_integrity_readonly.sql)をStage/Prodに同じREAD ONLY SQLで実行。各試合行・参加者・本人UUIDやトークンを取得せず**件数のみ**返す。
+- 本番集計：`events`89件、`matches`498件、`match_results`329件、`official_matches`15件。孤立した試合結果0、同一match重複結果0、completedなのに結果なし0、未完了matchの結果0、match_playersとevent_participantsのイベント不一致0、無効参照profile0。公式match孤立/負数/確定勝敗なのに得点欠落はいずれも0。
+- **要確認の既存記録**：友好試合の**負のスコア1件（6対-1、winner A）**、**同点で勝者がdraw以外5件（いずれも2対2、winner B）**。終了済み自動イベントの記録。GP/旧得点仕様の手動勝敗指定、歴史的データの条件を確認してから仕様適合を判定する。**結果を不正・破損と確定せず、自動修正しない**。
+- 本番では非activeのclub_membersは2件、そのうち**1件が過去イベント参加に紐づく**。現在の在籍状態だけを理由に過去戦績を削除してはならない。Stageは本物のevents/matches/results/official_matchesが**0件**なので、Stageの孤立・破損0という値は本番戦績の完全性を証明しない。
+- H14は今後、実イベント/退会者を参照する画面・ランキングの集計規則とイベント単位の所属境界、共有との交差、戦績不変性を本番と同等のfixture/安全なread-onlyケースで確認するまで**未完了**。全履歴の自動修復・手動書換えはしない。
+
+### 残件の見取り図（作業時間ではなく工程）
+
+1. **H12の残り**：通常・チーム混合結果の共有DTO/画面一致、公式と通常の本物の正規共有token HTTP正例、本番での匿名公式データ無token閲覧経路の遮断方針、本番導入前のRPC互換/テスト
+2. **H14の残り**：旧GP/スコア例外6件の仕様照合、過去結果・ランキングと退会者の保持、他グループの参照権限・回帰テスト
+3. **TASK-08-03の未完了コア仕様**：グループ内独立表示名、本人自主退会とオーナー承諾付き引継ぎ、同一グループ在籍者限定の画像閲覧、グループ詳細3タブ・POP/戻り導線（要件のどこまでが別工程かIssueと整理）
+4. **DB/本番互換**：StageとProdのRLS/GRANT、旧RPC、未移行11表・共有関数差を列挙し、最小単位で別途適用判断（本番データ無変更）
+5. **最終受入・リリース準備**：H01〜H14の不足正負例、実画面・Auth/JWT・Cloudflare互換、Tutorial/ヘルプ同期、本番適用前レビュー。PR #265 Draft維持、Issue #264 OPEN。別Issueのメール招待#262、英数字ID#263はこの残数に含めない。
+
+**注意：5領域は概算の作業分類であり、完了までの時間見積ではない。H12/H14はこの時点で完了判定せず、本番適用/デプロイ/マージ禁止。**
+
 ## 0.12. 2026-11-19：H09最後のメイン管理者保護・H10本人限定プロフィール保存と実JWT HTTP全PASS
 
 **ステージング限定の段階的な対策。** Stage Migration **52→53件**、本番SQL/Cloudflare/マージ/デプロイなし。判定は「正常許可・PASS」「仕様どおり拒否・PASS」「想定外の許可・FAIL」「想定外の拒否・FAIL」「未確認」で区分し、HTTP200・更新0件は正常な更新と混同しない。

@@ -3,4 +3,4 @@
 # FOUR dedicated staging GitHub Actions repository secrets.
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
-# Status: H15_SELF_LEAVE_REAL_JWT_HTTP_STAGE_FIXTURE_2026_11_19_12
+# Status: H15_AFTER_SELF_LEAVE_FIXTURE_CLEANUP_READ_ONLY_B0_2026_11_19_13

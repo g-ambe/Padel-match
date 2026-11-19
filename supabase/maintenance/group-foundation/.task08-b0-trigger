@@ -1,0 +1,6 @@
+# TASK-08 / B0 staging Auth+PostgREST HTTP run trigger
+# Deliberately inert. This file is changed only after the user configures
+# FOUR dedicated staging GitHub Actions repository secrets.
+# Changing this file triggers the staging-only workflow on this task branch.
+# NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
+# Status: NOT_TRIGGERED

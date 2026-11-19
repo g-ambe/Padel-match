@@ -85,6 +85,104 @@ async function main() {
     }
 
     const anonymous = makeClient(key);
+    // H14 one-shot fixture validation. Stage only; never retain IDs/names in logs.
+    // SQL 58 must be installed before testing and SQL 59 run immediately afterwards.
+    if (process.env.TASK08_H14_RETIRED_HISTORY_POSITIVE === '1') {
+      const clubResponse = await clients.mainA.from('clubs').select('id')
+        .eq('name', 'TASK08-H14-RETIRED-HTTP-20261119');
+      const clubId = !clubResponse.error && clubResponse.data?.length === 1
+        ? clubResponse.data[0].id : null;
+      if (typeof clubId !== 'string') {
+        mark('H14_FIXTURE_CLUB', 'mainA', 'BLOCKED', safeResult(clubResponse));
+      } else {
+        const [historical, candidates, names, outsiderStats, anonymousStats] = await Promise.all([
+          clients.mainA.rpc('get_club_stats_members', { p_club_id: clubId }),
+          clients.mainA.rpc('get_club_selection_candidates', { p_club_id: clubId }),
+          clients.mainA.rpc('get_club_stats_player_names', { p_club_id: clubId }),
+          clients.outsider.rpc('get_club_stats_members', { p_club_id: clubId }),
+          anonymous.rpc('get_club_stats_members', { p_club_id: clubId }),
+        ]);
+        const historyList = Array.isArray(historical.data) ? historical.data : [];
+        const selected = Array.isArray(candidates.data) ? candidates.data : [];
+        const retiredRows = historyList.filter(row => row.is_active === false &&
+          typeof row.player_profile_id === 'string');
+        const retiredId = retiredRows.length === 1 ? retiredRows[0].player_profile_id : null;
+        const canSeeHistorical = !historical.error && historical.status === 200 &&
+          historyList.length === 4 && retiredRows.length === 1 &&
+          historyList.filter(row => row.is_active === true).length === 3;
+        mark('H14_RETIRED_STATS_MEMBERS', 'mainA', canSeeHistorical ? 'PASS' : 'FAIL', {
+          ...safeResult(historical), historical_count: historyList.length,
+          retired_count: retiredRows.length,
+        });
+        const eligibleOnly = !candidates.error && candidates.status === 200 &&
+          selected.length === 3 && !!retiredId &&
+          !selected.some(row => row.player_profile_id === retiredId) &&
+          selected.every(row => historyList.some(history =>
+            history.player_profile_id === row.player_profile_id && history.is_active === true));
+        mark('H14_RETIRED_NOT_CANDIDATE', 'mainA', eligibleOnly ? 'PASS' : 'FAIL', {
+          ...safeResult(candidates), candidates_count: selected.length,
+          retired_excluded: !!eligibleOnly,
+        });
+        const historyNames = !names.error && names.status === 200 &&
+          Array.isArray(names.data) && names.data.length === 4 &&
+          names.data.some(row => row.id === retiredId);
+        mark('H14_RETIRED_HISTORICAL_NAME', 'mainA', historyNames ? 'PASS' : 'FAIL', {
+          ...safeResult(names), historical_name_available: !!historyNames,
+        });
+        const denies = res => res.error?.code === '42501' &&
+          [401, 403].includes(res.status) && res.data === null;
+        mark('H14_OTHER_GROUP_DENIED', 'outsider',
+          denies(outsiderStats) ? 'PASS' : 'FAIL', safeResult(outsiderStats));
+        mark('H14_ANON_STATS_DENIED', 'anonymous',
+          denies(anonymousStats) ? 'PASS' : 'FAIL', safeResult(anonymousStats));
+
+        // Assert that the retired member is still in the actual completed 4-player
+        // historical match and result, not merely returned as an inactive roster row.
+        const historyEvent = await clients.mainA.from('events').select('id,status,stats_mode,is_deleted')
+          .eq('club_id', clubId).eq('name', 'TASK08-H14-RETIRED-HISTORY-ONLY');
+        const eventId = !historyEvent.error && historyEvent.data?.length === 1
+          ? historyEvent.data[0].id : null;
+        const validEvent = !!eventId && historyEvent.data[0].status === 'closed' &&
+          historyEvent.data[0].stats_mode === 'official' &&
+          historyEvent.data[0].is_deleted === false;
+        mark('H14_RETIRED_HISTORY_EVENT', 'mainA', validEvent ? 'PASS' : 'FAIL', safeResult(historyEvent));
+        if (validEvent) {
+          const [participants, matches] = await Promise.all([
+            clients.mainA.from('event_participants')
+              .select('id,event_id,player_profile_id,participant_type')
+              .eq('event_id', eventId),
+            clients.mainA.from('matches')
+              .select('id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)')
+              .eq('event_id', eventId),
+          ]);
+          const pRows = Array.isArray(participants.data) ? participants.data : [];
+          const match = Array.isArray(matches.data) && matches.data.length === 1
+            ? matches.data[0] : null;
+          const mpRows = Array.isArray(match?.match_players) ? match.match_players : [];
+          const rRows = match?.match_results == null ? [] : Array.isArray(match.match_results)
+            ? match.match_results : [match.match_results];
+          const retiredParticipant = pRows.find(p => p.player_profile_id === retiredId);
+          const completeHistoricalMatch = !participants.error && !matches.error &&
+            pRows.length === 4 && pRows.every(p => p.participant_type === 'member') &&
+            match?.completed === true && mpRows.length === 4 &&
+            new Set(mpRows.map(p => p.participant_id)).size === 4 &&
+            pRows.every(p => mpRows.some(mp => mp.participant_id === p.id)) &&
+            !!retiredParticipant &&
+            mpRows.some(mp => mp.participant_id === retiredParticipant.id) &&
+            mpRows.filter(mp => mp.team === 'A').length === 2 &&
+            mpRows.filter(mp => mp.team === 'B').length === 2 &&
+            rRows.length === 1 && rRows[0].score_a === 4 && rRows[0].score_b === 2 &&
+            rRows[0].winner_team === 'A';
+          mark('H14_RETIRED_HISTORICAL_MATCH', 'mainA',
+            completeHistoricalMatch ? 'PASS' : 'FAIL', {
+            participant_count: pRows.length, match_count: matches.data?.length ?? null,
+            retained_retired_participant: !!retiredParticipant,
+            historical_match_complete: !!completeHistoricalMatch,
+          });
+        }
+      }
+    }
+
     // H12: permanent read-only stage regression. Bad tokens must return no data,
     // and anonymous REST access to raw event tables must remain forbidden.
     for (const kind of ['event','official']) {

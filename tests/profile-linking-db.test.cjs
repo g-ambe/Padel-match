@@ -68,10 +68,11 @@ async function prepare(db) {
   await db.exec(seed);
   await db.exec('grant all on all tables in schema public to anon,authenticated');
 }
-async function fixture(run, extra = '', apply = true) {
+async function fixture(run, extra = '', apply = true, detailCandidate = process.env.PADEL_GROUP_LINK_DETAIL_TEST === '1') {
   const db = new PGlite();
   try {
     await prepare(db); if (extra) await db.exec(extra); if (apply) await db.exec(migration);
+    if (apply && detailCandidate) await applyLinkDetailCandidate(db);
     if (process.env.PADEL_CLOSED_STATS_TEST === '1') {
       // Align this fixture's broad grants with production, then exercise the real linking flow after closure.
       await db.exec('revoke insert,update,delete on public.player_stats from anon');
@@ -446,3 +447,174 @@ test('最後のメイン管理者の退会・降格・削除を手動保護SQL�
  await assert.rejects(db.query('update club_members set is_active=false where id=$1',[memberA]),/最低1人/);
  assert.equal((await db.query('select is_active from club_members where id=$1',[id(211)])).rows[0].is_active,true);
 }));
+
+// 第3段階：0039以前からの実DDL/GRANT/RLSを残した架空DBで検証する。
+// HTTP・GoTrueの代替ではない。権限切替Migrationはまだ作成しない。
+const detailCandidateSql = () => readFileSync(join(__dirname,'../supabase/maintenance/group-foundation/03_link_detail_candidate.sql'),'utf8');
+async function applyLinkDetailCandidate(db) {
+  await db.exec(detailCandidateSql().replace(/rollback;\s*$/, 'commit;'));
+}
+const sharedSourceMembership = `insert into club_members(id,club_id,player_profile_id,role) values ('${id(220)}','${clubB}','${sourceA}','main_admin');`;
+const additionalActors = `
+insert into auth.users values ('${id(7)}','sub@example.test',now()),('${id(8)}','member@example.test',now()),('${id(9)}','departed@example.test',now());
+insert into profiles(id,display_name) values ('${id(7)}','サブ'),('${id(8)}','一般'),('${id(9)}','退会者');
+insert into player_profiles(id,display_name,linked_auth_user_id) values ('${id(17)}','サブ','${id(7)}'),('${id(18)}','一般','${id(8)}'),('${id(19)}','退会者','${id(9)}');
+insert into club_members(id,club_id,player_profile_id,role,is_active) values
+('${id(217)}','${clubA}','${id(17)}','sub_admin',true),('${id(218)}','${clubA}','${id(18)}','member',true),('${id(219)}','${clubA}','${id(19)}','member',false);
+`;
+
+test('P0再現: 旧0039の管理者向け連携詳細に他グループ所属・役職・プロフィール・全体件数が漏れる',async()=>fixture(async db=>{
+  const request=await requestLink(db);
+  const manager=await rpc(db,adminA,'get_player_profile_link_request',[request]);
+  assert.equal(manager.is_recipient,false);
+  assert(manager.memberships.some(m=>m.club_name==='グループB'&&m.role==='main_admin'));
+  assert.equal(manager.source.bio,'仮の自己紹介');
+  assert.equal(manager.target_profile_id,target);
+  assert.equal(manager.target_auth_user_id,owner);
+  assert.equal(typeof manager.review_token,'string');
+  assert.equal((await rpc(db,adminA,'can_manage_player_profile_club',[clubB])),false);
+},sharedSourceMembership,true,false));
+
+test('P0再現: 旧表/列SELECTは匿名・未所属・他グループ・退会者にも広く残り、メール列と書込は別制限',async()=>fixture(async db=>{
+  const request=await requestLink(db);
+  for(const [actor,role] of [[null,'anon'],[other,'authenticated'],[adminB,'authenticated'],[id(9),'authenticated'],[id(8),'authenticated'],[id(7),'authenticated'],[adminA,'authenticated'],[superUser,'authenticated']]) {
+    await asUser(db,actor,async()=>{
+      // この成功は脆弱性の再現であり、許可すべき境界という意味ではない。
+      assert((await db.query('select player_profile_id,profile_id,role from club_members where id=$1',[memberA])).rows.length===1);
+      assert.equal((await db.query('select bio,linked_auth_user_id from player_profiles where id=$1',[target])).rows[0].linked_auth_user_id,owner);
+      assert.equal((await db.query('select display_name from profiles where id=$1',[owner])).rows.length,1);
+      assert.equal((await db.query('select cm.role,pp.bio from club_members cm join player_profiles pp on pp.id=cm.player_profile_id where cm.id=$1',[memberA])).rows[0].bio,'仮の自己紹介');
+      await assert.rejects(db.query('select email from profiles'),/permission denied/);
+      await assert.rejects(db.query('select * from profiles'),/permission denied/);
+      const rpcAllowed=role==='authenticated'&&[adminA,id(7),superUser].includes(actor);
+      if(rpcAllowed) assert.equal((await db.query('select get_player_profile_link_request($1) d',[request])).rows[0].d.id,request);
+      else await assert.rejects(db.query('select get_player_profile_link_request($1)',[request]));
+      const p=(await db.query("select has_function_privilege(current_user,'public.get_player_profile_link_request(uuid)','EXECUTE') p")).rows[0].p;
+      assert.equal(p,role==='authenticated');
+      await assert.rejects(db.query("select profile_link_private.preview($1,$2)",[sourceA,owner]),/permission denied/);
+      await assert.rejects(db.query('update player_profiles set linked_auth_user_id=$1 where id=$2',[actor,sourceA]),/permission denied/);
+    },role);
+  }
+  // 0039のprofilesには表SELECTがなくても列GRANTによる取得がある。
+  await asUser(db,other,async()=>{
+    const privileges=(await db.query("select has_table_privilege(current_user,'profiles','SELECT') table_select,has_column_privilege(current_user,'profiles','display_name','SELECT') name_select")).rows[0];
+    assert.equal(privileges.table_select,false);assert.equal(privileges.name_select,true);
+  });
+  const acl=(await db.query("select relname,relrowsecurity from pg_class where oid in ('club_members'::regclass,'player_profiles'::regclass,'profiles'::regclass)")).rows;
+  assert.equal(acl.length,3);assert(acl.every(r=>r.relrowsecurity));
+},additionalActors,true,false));
+
+test('P0修正案: 管理者には対象グループの情報だけ、受取人には同一の同意preview/tokenを返す',async()=>fixture(async db=>{
+  const request=await requestLink(db);
+  const before=await state(db), consent=await rpc(db,owner,'get_player_profile_link_request',[request]);
+  const aclBefore=(await db.query("select proacl,proowner from pg_proc where oid='public.get_player_profile_link_request(uuid)'::regprocedure")).rows;
+  await applyLinkDetailCandidate(db);
+  assert.deepEqual(await state(db),before);
+  assert.deepEqual((await db.query("select proacl,proowner from pg_proc where oid='public.get_player_profile_link_request(uuid)'::regprocedure")).rows,aclBefore);
+  const recipient=await rpc(db,owner,'get_player_profile_link_request',[request]);
+  for(const key of ['source','target_profile_id','target_display_name','memberships','participant_count','match_count','result_count','team_match_count','official_match_count','review_token']) assert.deepEqual(recipient[key],consent[key],key);
+  assert.equal(recipient.detail_scope,'recipient');assert.equal(recipient.is_recipient,true);
+  for(const actor of [adminA,id(7),superUser]) {
+    const manager=await rpc(db,actor,'get_player_profile_link_request',[request]);
+    assert.deepEqual(Object.keys(manager).sort(),['id','club_id','club_name','status','created_at','expires_at','is_recipient','detail_scope','source_display_name','group_membership'].sort());
+    assert.equal(manager.detail_scope,'manager');assert.equal(manager.source_display_name,'仮登録名');
+    assert.deepEqual(Object.keys(manager.group_membership).sort(),['role','is_active','created_at'].sort());
+    assert.equal(manager.group_membership.role,'sub_admin');
+    const serialized=JSON.stringify(manager);
+    for(const hidden of ['グループB',clubB,sourceA,target,owner,'仮の自己紹介','本人の正規名','review_token','memberships']) assert(!serialized.includes(hidden),hidden);
+  }
+  for(const actor of [other,adminB,id(8),id(9)]) await assert.rejects(rpc(db,actor,'get_player_profile_link_request',[request]),/権限/);
+  await asUser(db,null,async()=>assert.rejects(db.query('select get_player_profile_link_request($1)',[request]),/permission denied/),'anon');
+  await assert.rejects(rpc(db,adminA,'review_player_profile_link',[request,'approved',recipient.review_token]),/申請先本人/);
+  assert.equal((await rpc(db,owner,'review_player_profile_link',[request,'approved',consent.review_token])).status,'approved');
+  assert.equal((await db.query('select count(*)::int n from player_profile_merges')).rows[0].n,1);
+  assert.equal((await db.query('select player_profile_id from club_members where id=$1',[id(220)])).rows[0].player_profile_id,target);
+  assert.equal((await rpc(db,adminA,'get_player_profile_link_request',[request])).source_display_name,'本人の正規名');
+  const after=await state(db);
+  for(const table of ['matches','match_players','match_results','player_stats']) assert.deepEqual(after[table],before[table]);
+},sharedSourceMembership+additionalActors,true,false));
+
+test('P0修正案: 管理者の取消・失効・権限喪失と、他グループでの変更後の同意再確認を維持する',async()=>fixture(async db=>{
+  await applyLinkDetailCandidate(db);
+  const request=await requestLink(db),consent=await rpc(db,owner,'get_player_profile_link_request',[request]);
+  await db.query("update club_members set role='member' where id=$1",[id(220)]);
+  await assert.rejects(rpc(db,owner,'review_player_profile_link',[request,'approved',consent.review_token]),/確認後に/);
+  // 管理者の閲覧に受取人のcanonical検査や他グループのpreviewは不要。
+  await db.query('update player_profiles set is_active=false where id=$1',[target]);
+  const manager=await rpc(db,adminA,'get_player_profile_link_request',[request]);
+  assert.equal(manager.detail_scope,'manager');assert(!('review_token' in manager));
+  const before=await state(db);
+  assert.equal((await rpc(db,adminA,'review_player_profile_link',[request,'cancelled',null])).status,'cancelled');
+  assert.equal((await rpc(db,adminA,'get_player_profile_link_request',[request])).status,'cancelled');
+  assert.deepEqual(await state(db),before);
+  const expired=await requestLink(db,memberB,clubB,adminB,other);
+  await db.query("update player_profile_link_requests set expires_at=now()-interval '1 second' where id=$1",[expired]);
+  const detail=await rpc(db,other,'get_player_profile_link_request',[expired]);
+  assert.equal(detail.status,'expired');assert(!('source' in detail));assert(!('review_token' in detail));
+  await db.query('update club_members set is_active=false where id=$1',[id(211)]);
+  await assert.rejects(rpc(db,adminB,'get_player_profile_link_request',[expired]),/権限/);
+},sharedSourceMembership,true,false));
+
+test('P0旧権限: UPDATE RETURNINGはメイン・サブ・superだけ、他人本人編集と識別子書換は拒否',async()=>fixture(async db=>{
+  await applyLinkDetailCandidate(db);
+  for(const [actor,allowed] of [[other,false],[adminB,false],[id(9),false],[id(8),false],[id(7),true],[adminA,true],[superUser,true]]) await asUser(db,actor,async()=>{
+    assert.equal((await db.query('update player_profiles set display_name=display_name where id=$1 returning id',[sourceA])).rows.length,allowed?1:0);
+    assert.equal((await db.query('update club_members set is_active=is_active where id=$1 returning id,role,player_profile_id',[memberA])).rows.length,allowed?1:0);
+    assert.equal((await db.query('update player_profiles set display_name=display_name where id=$1 returning id',[target])).rows.length,0);
+    await assert.rejects(db.query('update club_members set profile_id=$1 where id=$2',[actor,memberA]),/permission denied/);
+  });
+  await asUser(db,null,async()=>assert.rejects(db.query('update club_members set is_active=false where id=$1 returning id',[memberA]),/permission denied/),'anon');
+  await asUser(db,owner,async()=>assert.equal((await db.query('update player_profiles set bio=bio where id=$1 returning id',[target])).rows.length,1));
+  await asUser(db,id(7),async()=>assert.equal((await db.query('update club_members set is_active=is_active where id=$1 returning id',[id(210)])).rows.length,0));
+},additionalActors,true,false));
+
+test('P0修正案: 既定ROLLBACK・固定search_path・ACL維持、受取人が管理者でも本人同意を優先',async()=>fixture(async db=>{
+  const request=await requestLink(db),before=await rpc(db,adminA,'get_player_profile_link_request',[request]);
+  await db.exec(detailCandidateSql());
+  assert.deepEqual(await rpc(db,adminA,'get_player_profile_link_request',[request]),before);
+  await applyLinkDetailCandidate(db);
+  const fn=(await db.query("select prosecdef,proconfig,pg_get_userbyid(proowner) owner from pg_proc where oid='public.get_player_profile_link_request(uuid)'::regprocedure")).rows[0];
+  assert(fn.prosecdef);assert.equal(fn.owner,'postgres');assert(fn.proconfig.includes('search_path=""'));
+  await db.query("insert into club_members(club_id,player_profile_id,role) values ($1,$2,'sub_admin')",[clubA,target]);
+  const recipient=await rpc(db,owner,'get_player_profile_link_request',[request]);
+  assert.equal(recipient.detail_scope,'recipient');assert.equal(typeof recipient.review_token,'string');
+  assert.equal(recipient.source.id,sourceA);
+},'',true,false));
+
+test('P0統合: 実0039+0054+0055と修正案で新旧取得境界・共有名・本人承認を比較する',async()=>fixture(async db=>{
+  const request=await requestLink(db),consent=await rpc(db,owner,'get_player_profile_link_request',[request]);
+  const policiesBefore=(await db.query("select tablename,policyname,roles,cmd,qual,with_check from pg_policies where tablename in ('club_members','player_profiles','profiles') order by tablename,policyname")).rows;
+  for(const name of ['0054_group_read_interfaces.sql','0055_group_read_consumer_support.sql']) await db.exec(readFileSync(join(dir,name),'utf8'));
+  await applyLinkDetailCandidate(db);
+  assert.deepEqual((await db.query("select tablename,policyname,roles,cmd,qual,with_check from pg_policies where tablename in ('club_members','player_profiles','profiles') order by tablename,policyname")).rows,policiesBefore);
+  const directory=await asUser(db,other,async()=>(await db.query('select * from get_public_club_directory($1)',[clubA])).rows);
+  assert(directory.length>0);assert(directory.every(r=>Object.keys(r).sort().join(',')==='display_name,is_unlinked,reference'));
+  const reference=directory.find(r=>r.display_name==='仮登録名').reference;
+  const limited=await rpc(db,other,'preview_public_club_claim',[clubA,reference]);
+  assert.equal(limited.membership_count,2);assert(!JSON.stringify(limited).includes('グループB'));
+  for(const actor of [other,adminB,id(9)]) await asUser(db,actor,async()=>assert.rejects(db.query('select * from get_club_roster($1)',[clubA]),/権限/));
+  await asUser(db,adminA,async()=>assert((await db.query('select * from get_club_roster($1)',[clubA])).rows.some(m=>m.id===memberA)));
+  assert.equal((await rpc(db,owner,'get_player_profile_link_request',[request])).review_token,consent.review_token);
+  assert(!('memberships' in await rpc(db,adminA,'get_player_profile_link_request',[request])));
+  // 未閉鎖の旧入口を負債として明示再現。新RPC成功を旧経路の安全性証明にしない。
+  const legacy=await rpc(db,other,'preview_profile_join',[clubA,memberA]);
+  assert(legacy.memberships.some(m=>m.club_name==='グループB'));
+  await asUser(db,other,async()=>assert.equal((await db.query("select has_function_privilege(current_user,'public.submit_profile_join_request(uuid,uuid,text,text)','EXECUTE') p")).rows[0].p,true));
+  await asUser(db,adminA,async()=>assert.equal((await db.query('select target_auth_user_id from player_profile_link_requests where id=$1',[request])).rows[0].target_auth_user_id,owner));
+  await db.query("update events set status='closed',share_enabled=true,share_token='synthetic-p0-share' where id=$1",[id(300)]);
+  const shared=()=>asUser(db,null,async()=>(await db.query('select * from get_shared_event_player_names($1)',['synthetic-p0-share'])).rows,'anon');
+  assert((await shared()).some(r=>r.id===sourceA));
+  // 上のイベント更新は同意snapshotに含まれるため、必ず最新tokenを取得する。
+  assert.equal((await approve(db,request)).status,'approved');
+  assert((await shared()).some(r=>r.id===target));
+  assert(!(await shared()).some(r=>r.id===sourceA));
+},sharedSourceMembership+additionalActors,true,false));
+
+test('P0修正案: 対象グループと申請元所属が不整合なら他グループの選手名を返さない',async()=>fixture(async db=>{
+  const request=await requestLink(db);await applyLinkDetailCandidate(db);
+  await db.query('update player_profile_link_requests set source_player_profile_id=$1 where id=$2',[sourceB,request]);
+  assert.equal((await rpc(db,adminA,'get_player_profile_link_request',[request])).source_display_name,'仮登録名');
+  await db.query('update player_profile_link_requests set source_club_member_id=$1,source_player_profile_id=$2 where id=$3',[memberB,sourceB,request]);
+  const manager=await rpc(db,adminA,'get_player_profile_link_request',[request]);
+  assert.equal(manager.source_display_name,null);assert.equal(manager.group_membership,null);
+},'',true,false));

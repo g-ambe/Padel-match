@@ -19,7 +19,14 @@ export type ProfileLinkRequest = {
   id: string; club_id: string; source_player_profile_id: string; target_auth_user_id: string;
   source_display_name: string; club_name: string; status: LinkStatus; created_at: string; expires_at: string;
 };
-export type ProfileLinkDetail = Omit<ProfileLinkRequest, "source_display_name"> & Partial<ProfileMergePreview> & { is_recipient: boolean };
+type ProfileLinkDetailBase = {
+  id: string; club_id: string; club_name: string; status: LinkStatus; created_at: string; expires_at: string;
+};
+export type ProfileLinkDetail = ProfileLinkDetailBase & (
+  | ({ detail_scope: "recipient"; is_recipient: true } & Partial<ProfileMergePreview>)
+  | { detail_scope: "manager"; is_recipient: false; source_display_name: string | null;
+      group_membership: { role: string; is_active: boolean; created_at: string } | null }
+);
 export type AccountCandidate = { auth_user_id: string; display_name: string; identifier: string };
 
 export async function profileLinkRpc<T>(supabase: SupabaseClient, name: string, args: Record<string, unknown>): Promise<T> {

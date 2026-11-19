@@ -25,10 +25,10 @@ export default function ProfileLinkPage() {
   };
   useEffect(() => { void load(); }, [id]);
   const review = async (decision: "approved" | "rejected" | "cancelled") => {
-    const s = getSupabaseClient(); if (!s || busy || !request || (decision === "approved" && !consent)) return;
+    const s = getSupabaseClient(); if (!s || busy || !request || (!request.is_recipient && decision !== "cancelled") || (decision === "approved" && !consent)) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      const result = await reviewPlayerProfileLink(s, id, decision, request.review_token);
+      const result = await reviewPlayerProfileLink(s, id, decision, request.is_recipient ? request.review_token : undefined);
       await load();
       setMessage(result.status === "approved" ? "連携が完了しました" : result.status === "rejected" ? "連携を拒否しました" : linkStatusLabel[result.status]);
     } catch (cause) { setError(profileErrorMessage(cause)); setConsent(false); }
@@ -39,14 +39,22 @@ export default function ProfileLinkPage() {
       {loading ? <p className="text-sm text-zinc-400">読み込み中...</p> : request && <div className="space-y-4">
         <p className="text-sm">申請元：{request.club_name}</p><p className="text-sm text-amber-200">{linkStatusLabel[request.status]}</p>
         <p className="text-xs text-zinc-400">期限 {new Date(request.expires_at).toLocaleString("ja-JP")}</p>
-        {request.status === "pending" && request.source && <>
+        {request.is_recipient && request.status === "pending" && request.source && <>
           <ProfileMergeSummary preview={request as ProfileLinkDetail & ProfileMergePreview} />
-          {request.is_recipient ? request.target_profile_id ? <>
+          {request.target_profile_id ? <>
             <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={consent} disabled={busy} onChange={e => setConsent(e.target.checked)} /><span>この仮登録選手が自分であり、表示された所属・戦績を引き継ぐことに同意します</span></label>
             <div className="flex gap-2"><button disabled={busy || !consent} className="w-1/2 rounded-xl bg-accent py-3 text-black disabled:bg-zinc-600" onClick={() => void review("approved")}>承認</button><button disabled={busy} className="w-1/2 rounded-xl border border-zinc-500 py-3" onClick={() => void review("rejected")}>拒否</button></div>
           </> : <div className="space-y-2"><p className="text-sm">本人の正規プロフィールを作成してから承認できます。</p><Link href="/profile" className="block rounded-xl bg-accent p-3 text-center text-black">プロフィールを作成する</Link><button disabled={busy} onClick={() => void review("rejected")} className="w-full rounded-xl border border-zinc-500 py-3">拒否</button></div>
-            : <button disabled={busy} className="w-full rounded-xl border border-zinc-500 py-3" onClick={() => void review("cancelled")}>申請を取り消す</button>}
+            }
         </>}
+        {!request.is_recipient && <div className="space-y-3 text-sm">
+          <p>対象選手：{request.source_display_name ?? "対象選手を確認できません"}</p>
+          {request.group_membership && <p className="text-xs text-zinc-400">
+            {({ main_admin: "メイン管理者", sub_admin: "サブ管理者", member: "メンバー" } as Record<string, string>)[request.group_membership.role] ?? request.group_membership.role}
+            {" / "}{request.group_membership.is_active ? "在籍" : "退会・休止"}
+          </p>}
+          {request.status === "pending" && <button disabled={busy} className="w-full rounded-xl border border-zinc-500 py-3" onClick={() => void review("cancelled")}>申請を取り消す</button>}
+        </div>}
       </div>}
       {error && <p role="alert" className="mt-3 text-sm text-red-400">{error}</p>}{message && <p role="status" className="mt-3 text-sm text-emerald-400">{message}</p>}
       <button disabled={busy} onClick={() => void load()} className="mt-3 text-sm underline">再読み込み</button>

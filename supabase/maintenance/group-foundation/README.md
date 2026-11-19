@@ -6,10 +6,26 @@
 ## 第3段階の状態
 
 [権限切替前の停止記録・依存棚卸し・適用/復旧手順案](STAGE3.md)を参照。
-最新監査Runは成功したが成果物取得が403、関数本文照合と実アカウントHTTP認可試験は未完了。
-旧公開SELECT/旧RPCの閉鎖は未実装であり、0054/0055を変更せずDraftを維持する。
-今回再実行した監査ツール5件、読取クライアント/隔離SQLの既存2テストファイル、TypeScriptは成功。
-本段階の変更は文書のみのためCloudflareビルドは再実行せず、第2段階の成功記録と区別する。
+前回の最新監査Runは成功したが成果物取得が403、関数本文照合と実アカウントHTTP認可試験は未完了。
+追加依頼により、実0039の旧RPC・GRANT・RLSを架空データで再現し、連携詳細RPCの本人用/管理者用DTOを
+分ける修正案とアプリ側を追加した。`03_link_detail_candidate.sql`は既定ROLLBACKの隔離検証用で、
+番号付きMigrationではない。旧公開SELECT/旧RPC全体の閉鎖は未実装で、0054/0055を変更せずDraftを維持する。
+
+隔離検証のコマンド：
+
+```sh
+PADEL_GROUP_LINK_DETAIL_TEST=1 node tests/profile-linking-db.test.cjs
+node --test tests/group-read-interfaces.test.cjs tests/group-read-client.test.cjs tests/player-profiles.test.cjs
+node_modules/.bin/tsc --noEmit --incremental false
+npm run cf:build
+```
+
+環境変数は**架空DBの既存連携テストへ修正案を適用するための試験用フラグ**であり、本番設定ではない。
+新規8件は旧RPC/旧権限の再現と修正案の比較を含む。PostgREST・実Auth・本番定義との一致は未検証。
+連携DB49件成功、最終SQL調整後のP0の8件再実行成功、関連3テストファイル・TypeScript・
+最終アプリ差分のCloudflare互換ビルド成功。旧公開権限を閉じた後の認可試験は未実施。
+Worker生成とNext/assets BUILD_ID一致も確認した。既存compatibility_date警告と、環境内のWranglerログ保存先
+作成エラーは出たが、ビルド終了コードは0。Cloudflare上のプレビュー/実Auth検証や本番デプロイの成功を意味しない。
 
 ## 2026-11-19：通信制限解消、第1段階
 

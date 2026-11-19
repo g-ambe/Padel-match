@@ -72,3 +72,30 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
+
+      # One-shot H09/H10 synthetic HTTP fixture check, removed after guarded cleanup.
+      # No production credentials, merge, deploy, or unrelated database writes.
+      - name: Check H09/H10 test script syntax
+        run: node --check supabase/maintenance/group-foundation/45_h09_h10_stage_http_write_smoke.mjs
+
+      - name: TypeScript and profile screen checks for task 08 branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/task08-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
+          "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" install --frozen-lockfile
+          "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" x tsc --noEmit
+          node --test tests/profile-v4.test.cjs
+
+      - name: Run H09/H10 isolated stage JWT writes
+        shell: bash
+        env:
+          TASK08_STAGE_H09_H10_WRITE: '1'
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cp supabase/maintenance/group-foundation/45_h09_h10_stage_http_write_smoke.mjs "$RUNNER_TEMP/task08-b0/h09h10.mjs"
+          node "$RUNNER_TEMP/task08-b0/h09h10.mjs"

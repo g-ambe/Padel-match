@@ -82,7 +82,7 @@ try{
  const stale=await clients.recipient.rpc('save_club_member_display_name',{
    p_club_id:pub.id,p_member_id:person.id,p_display_name:'H16-Should-Not-Overwrite',
    p_expected_club_display_name:null,p_public_confirmation:true});
- mark('H16_CAS_STALE_REJECTED',stale.error?.code==='40001'&&[400,409].includes(stale.status),
+ mark('H16_CAS_STALE_REJECTED',stale.error?.code==='PT409'&&stale.status===409,
    minimal(stale));
 
  const ordinaryDenied=await clients.recipient.rpc('save_club_member_display_name',{

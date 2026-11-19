@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：B0実HTTP検証をGitHub Actionsから実行可能にする準備
+
+実Auth・PostgREST用の既存[`08_staging_auth_http_smoke.mjs`](08_staging_auth_http_smoke.mjs)をGitHub Actionsから**本番/マージ/デプロイを行わず**に実行するため、[`.github/workflows/task08-staging-b0-auth-http.yml`](../../../.github/workflows/task08-staging-b0-auth-http.yml)と非秘密の[`.task08-b0-trigger`](.task08-b0-trigger)を追加。
+
+ワークフローは既存`codex/task-08-group-foundation`ブランチで**トリガーファイルが変更されたpushのみ**起動。現在`NOT_TRIGGERED`のままで**未実行**。Secretを設定するまでトリガーを変更しない。ユーザーはGitHub `Settings > Secrets and variables > Actions` に次の**テスト専用**4件を登録する（値をチャット・PR・Issueに送らない）。
+
+`TASK08_STAGING_PUBLISHABLE_KEY`（ステージングの`sb_publishable_`形式に限定）、`TASK08_STAGING_MAIN_A_PASSWORD`、`TASK08_STAGING_RECIPIENT_PASSWORD`、`TASK08_STAGING_OUTSIDER_PASSWORD`。
+
+登録後にトリガーのみ更新し、Actions結果の真偽/件数をIssueへ記録する。ジョブはSHA固定Action、GitHub token読取権限のみ、Secretsは準備チェックと本試験のステップにだけ供給する。スクリプトはアプリDBを読取のみ（正規Authサインイン履歴の更新はあり得る）、応答本文・パスワード・JWT・内部IDをログへ出さない。実HTTPのH01〜H14全件ではなくB0の一部観測。Actions利用分数が発生する点に注意。
+
+匿名ViewのSQLロール負例は[`09_staging_view_invoker_rollback_probe.sql`](09_staging_view_invoker_rollback_probe.sql)をREAD/ROLLBACK試験済み：テスト表示名3件→`security_invoker=true`一時変更時42501拒否。ただし公開機能を壊す可能性があり、**Viewの永続変更は未実施**。詳しくは[`STAGING_HTTP_PLAN.md`](STAGING_HTTP_PLAN.md)0.5節へ。
+
 ## 2026-11-19 更新：候補06の実DB ROLLBACK検証とB0 HTTP実行器
 
 ステージングの検証用A/B・Auth3名のfixtureに対し、既定ROLLBACKの`06_staging_link_detail_candidate.sql`を**同一トランザクションで一時的に有効化**し、旧連携RPCの管理者過剰返却の再現と候補DTOの限定、本人`review_token`の前後一致、無関係者拒否を実DBで確認。後続のREAD ONLY照合で旧関数MD5が元の値に戻り、申請レコードが0件であることを確認した。**候補06は正式適用していない**。

@@ -12,7 +12,7 @@
 - `app/share/events/[token]/page.tsx` を匿名基底表/プロフィール直接取得から **token専用 `get_shared_event('event')`** に移行。チームDTO欠落時は結果を推測補完せずエラー表示。公式共有画面は既存のtoken RPC移行を維持。`tests/shared-event-page-rpc.test.cjs` で基底表直取得復活とDTO漏れをガード。
 - **追加発見：匿名共有基底表のACL/RLS**。Stage `event_team_matches`・`event_team_guests`・`event_video_links` には匿名SELECT表権限と共有ON等を条件とするSELECT policyが残存。ただし**合成イベントを用いた共有ヘッダーなしanonの実SQL直接SELECTは3表とも42501拒否**（Stageの現在の他表権限との合成結果）。実漏えいを再現したとは判断しない。今後の権限差解消時はこれらも明示的に閉じ、共有RPCだけを許すことを再検証。Prodで確認済みの公式共有関連の匿名直接取得リスクは別途未修正。
 - **制約**：Stageは `event_team_rounds`・混合列が本番と未一致。候補関数は `to_jsonb(etm)` による存在列参照でStageと本番の差を吸収するが、**実混合モードの正例は未確認**。正規token実HTTP、ユーザー実機表示、正式な本番互換Migration、全H12/H14受入は未完了。既存PRはDraft/OPEN維持。
-- Stage B0・DTOガード・TypeScriptをGitHub Actionsで再実行するよう既存workflowを更新し、`.task08-b0-trigger` から起動（最終結果は実行ログ確認後に追記）。Secrets値はコード・ログに含めない。
+- Stage B0・DTOガード・TypeScriptをGitHub Actionsで再実行するよう既存workflowを更新し、`.task08-b0-trigger` から起動（[run #44531006625](https://github.com/g-ambe/Padel-match/actions/runs/44531006625)で **H12 DTO回帰テスト・TypeScriptコンパイル・ステージング実Auth/PostgREST B0の全ステップPASS**。ブランチ/SecretsはStage専用、PRはDraftのまま）。Secrets値はコード・ログに含めない。
 
 **次工程**：①GitHub Actions結果確認 ②Stageチーム混合/ラウンド同等スキーマ・正規token HTTP正例 ③本番の匿名基底表公開を閉じる候補をStage負例→互換検証 ④H14既存スコア例外/退会履歴確認。**本番変更は別承認。**
 

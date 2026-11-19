@@ -83,18 +83,3 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
-
-      # One-shot, Stage-only synthetic fixture 67. NEVER keep this enabled after SQL 68 cleanup.
-      - name: H16 real authenticated Stage alias HTTP (one shot; fixture 67)
-        shell: bash
-        env:
-          TASK08_H16_TEST_STAGE_WRITE: '1'
-          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
-          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
-          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
-          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cp supabase/maintenance/group-foundation/69_h16_real_auth_http_once.mjs "$RUNNER_TEMP/task08-b0/h16.mjs"
-          node "$RUNNER_TEMP/task08-b0/h16.mjs"
-

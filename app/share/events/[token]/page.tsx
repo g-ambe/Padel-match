@@ -11,6 +11,7 @@ import { GuestName } from "@/components/match-ui";
 import { teamCardScores, teamCardPlayers } from "@/lib/friendly-team-rounds";
 import { SharedPageHeader } from "@/components/shared-page-header";
 import { getSupabaseClient } from "@/lib/supabase";
+import { readSharedEventNames } from "@/lib/group-read";
 import { getSharedEventClient } from "@/lib/shared-event-client";
 import { firstMatchResult, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 
@@ -52,6 +53,9 @@ export default function SharedEventPage() {
       return setError("共有イベントが見つかりません");
     }
     if (!event) return setError("この共有リンクは無効です");
+    let contextNames;
+    try { contextNames = await readSharedEventNames(supabase, token); }
+    catch { return setError("共有イベントの選手名を取得できませんでした。再度読み込んでください"); }
     setEventName(event.name ?? "-");
     setEventDate(event.created_at ? new Date(event.created_at).toLocaleDateString("ja-JP") : "-");
     setIsTeamEvent(event.event_mode === "team");
@@ -65,22 +69,15 @@ export default function SharedEventPage() {
       const guestRows=await supabase.from("event_team_guests").select("id,side,guest_name").eq("event_id",event.id);
       if(guestRows.error)return setError("共有チームの戦績を取得できませんでした");
       setTeamGuests(guestRows.data??[]);
-      const ids=[...new Set((cards??[]).flatMap(c=>teamCardPlayers(c).flatMap(p=>p.profile_id?[p.profile_id]:[])))];
       const profileNames:Record<string,string>={};
-      for(let start=0;start<ids.length;start+=100){const result=await supabase.from("player_profiles").select("id,display_name").in("id",ids.slice(start,start+100));for(const p of result.data??[])profileNames[p.id]=p.display_name??"選手";}
+      for(const p of contextNames) if(p.kind==="player")profileNames[p.id]=p.display_name;
       setTeamProfileNames(profileNames);
     }
     const { data: pt, error: participantsError } = await supabase.from("event_participants").select("id,guest_name,participant_type,player_profile_id,profile_id").eq("event_id", event.id);
     if (participantsError) logSharedLoadError("共有イベント参加者の取得に失敗しました", participantsError);
     const rows = pt ?? [];
-    const playerProfileIds = rows.map((r: any) => r.player_profile_id).filter(Boolean);
-    const profileIds = rows.map((r: any) => r.profile_id).filter(Boolean);
-    const { data: pps, error: playerProfilesError } = playerProfileIds.length ? await supabase.from("player_profiles").select("id,display_name").in("id", playerProfileIds) : { data: [] as any[], error: null as any };
-    if (playerProfilesError) logSharedLoadError("共有イベント選手名の取得に失敗しました", playerProfilesError);
-    const { data: ps, error: profilesError } = profileIds.length ? await supabase.from("profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[], error: null as any };
-    if (profilesError) logSharedLoadError("共有イベントプロフィール名の取得に失敗しました", profilesError);
-    const ppm = new Map((pps ?? []).map((x: any) => [x.id, x.display_name]));
-    const pm = new Map((ps ?? []).map((x: any) => [x.id, x.display_name]));
+    const ppm = new Map(contextNames.filter(x=>x.kind==="player").map(x=>[x.id,x.display_name]));
+    const pm = new Map(contextNames.filter(x=>x.kind==="account").map(x=>[x.id,x.display_name]));
     setParticipants(rows.map((r: any) => ({ ...r, display_name: (r.player_profile_id ? ppm.get(r.player_profile_id) : null) ?? (r.profile_id ? pm.get(r.profile_id) : null) ?? r.guest_name ?? "ゲスト" })));
     const { data: ms, error: matchesError } = await supabase.from("matches").select("id,court_number,completed,youtube_url,rounds(round_number),match_players(participant_id,team),match_results(score_a,score_b,winner_team)").eq("event_id", event.id).order("created_at", { ascending: false });
     if (matchesError) logSharedLoadError("共有イベント試合結果の取得に失敗しました", matchesError);

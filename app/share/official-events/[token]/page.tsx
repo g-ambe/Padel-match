@@ -7,6 +7,7 @@ import { Card } from "@/components/ui";
 import { SharedPageHeader } from "@/components/shared-page-header";
 import { buildOfficialStats, officialStatusLabel } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
+import { readSharedOfficialNames } from "@/lib/group-read";
 import { readSharedOfficialClubName } from "@/lib/shared-club-name";
 
 type OfficialEvent = { id: string; title: string; event_date: string | null; description: string | null; memo: string | null; status: string; is_deleted?: boolean | null; share_enabled: boolean | null; club_id: string; clubs?: { name: string } | null };
@@ -50,9 +51,10 @@ export default function SharedOfficialEventPage() {
     const { data: opponentRows } = await supabase.from("official_opponents").select("id,opponent_team_name,memo").eq("official_event_id", officialEvent.id).order("created_at");
     const { data: matchRows } = await supabase.from("official_matches").select("id,official_opponent_id,match_order,created_at,our_player1_profile_id,our_player2_profile_id,our_player1_guest_name,our_player2_guest_name,opponent_player1_name,opponent_player2_name,our_score,opponent_score,result,score_detail,memo,youtube_url").eq("official_event_id", officialEvent.id).order("match_order", { ascending: true }).order("created_at", { ascending: true }).order("id", { ascending: true });
     const rows = (matchRows ?? []) as unknown as OfficialMatch[];
-    const profileIds = [...new Set(rows.flatMap((match) => [match.our_player1_profile_id, match.our_player2_profile_id]).filter(Boolean) as string[])];
-    const { data: profileRows } = profileIds.length ? await supabase.from("player_profiles").select("id,display_name").in("id", profileIds) : { data: [] as any[] };
-    setNames(new Map((profileRows ?? []).map((profile: any) => [profile.id, profile.display_name ?? "名称未設定"])));
+    try {
+      const profileRows = await readSharedOfficialNames(supabase, token);
+      setNames(new Map(profileRows.map(profile=>[profile.id,profile.display_name])));
+    } catch { return setError("共有イベントの選手名を取得できませんでした。再度読み込んでください"); }
     setOpponents((opponentRows ?? []) as unknown as OfficialOpponent[]);
     setMatches(rows);
   })(); }, [token]);

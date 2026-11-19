@@ -1,49 +1,53 @@
-# TASK-08-03 / P0：取得・権限分離（実装前ゲート）
+# TASK-08-03 / P0：段階的な取得・権限分離
 
-仕様：[#264](https://github.com/g-ambe/Padel-match/issues/264)、[設計コメント](https://github.com/g-ambe/Padel-match/issues/264#issuecomment-6975098709)、調査：#229。
-ブランチ：`codex/task-08-group-foundation`。PR #261には混在させない。
+仕様：[#264](https://github.com/g-ambe/Padel-match/issues/264)、設計コメント6975098709、調査#229。
+既存ブランチ `codex/task-08-group-foundation` / Draft PR #265を使用。PR #261は変更しない。
 
-## 現在の成果物
+## 2026-11-19：通信制限解消、第1段階
 
-この段階の変更は**カタログの読み取り専用監査ツールのみ**。アプリ取得処理、既存GRANT/RLS、関数、保存処理は変更していない。Migrationも未追加。P0の公開範囲分離は未実装で、既存の広いSELECTのリスクは残る。
+環境の通信許可反映後、Run 44293556005のカタログartifactの取得が成功した。READ ONLY・列/表GRANT・RLS・関数所有者/search_path/ACL/定義ハッシュを確認。#229で報告された広いSELECTは残っている。関数本文はハッシュ化して保存しており、既存関数全文の完全一致照合を完了したという意味ではない。
+監査結果・秘密値・生の接続エラーは公開ログ/リポジトリへ掲載しない。既存監査ツールのREAD ONLY/TLS verify-full/公式CA指紋/固定クライアントは維持する。
 
-- `01_preflight.sql`：BEGIN READ ONLY、タイムアウト、対象表の列・RLS・表/列GRANT、限定した関連関数の所有者/search_path/ACL/定義、Migration履歴をカタログから取得。アプリ行は読まず、ROLLBACKで終了。
-- `read_catalog.py`：既存の対象プロジェクト/TLS/公式CA指紋検証を再利用。生のクライアントエラー・接続値は出力しない。関数定義はSHA-256へ置換し、内部メタデータをログへ出さない。
-- `.github/workflows/task08-catalog.yml`：指定ブランチの対象監査ファイル変更時だけ実行。既存Secret/固定PostgreSQLクライアントを利用し、証明書検証を無効化しない。監査結果は1日保持のartifactへ保存。アプリのデプロイや変更SQLは実行しない。
+### Migration 0054（未適用）
 
-実行済み監査：[Run 44293556005](https://github.com/g-ambe/Padel-match/actions/runs/44293556005)、head `32a4011e2b266fdf77dcdb7db6a746e347545a0d`。ジョブは成功したが、作業環境からartifact配布先へ接続できず、**監査結果の照合は未完了**。ジョブ成功を現物スキーマ整合性PASSやP0権限分離の安全性PASSとは扱わない。
+`0054_group_read_interfaces.sql`は**追加のみ**。既存ポリシー/GRANT/関数・所属/プロフィール/イベントデータを変更しない。postgres実行を要求し、新関数はSECURITY DEFINER・空search_path・明示EXECUTE ACL。非公開schemaのhelperと公開名簿の参照変換表を追加する。参照表は元の所属IDと独立したランダムUUIDを使い、元IDの公開を避ける。既存の所属名コピー/編集/一括移行は行わない。
 
-## 停止理由
+| RPC | 認可・返却範囲 |
+| --- | --- |
+| get_public_club_directory | ログイン＋有効な公開グループ。在籍者の最小表示名・未連携状態・独立参照のみ。役職/auth ID/プロフィールID等を返さない |
+| get_club_roster | 同グループ在籍者、または既存スーパー管理者。管理者の退会行参照を維持。内部用の必要な所属・選手情報のみ |
+| get_my_club_memberships | 本人の所属行のみ。退会行も状態付きで返す |
+| get_event_club_candidates | 閲覧可能な指定イベントとその対象グループに限定した在籍選手ID/名前。相手側グループの役職やauth IDは返さない |
+| get_event_player_names | 許可されたイベントに記録された選手/旧account名のみ |
+| get_shared_event_player_names | 有効・終了済み・非削除イベントのトークン限定。通常/手動/チームを同じ入口で扱う |
+| get_shared_official_player_names | 有効・終了済み・非削除の公式イベントに記録された選手名のみ |
+| get_club_stats_player_names | 同グループ在籍者/既存スーパー管理者。退会者を含む当該グループの履歴名だけ返す。集計式は変更しない |
 
-作業環境からは公式CA配布元へ到達できず、DBホストの名前解決も失敗した。OSの証明書・ホスト名検証も有効なまま試したが接続できなかった。既存Actionsの接続手順による安全な読取監査は成功したものの、GitHub Actions artifactのダウンロード先が403で、結果を照合できない。
-内部メタデータを公開ログへ出力する変更は自動承認レビューで却下され、**未pushのまま撤回**。公開ログ出力、TLS検証の無効化、秘密値の公開による迂回はしない。
+現行には連携済みメンバーの独立したグループ名保存先がない。本人プロフィール名を公開名へ自動コピーせず、新公開RPCでは未連携の仮選手名、連携済みは「メンバー」とする。所属別名の登録/編集や公開名初期化は別工程。新しい所属列も追加せず、既存連携同意の所属行snapshotを変えない。
+独立参照から本人申請へ進む安全なAPI接続も今後の利用側移行に含む。参照を認証/本人同意の代替にはしない。
 
-新鮮な現物定義を照合できない状態でMigration/取得先変更を確定しない。既存SELECT権限を先に閉じない。権限切替の実SQL負例・互換性試験は未実施で、安全性を保証せず、このゲートで保留する。
+### 利用側
 
-## 依存調査（静的・今回確認）
+`lib/group-read.ts`に取得型とRPCラッパーを追加。失敗時に旧公開表へフォールバックしない。
+通常/チーム戦・公式戦の共有画面の名前解決を新RPCへ移行。トークンが無効/停止中や取得失敗ならエラーとして扱い、他の選手名を補完して成功扱いにしない。
 
-| 用途 | 既存の主な参照箇所 | 切替時に守ること |
-| --- | --- | --- |
-| 公開/内部名簿・加入 | `app/groups/[id]/page.tsx`, `lib/profile-links.ts` | 別DTOと匿名化した申請参照。現行連携プレビューからも他グループ役職/IDを漏らさない |
-| 本人所属/検索/作成 | `lib/member-groups.ts`, `app/groups/{discover,new}/page.tsx`, `lib/player-profiles.ts` | 本人所属・初期メイン管理者作成・正規プロフィール判定を維持 |
-| イベント候補/出欠 | `lib/event-participants.ts`, `app/events/[id]/page.tsx`, `app/team-matches/[id]/page.tsx` | 操作可能なイベントに限る最小候補、チームA/B別認可、既存0044/0045と互換 |
-| 名前・匿名共有 | `app/share/events/[token]/page.tsx`, `app/share/official-events/[token]/page.tsx` | 有効トークンのイベント限定の名前解決。グローバルなプロフィールSELECTを残さない |
-| 戦績・公式・管理 | `lib/stats-history.ts`, `lib/official-matches.ts`, `app/super-admin/page.tsx` | 集計入力/式・退会者履歴・既存管理権限を維持 |
-| 本人連携・統合 | `0039_player_profile_consent_linking.sql`, `lib/player-profiles.ts`, `lib/profile-links.ts` | UUID/FK、本人同意・snapshot・競合停止・既存権限を維持 |
+**これだけではP0は完了しない。** 旧表SELECTと旧連携RPCの公開経路はまだ残っており、情報流出の解消済みとは扱わない。Migration未適用の本番へこのアプリ変更を先行リリースしない。Draftのまま保持する。
 
-## 次工程（未実装）
+## 検証
 
-1. artifactを取得し、現物スキーマ・表/列ACL・関数所有者/ACL/search_path/ハッシュを照合。不一致は実定義を安全に確認するまで停止。
-2. 最新採番を確認して追加Migrationを作成。公開ディレクトリ、内部名簿、本人所属、イベント候補、トークン限定選手名、権限内戦績の取得RPCを追加。既存名の一括移行や編集は今回行わない。
-3. 利用側を移行し、プロフィール連携の既存RPCを含め内部列の流出と既存機能の互換性を確認。
-4. 旧公開SELECTの切替は別段階にし、anon/未所属/別クラブ/退会者の負例、同所属/管理者の正例、直接SELECT・列指定・埋込・既存RPCの迂回を隔離DBで試験。新取得経路だけの負例成功で旧経路の漏えい解消を宣言しない。
-5. 関連単体・SQL試験、既存共有/スコア/編成/統計の互換性、TypeScript、Cloudflare互換ビルドを実行してからDraft PRを拡充。本番SQL適用・マージ・デプロイは禁止のまま。
+- `python -B -m unittest discover -s supabase/maintenance/group-foundation -p 'test_*.py' -v`：監査ツール5件成功（前段）。DB認可試験ではない。
+- `node --test tests/group-read-interfaces.test.cjs tests/shared-event-client.test.cjs tests/shared-event-participants.test.cjs`：3ファイル成功。
+- PGlite（隔離PostgreSQL）の追加Migration適用、新RPCの匿名/未所属/別グループ/退会者拒否、内部helper拒否、同所属/管理者取得、独立参照、共有トークン範囲/失効、退会者履歴名、関数所有者/search_pathを確認。
+- TypeScript `tsc --noEmit --incremental false`：成功。
+- `npm run cf:build`：成功。環境にBunがなく最初は起動失敗したため、指定版1.2.15を/tmpへ準備して再実行した。依存宣言/ロック/Cloudflare設定は変更していない。
+- 未実施：実アカウント/HTTPでの認可試験、旧SELECT切替後の直接SELECT/埋込/既存RPC負例、全利用側の互換性試験、実機確認。本番への変更SQL・既存データ更新・マージ・デプロイは行っていない。
 
-自主退会、グループ別名編集、一括名移行、R2他人画像API、招待、10文字ID、UI3タブ改修は本P0に混ぜない。
+## 残る利用側移行と切替ゲート
 
-## 今回の検証
+1. グループ詳細/検索/作成、マイページ所属、管理操作、本人連携プレビューを新しい用途別取得へ移行。公開側で役職/連携ID/プロフィール名を取得しない。紐づけ申請は独立参照をサーバーで解決し、既存本人同意・通常管理者承認を維持。
+2. 通常/手動/チーム/公式のイベント候補・出欠・名前解決、統計/管理者の既存依存を移行。本人用の直接取得と他人の取得を区別する。
+3. 既存プロフィール/所属/クラブ/イベントのRLS相互参照を非再帰helperへ移行してから、表/列SELECT権限を段階的に限定。権限の一括削除を先行させない。
+4. 旧経路を含む匿名/未所属/別グループ/退会者の負例と、同所属/管理者の正例、共有リンク・既存スコア/編成/統計/プロフィール統合の互換性を試験。新RPCの負例成功だけで旧公開経路まで安全とは宣言しない。
+5. 本番カタログ/採番と関数定義を適用直前に再照合。本番適用・マージ・デプロイはユーザーの別指示があるまで行わない。
 
-`python -B -m unittest discover -s supabase/maintenance/group-foundation -p 'test_*.py' -v`
-
-監査ツールのREAD ONLY/CA必須/ログ非開示/定義ハッシュ化/失敗時停止を合成応答で検証する。**DBの権限負例テストとは異なる**。
-アプリの型検証・Cloudflareビルド、実SQLの権限切替/機能互換性テストは未実施（機能実装前のゲートで停止）。本番スキーマやデータを変更したことはない。
+グループ3タブ刷新、表示名編集/一括移行、自主退会、R2画像API、メール招待、10文字ID、集計式/スコア処理は本差分に含めない。

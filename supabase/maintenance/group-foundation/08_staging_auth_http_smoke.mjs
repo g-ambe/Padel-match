@@ -193,6 +193,90 @@ async function main() {
       });
     }
 
+    if (process.env.TASK08_EXPECT_LINK_DETAIL_FIXED === '1') {
+      const listing = await clients.mainA.rpc('list_player_profile_link_requests', { p_club_id: clubA });
+      const candidates = !listing.error && Array.isArray(listing.data)
+        ? listing.data.filter(row => row.status === 'pending' &&
+            row.club_id === clubA && row.source_display_name === 'TASK08-P0 provisional U')
+        : [];
+      if (candidates.length !== 1 || typeof candidates[0].id !== 'string') {
+        mark('LINK_DETAIL_SETUP', 'mainA', 'BLOCKED', safeResult(listing));
+      } else {
+        const item = candidates[0];
+        // Retain only the ID in memory; never log target/user/source UUIDs.
+        const requestId = item.id;
+        mark('LINK_LIST_PRIVACY', 'mainA',
+          item.target_auth_user_id || item.source_player_profile_id
+            ? 'OBSERVED_NOT_ACCEPTED' : 'PASS', {
+          exposes_target_auth_id: typeof item.target_auth_user_id === 'string',
+          exposes_source_player_id: typeof item.source_player_profile_id === 'string',
+        });
+        const mgr = await clients.mainA.rpc('get_player_profile_link_request', {
+          p_request_id: requestId,
+        });
+        const allowedManagerKeys = new Set([
+          'id','club_id','club_name','status','created_at','expires_at',
+          'is_recipient','detail_scope','source_display_name','group_membership',
+        ]);
+        const mgrValid = !mgr.error && mgr.status === 200 &&
+          mgr.data && !Array.isArray(mgr.data) &&
+          Object.keys(mgr.data).length === 10 &&
+          Object.keys(mgr.data).every(key => allowedManagerKeys.has(key)) &&
+          mgr.data.detail_scope === 'manager' && mgr.data.is_recipient === false &&
+          mgr.data.source_display_name === 'TASK08-P0 provisional U' &&
+          mgr.data.group_membership?.role === 'member' &&
+          !JSON.stringify(mgr.data).includes('TASK08-P0-20261119-B');
+        mark('LINK_DETAIL_MANAGER', 'mainA', mgrValid ? 'PASS' : 'FAIL', {
+          http_status: mgr.status ?? null, error_code: mgr.error?.code ?? null,
+          only_minimal_fields: !!mgrValid,
+        });
+
+        const receiver = await clients.recipient.rpc('get_player_profile_link_request', {
+          p_request_id: requestId,
+        });
+        const recipientDirectory = await clients.recipient.rpc('get_public_club_directory', {
+          p_club_id: clubA,
+        });
+        const reference = !recipientDirectory.error && Array.isArray(recipientDirectory.data)
+          ? recipientDirectory.data.find(row =>
+              row.display_name === 'TASK08-P0 provisional U' && row.is_unlinked)?.reference
+          : null;
+        const consent = typeof reference === 'string'
+          ? await clients.recipient.rpc('preview_public_club_claim', {
+              p_club_id: clubA, p_reference: reference,
+            })
+          : null;
+        const receiverValid = !receiver.error && receiver.status === 200 &&
+          receiver.data?.detail_scope === 'recipient' &&
+          receiver.data?.is_recipient === true &&
+          receiver.data?.source?.display_name === 'TASK08-P0 provisional U' &&
+          Array.isArray(receiver.data?.memberships) &&
+          receiver.data.memberships.length === 1 &&
+          !JSON.stringify(receiver.data.memberships).includes('TASK08-P0-20261119-B') &&
+          typeof receiver.data?.review_token === 'string' &&
+          !consent?.error &&
+          receiver.data.review_token === consent?.data?.review_token;
+        mark('LINK_DETAIL_RECIPIENT', 'recipient',
+          receiverValid ? 'PASS' : 'FAIL', {
+          http_status: receiver.status ?? null,
+          error_code: receiver.error?.code ?? null,
+          preview_token_equal: !!receiverValid,
+        });
+
+        const unauthorized = await clients.outsider.rpc('get_player_profile_link_request', {
+          p_request_id: requestId,
+        });
+        const outsiderDenied = !!unauthorized.error && unauthorized.data === null &&
+          [400, 401, 403].includes(unauthorized.status);
+        mark('LINK_DETAIL_OUTSIDER', 'outsider',
+          outsiderDenied ? 'PASS' : 'FAIL', {
+          http_status: unauthorized.status ?? null,
+          error_code: unauthorized.error?.code ?? null,
+          no_data: unauthorized.data === null,
+        });
+      }
+    }
+
     const view = await anonymous.from('public_player_profiles').select('id,display_name');
     const expectViewClosed = process.env.TASK08_EXPECT_H03_CLOSED === '1';
     const viewDenied = view.error?.code === '42501' &&

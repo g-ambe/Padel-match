@@ -85,6 +85,25 @@ async function main() {
     }
 
     const anonymous = makeClient(key);
+    // H12: permanent read-only stage regression. Bad tokens must return no data,
+    // and anonymous REST access to raw event tables must remain forbidden.
+    for (const kind of ['event','official']) {
+      const invalid = await anonymous.rpc('get_shared_event', {
+        p_token: 'TASK08-H12-NEVER-VALID-TOKEN', p_kind: kind,
+      });
+      mark(kind === 'event' ? 'H12_INVALID_FRIENDLY' : 'H12_INVALID_OFFICIAL',
+        'anonymous', !invalid.error && invalid.data === null && invalid.status === 200
+          ? 'PASS' : 'FAIL', safeResult(invalid));
+    }
+    for (const [table, test] of [
+      ['events','H12_RAW_FRIENDLY_DENIED'],
+      ['official_events','H12_RAW_OFFICIAL_DENIED'],
+    ]) {
+      const raw = await anonymous.from(table).select('id').limit(1);
+      mark(test, 'anonymous',
+        raw.error?.code === '42501' && [401,403].includes(raw.status) && raw.data === null
+          ? 'PASS' : 'FAIL', safeResult(raw));
+    }
     const clubAQuery = await clients.mainA.from('clubs').select('id')
       .eq('name', 'TASK08-P0-20261119-A');
     const clubBQuery = await clients.recipient.from('clubs').select('id')

@@ -177,7 +177,11 @@ async function main() {
     }
 
     const view = await anonymous.from('public_player_profiles').select('id,display_name');
-    mark('H03', 'anonymous', 'OBSERVE_PRIVACY_RISK', {
+    const expectViewClosed = process.env.TASK08_EXPECT_H03_CLOSED === '1';
+    const viewDenied = view.error?.code === '42501' &&
+      [401, 403].includes(view.status) && view.data === null;
+    mark('H03', 'anonymous',
+      expectViewClosed ? (viewDenied ? 'PASS' : 'FAIL') : 'OBSERVE_PRIVACY_RISK', {
       ...safeResult(view),
       fixture_names_visible: Array.isArray(view.data)
         ? view.data.filter(row => typeof row.display_name === 'string' &&

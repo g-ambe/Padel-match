@@ -21,7 +21,7 @@
 
 ### H09：最後のメイン管理者をDBで保護
 
-- 現行画面の更新は[`lib/player-profiles.ts`](../../../../lib/player-profiles.ts)の`setClubMemberActive`/`saveClubMemberRole`で、`club_members`の`role/is_active`を列単位UPDATEし、`id,club_id,player_profile_id,role,is_active`を`RETURNING`で確認。ステージングではこれらの列UPDATE/SELECTは可能、`profile_id/player_profile_id`の列UPDATEは拒否。
+- 現行画面の更新は[`lib/player-profiles.ts`](../../../lib/player-profiles.ts)の`setClubMemberActive`/`saveClubMemberRole`で、`club_members`の`role/is_active`を列単位UPDATEし、`id,club_id,player_profile_id,role,is_active`を`RETURNING`で確認。ステージングではこれらの列UPDATE/SELECTは可能、`profile_id/player_profile_id`の列UPDATEは拒否。
 - [`38_h09_members_update_returning_rollback_probe.sql`](38_h09_members_update_returning_rollback_probe.sql)で管理者Aによる役職変更・非管理者の欠席/復帰、サブ管理者Bによる一般/サブ変更とメイン変更禁止、別クラブへの変更拒否を実ロール模擬で確認（すべてROLLBACK）。
 - **問題を発見：** UIを経由せず、DB API相当の直接UPDATEで**最後のメイン管理者自身の`is_active=false`が許可された**。RLSの`can_edit_player_profile_member`だけでは最後の1人の保護がない。これは「メイン管理者は最低1人必要」という確定仕様に反する**想定外の許可・FAIL**。
 - [`39_h09_last_main_guard_rollback_candidate.sql`](39_h09_last_main_guard_rollback_candidate.sql)で、`club_members`の`role/is_active/status/club_id`更新に対するBEFORE UPDATEトリガー候補を作成。`main_admin`在籍者が退会・降格・ステータス変更される場合、**対象グループ行を`FOR UPDATE`で直列化し、別のactive mainがいなければ42501で停止**。一般/サブメンバーや別main引継ぎ後の変更は妨げない。`security_private`内のSECURITY DEFINER関数はpostgres所有・search_path空・anon/authenticatedの直接EXECUTEをREVOKEし、既存GRANTやRLSは拡大しない。
@@ -34,7 +34,7 @@
 - **広い列GRANTは付与しない。** `security_private.can_read_player(id)`は本人だけでなく同一グループ在籍者・同イベント閲覧者を許すため、詳細列を`authenticated`に一律GRANTすると他人の詳細を漏らすリスクがある。
 - 現存する**本人限定のRPC**を監査：`public.get_my_player_profiles()` → `security_private.my_players()`（本人`auth.uid`に紐づくactive選手のみ）、`public.save_my_player_profile(uuid,jsonb,jsonb)` → `security_private.save_my_player`（本人リンク・許可6項目・expectedスナップショットに基づく競合保護・更新後の行返却）。両方とも既存の認証済みEXECUTEあり。
 - [`42_h10_owner_profile_rpc_rollback_probe.sql`](42_h10_owner_profile_rpc_rollback_probe.sql)で、本人詳細取得/6列更新と返却、古いフォームの期待値拒否、他アカウントからの保存拒否、認証ID書換え拒否、管理者の未連携選手表示名変更成功、非所属者の更新拒否、直接`bio`取得42501を**全8判定ROLLBACKで確認**。
-- [`lib/player-profiles.ts`](../../../../lib/player-profiles.ts)の**プロフィール本人の読込/保存関数だけ**を既存RPC経由に切替。取得後は`linked_auth_user_id`と本人uidの一致を必須検証。保存時は既存RPCが期待値比較・項目制限・本人確認を一括処理し、返却後にも本人RPCで再読込して保存一致を確認する。アプリ画面UI/ラベル/他の権限は変更していない。未連携仮選手名の管理者編集は現行の限定列PATCHを維持。
+- [`lib/player-profiles.ts`](../../../lib/player-profiles.ts)の**プロフィール本人の読込/保存関数だけ**を既存RPC経由に切替。取得後は`linked_auth_user_id`と本人uidの一致を必須検証。保存時は既存RPCが期待値比較・項目制限・本人確認を一括処理し、返却後にも本人RPCで再読込して保存一致を確認する。アプリ画面UI/ラベル/他の権限は変更していない。未連携仮選手名の管理者編集は現行の限定列PATCHを維持。
 - **H10のDB Migrationなし**。全ログイン利用者への`player_profiles`詳細列SELECT/UPDATEは引き続きfalse、本人用RPCだけで更新可能。
 
 ### 実Auth/JWT・TypeScript・専用fixture

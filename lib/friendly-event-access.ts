@@ -1,3 +1,4 @@
+import { readMyMemberships } from "./group-read";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type FriendlyGroup = { id: string; name: string };
@@ -52,48 +53,12 @@ export async function loadFriendlyEventAccess(supabase: SupabaseClient) {
       .filter((club): club is Group => Boolean(club.id && club.name));
   };
 
-  const loadActiveMemberships = async (column: "player_profile_id" | "profile_id", ids: string[]) => {
-    if (!ids.length) return [] as any[];
-
-    const fetchMemberships = async (withStatus: boolean) => {
-      let query: any = supabase
-        .from("club_members")
-        .select("club_id")
-        .eq("is_active", true);
-      query = ids.length === 1 ? query.eq(column, ids[0]) : query.in(column, ids);
-      if (withStatus) query = query.eq("status", "active");
-      return await query;
-    };
-
-    let { data, error } = await fetchMemberships(true);
-    if (error && isMissingColumnError(error, "status")) {
-      const fallback = await fetchMemberships(false);
-      data = fallback.data;
-      error = fallback.error;
-    }
-    if (error) {
-      throw new Error("所属グループ取得に失敗しました");
-    }
-    return data ?? [];
-  };
-
   const superUser = await isSuperUser();
   let groupRows: Group[] = [];
   if (superUser) {
     groupRows = await loadActiveClubs();
   } else {
-    const { data: linkedProfiles } = await supabase
-      .from("player_profiles")
-      .select("id")
-      .eq("linked_auth_user_id", userId);
-
-    const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
-    let memberships = await loadActiveMemberships("player_profile_id", linkedProfileIds);
-
-    if (!memberships.length) {
-      memberships = await loadActiveMemberships("profile_id", [userId]);
-    }
-
+    const memberships = (await readMyMemberships(supabase)).filter(m=>m.is_active);
     const groupIds: string[] = Array.from(
       new Set(
         memberships

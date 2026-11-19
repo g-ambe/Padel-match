@@ -14,3 +14,12 @@ export const readEventNames = (db: SupabaseClient, event: string) => rows<Contex
 export const readSharedEventNames = (db: SupabaseClient, token: string) => rows<ContextName>(db, "get_shared_event_player_names", { p_token: token });
 export const readSharedOfficialNames = (db: SupabaseClient, token: string) => rows<{ id: string; display_name: string }>(db, "get_shared_official_player_names", { p_token: token });
 export const readClubStatsNames = (db: SupabaseClient, club: string) => rows<{ id: string; display_name: string }>(db, "get_club_stats_player_names", { p_club_id: club });
+export type RosterMember = { id: string; club_id: string; profile_id: string|null; player_profile_id:string|null; role:"main_admin"|"sub_admin"|"member"; is_active:boolean; status:string; created_at:string; player_profiles:{id:string;display_name:string;linked_auth_user_id:string|null;is_active:boolean}|null };
+export const readClubRoster = (db:SupabaseClient,club:string)=>rows<RosterMember>(db,"get_club_roster",{p_club_id:club});
+export const readStatsMembers = (db:SupabaseClient,club:string)=>rows<{player_profile_id:string|null;is_active:boolean}>(db,"get_club_stats_members",{p_club_id:club});
+export const readClubCandidates = (db:SupabaseClient,club:string)=>rows<{member_id:string;player_profile_id:string;display_name:string}>(db,"get_club_selection_candidates",{p_club_id:club});
+export const readOfficialNames = (db:SupabaseClient,event:string)=>rows<{id:string;display_name:string}>(db,"get_official_player_names",{p_event_id:event});
+export type PublicClaimPreview={display_name:string;target_display_name:string|null;has_target:boolean;review_token:string;membership_count:number;participant_count:number;match_count:number;result_count:number;team_match_count:number;official_match_count:number};
+export const readJoinRequestNames=(db:SupabaseClient,club:string)=>rows<{id:string;display_name:string}>(db,"get_club_join_request_names",{p_club_id:club});
+export const readAdminMemberCounts=(db:SupabaseClient)=>rows<{club_id:string;member_count:number}>(db,"get_admin_group_member_counts");
+export async function readAdminAccountNames(db:SupabaseClient,ids:string[]){const result:{id:string;display_name:string}[]=[];for(let i=0;i<ids.length;i+=100)result.push(...await rows<{id:string;display_name:string}>(db,"get_admin_account_names",{p_ids:ids.slice(i,i+100)}));return result;}

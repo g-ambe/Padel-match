@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { readClubRoster } from "./group-read";
 import { canManageTargetMember } from "./permissions";
 
 export const PLAYER_PROFILE_COLUMNS = "id,linked_auth_user_id,display_name,bio,play_level,dominant_hand,preferred_position,activity_area,is_active,created_at";
@@ -164,10 +165,8 @@ async function readManagedMember(supabase: SupabaseClient, expected: ClubMemberS
   const { data: admin, error: adminError } = await supabase.from("app_admins").select("id")
     .eq("profile_id", auth.user.id).eq("is_active", true).maybeSingle();
   if (adminError) fail("管理権限を確認できません", adminError);
-  const rows = await readProfileRows<ManagedClubMember>((start, end) => supabase.from("club_members")
-    .select("id,club_id,profile_id,player_profile_id,role,is_active,player_profiles(display_name,linked_auth_user_id,is_active)")
-    .eq("club_id", expected.club_id).order("id").range(start, end))
-    .catch(cause => fail("メンバーと管理権限の取得に失敗しました", cause instanceof Error ? cause.cause ?? cause : cause));
+  const rows = await readClubRoster(supabase, expected.club_id)
+    .catch(cause => fail("メンバーと管理権限の取得に失敗しました", cause));
   const profileOf = (row: ManagedClubMember) => Array.isArray(row.player_profiles) ? row.player_profiles[0] : row.player_profiles;
   const mine = rows.filter(row => row.is_active && (row.profile_id === auth.user!.id || (profileOf(row)?.is_active && profileOf(row)?.linked_auth_user_id === auth.user!.id)));
   const myRole = mine.some(row => row.role === "main_admin") ? "main_admin" : mine.some(row => row.role === "sub_admin") ? "sub_admin" : "member";

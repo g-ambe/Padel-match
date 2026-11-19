@@ -21,6 +21,7 @@ import { EventResultRankings } from "@/components/event-result-rankings";
 import { EventResultHistory, ResultMatchCard } from "@/components/event-result-history";
 import { EventResultShare } from "@/components/event-result-share";
 import { TeamResultDetails } from "@/components/team-result-details";
+import { readEventCandidates } from "@/lib/group-read";
 import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { createShareToken, getOfficialAccess, officialStatusLabel, type OfficialGroup } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -154,10 +155,8 @@ export default function FriendlyTeamMatchDetailPage() {
     if(sideIds.length){const result=await supabase.from("clubs").select("id,name").in("id",sideIds); if(result.error)setError("チームのグループ名を取得できませんでした");else setGroups(previous=>[...new Map([...previous,...(result.data??[]).map(g=>({...g,role:"member" as const}))].map(g=>[g.id,g])).values()]);}
     const loadedMembers: Record<TeamSideKey, MemberOption[]>={team_a:[],team_b:[]};
     for (const side of sideRows) if (side.club_id) {
-      const roster=await fetchActiveClubMemberParticipants(supabase, side.club_id);
-      const membership=await supabase.from("club_members").select("id,player_profile_id,profile_id").eq("club_id",side.club_id).eq("is_active",true);
-      if(membership.error)throw membership.error;
-      loadedMembers[side.side]=roster.map(m=>({...m,membershipId:membership.data?.find(cm=>(cm.player_profile_id??cm.profile_id)===m.playerProfileId)?.id}));
+      loadedMembers[side.side]=(await readEventCandidates(supabase,id,side.club_id)).map(m=>({playerProfileId:m.player_profile_id,displayName:m.display_name,membershipId:m.member_id}));
+
     }
     setMembers(loadedMembers);
     const { data:guestRows }=await supabase.from("event_team_guests").select("id,side,guest_name").eq("event_id",id).order("created_at", { ascending: true });
@@ -174,10 +173,10 @@ export default function FriendlyTeamMatchDetailPage() {
       const confirmed = previous.find(match => match.id === row.id);
       return { ...row, team_a_score: confirmed?.team_a_score ?? null, team_b_score: confirmed?.team_b_score ?? null, result: confirmed?.result ?? "undecided",pair_1_score:confirmed?.pair_1_score??null,pair_2_score:confirmed?.pair_2_score??null,pair_result:confirmed?.pair_result??null };
     }));
-    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,matchRows.flatMap(match=>[match.team_a_player1_profile_id,match.team_a_player2_profile_id,match.team_b_player1_profile_id,match.team_b_player2_profile_id]))); }
+    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,matchRows.flatMap(match=>[match.team_a_player1_profile_id,match.team_a_player2_profile_id,match.team_b_player1_profile_id,match.team_b_player2_profile_id]),{eventId:id})); }
     catch { setError("過去の試合の選手名を取得できませんでした"); }
   };
-  useEffect(()=>{void load();},[id]);
+  useEffect(()=>{void load().catch(()=>setError("情報を取得できませんでした。再度読み込んでください"));},[id]);
   useEffect(() => {
     if (unsavedScoreCount) reloadAfterScores.current = true;
     else if (reloadAfterScores.current) { reloadAfterScores.current = false; void load().catch(() => setError("保存後の再読み込みに失敗しました")); }

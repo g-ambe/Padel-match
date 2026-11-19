@@ -21,7 +21,7 @@ CREATE TRIGGER group_directory_reference AFTER INSERT ON public.club_members FOR
 CREATE FUNCTION group_read_private.member(p_club uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  SELECT auth.uid() IS NOT NULL AND EXISTS(
  SELECT 1 FROM public.clubs c JOIN public.club_members cm ON cm.club_id=c.id LEFT JOIN public.player_profiles pp ON pp.id=cm.player_profile_id
- WHERE c.id=p_club AND c.is_active AND NOT coalesce(c.is_deleted,false) AND cm.is_active AND cm.status='active'
+ WHERE c.id=p_club AND c.is_active AND NOT coalesce(c.is_deleted,false) AND cm.is_active
  AND ((pp.is_active AND pp.linked_auth_user_id=auth.uid()) OR (cm.profile_id=auth.uid() AND (cm.player_profile_id IS NULL OR (pp.is_active AND pp.linked_auth_user_id=auth.uid())))))
 $$;
 CREATE FUNCTION group_read_private.require_member(p_club uuid) RETURNS void LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
@@ -38,7 +38,7 @@ BEGIN
  END IF;
  RETURN QUERY SELECT r.public_ref,CASE WHEN pp.linked_auth_user_id IS NULL THEN pp.display_name ELSE 'メンバー' END,pp.linked_auth_user_id IS NULL
  FROM public.club_members cm JOIN public.player_profiles pp ON pp.id=cm.player_profile_id JOIN group_read_private.directory_refs r ON r.member_id=cm.id
- WHERE cm.club_id=p_club_id AND cm.is_active AND cm.status='active' AND pp.is_active
+ WHERE cm.club_id=p_club_id AND cm.is_active AND pp.is_active
  ORDER BY 2,1;
 END $$;
 CREATE FUNCTION public.get_club_roster(p_club_id uuid) RETURNS TABLE(id uuid,club_id uuid,profile_id uuid,player_profile_id uuid,role text,is_active boolean,status text,created_at timestamptz,player_profiles jsonb)
@@ -48,7 +48,7 @@ BEGIN
  RETURN QUERY SELECT cm.id,cm.club_id,cm.profile_id,cm.player_profile_id,cm.role,cm.is_active,cm.status,cm.created_at,
  jsonb_build_object('id',pp.id,'display_name',pp.display_name,'linked_auth_user_id',pp.linked_auth_user_id,'is_active',pp.is_active)
  FROM public.club_members cm LEFT JOIN public.player_profiles pp ON pp.id=cm.player_profile_id
- WHERE cm.club_id=p_club_id AND ((cm.is_active AND cm.status='active') OR public.can_manage_player_profile_club(p_club_id))
+ WHERE cm.club_id=p_club_id AND ((cm.is_active) OR public.can_manage_player_profile_club(p_club_id))
  ORDER BY cm.created_at,cm.id;
 END $$;
 CREATE FUNCTION public.get_my_club_memberships() RETURNS TABLE(id uuid,club_id uuid,role text,is_active boolean,status text)
@@ -61,7 +61,7 @@ BEGIN
 END $$;
 CREATE FUNCTION group_read_private.event_allowed(p_event uuid) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  SELECT auth.uid() IS NOT NULL AND EXISTS(SELECT 1 FROM public.events e WHERE e.id=p_event AND NOT coalesce(e.is_deleted,false)
- AND (public.is_super_user() OR e.created_by_auth_user_id=auth.uid() OR group_read_private.member(e.club_id)
+ AND (public.is_super_user() OR (e.club_id IS NULL AND e.created_by_auth_user_id=auth.uid()) OR group_read_private.member(e.club_id)
  OR (e.event_mode='team' AND public.can_view_friendly_team_event_by_sides(e.id,e.created_by_auth_user_id))))
 $$;
 CREATE FUNCTION public.get_event_club_candidates(p_event_id uuid,p_club_id uuid) RETURNS TABLE(member_id uuid,player_profile_id uuid,display_name text)
@@ -70,7 +70,7 @@ BEGIN
  IF NOT group_read_private.event_allowed(p_event_id) OR NOT EXISTS(SELECT 1 FROM public.events e WHERE e.id=p_event_id AND (e.club_id=p_club_id OR EXISTS(SELECT 1 FROM public.event_team_sides s WHERE s.event_id=e.id AND s.club_id=p_club_id))) THEN
  RAISE EXCEPTION 'イベントの選手を取得する権限がありません' USING ERRCODE='42501'; END IF;
  RETURN QUERY SELECT cm.id,pp.id,pp.display_name FROM public.club_members cm JOIN public.player_profiles pp ON pp.id=coalesce(cm.player_profile_id,cm.profile_id)
- WHERE cm.club_id=p_club_id AND cm.is_active AND cm.status='active' AND pp.is_active ORDER BY cm.id;
+ WHERE cm.club_id=p_club_id AND cm.is_active AND pp.is_active ORDER BY cm.id;
 END $$;
 CREATE FUNCTION group_read_private.event_names(p_event uuid) RETURNS TABLE(id uuid,display_name text,kind text)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$

@@ -35,7 +35,7 @@ test('同一グループの過去の正式通常戦績だけを永続選手IDで
  const f=historyFixture(),before=JSON.stringify(f.tables);
  const stats=await fetchBalancePastStats(f.s,f.current,f.participants);
  assert.deepEqual([...stats],[['new-event-id',{wins:1,draws:1,played:2,diff:4}]]);
- assert.equal(JSON.stringify(f.tables),before);assert(f.calls.every(c=>c.method==='GET'));
+ assert.equal(JSON.stringify(f.tables),before);assert(f.calls.every(c=>c.method==='GET'||c.table==='get_club_stats_members'));
  const events=f.calls.find(c=>c.table==='events');
  for(const[key,value]of Object.entries({club_id:'eq.club',status:'eq.closed',is_deleted:'eq.false',stats_mode:'eq.official',created_at:`lt.${f.current.created_at}`,id:'neq.today',event_mode:'in.(auto,manual)'}))assert.equal(events.url.searchParams.get(key),value);
  for(const c of f.calls.filter(c=>['event_participants','matches'].includes(c.table)))assert.equal(c.url.searchParams.get('event_id'),'in.(manual,past)');
@@ -69,7 +69,7 @@ test('履歴なしと取得失敗を区別し、権限・通信・途中ペー�
  for(const table of ['app_admins','player_profiles','club_members','events','event_participants','matches']){
   const f=historyFixture({fail:c=>c.table===table});
   await assert.rejects(fetchBalancePastStats(f.s,f.current,f.participants),/過去戦績を取得できません/);
-  assert(f.calls.every(c=>c.method==='GET'));
+  assert(f.calls.every(c=>c.method==='GET'||c.table==='get_club_stats_members'));
  }
  const f=historyFixture({fail:c=>c.table==='matches'&&c.url.searchParams.get('offset')==='500'});
  for(let i=0;i<1001;i++)f.match(`large-${i}`,'past');

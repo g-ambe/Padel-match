@@ -1,4 +1,5 @@
 "use client";
+import { readMyMemberships, readClubRoster, readPublicDirectory, readJoinRequestNames, type PublicClaimPreview } from "@/lib/group-read";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -19,9 +20,10 @@ type Role = "main_admin" | "sub_admin" | "member";
 type Member = {
   id: string;
   profile_id: string | null;
-  player_profile_id: string;
+  player_profile_id: string | null;
   display_name: string;
   linked_auth_user_id: string | null;
+  public_unlinked?:boolean;
   is_active: boolean;
   player_active: boolean;
   role: Role;
@@ -77,7 +79,7 @@ export default function GroupDetailPage() {
   const [name, setName] = useState("");
   const pendingMemberProfile = useRef<{ id: string; name: string } | null>(null);
   const [linkRequests, setLinkRequests] = useState<ProfileLinkRequest[]>([]);
-  const [joinPreview, setJoinPreview] = useState<ProfileMergePreview | null>(null);
+  const [joinPreview, setJoinPreview] = useState<PublicClaimPreview | null>(null);
   const [joinConsent, setJoinConsent] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState("");
@@ -217,34 +219,29 @@ export default function GroupDetailPage() {
     setVisibility(((group as any).visibility ?? "private") as "private" | "public");
     setVisibilityInput(((group as any).visibility ?? "private") as "private" | "public");
 
-    const { data, error: memberLoadError } = await s.from("club_members").select("id,profile_id,player_profile_id,is_active,role,player_profiles(id,display_name,linked_auth_user_id,is_active)").eq("club_id", id).order("created_at", { ascending: true });
-    if (memberLoadError || !Array.isArray(data)) { setError("メンバーの取得に失敗しました"); setLoading(false); return; }
-    const rows: Member[] = (data ?? []).map((r: any) => ({
-      id: r.id,
-      profile_id: r.profile_id,
-      player_profile_id: r.player_profile_id,
-      display_name: resolveDisplayName(r.player_profiles),
-      linked_auth_user_id: getProfileRow(r.player_profiles)?.linked_auth_user_id ?? null,
-      is_active: r.is_active !== false,
-      player_active: !r.player_profile_id || !!getProfileRow(r.player_profiles)?.is_active,
-      role: (r.role ?? "member") as Role
-    }));
-
+    const own=(await readMyMemberships(s)).find(m=>m.club_id===id&&m.is_active);
+    let rows: Member[];
+    if(own||superUser){
+      const data=await readClubRoster(s,id);
+      rows=data.map(r=>({id:r.id,profile_id:r.profile_id,player_profile_id:r.player_profile_id,display_name:resolveDisplayName(r.player_profiles),linked_auth_user_id:r.player_profiles?.linked_auth_user_id??null,is_active:r.is_active,player_active:!r.player_profile_id||!!r.player_profiles?.is_active,role:r.role}));
+    } else {
+      rows=(await readPublicDirectory(s,id)).map(r=>({id:r.reference,profile_id:null,player_profile_id:null,display_name:r.display_name,linked_auth_user_id:null,is_active:true,player_active:true,role:"member",public_unlinked:r.is_unlinked}));
+    }
     const sorted = sortMembers(rows);
     setMembers(sorted.filter((m) => m.is_active && m.player_active));
     setInactiveMembers(sorted.filter((m) => !m.is_active && m.player_active));
 
-    const me = rows.find((r) => (r.profile_id === uid || r.linked_auth_user_id === uid) && r.is_active);
+    const me = own;
     const canView = superUser || (group.is_active && ((group as any).visibility === "public" || !!me));
     setCanViewGroup(!!canView);
-    setMyRole(me?.role ?? "member");
+    setMyRole((me?.role ?? "member") as Role);
     setIsMemberOfGroup(!!me);
     if (!canView) { setError("この操作を行う権限がありません"); setLoading(false); return; }
     setMyProfileId(uid);
     setMyAuthUserId(uid);
-    const { data: jrRows, error: requestError } = await s.from("join_requests").select("id,club_id,target_club_member_id,requester_auth_user_id,requester_player_profile_id,message,status,created_at,expires_at,consent_at,requester_display_name_snapshot").eq("club_id", id).order("created_at", { ascending: false });
+    const { data: jrRows, error: requestError } = await s.rpc("get_club_join_requests",{p_club_id:id});
     const requesterIds = [...new Set((jrRows ?? []).map((r: any) => r.requester_auth_user_id))];
-    const { data: reqProfiles } = requesterIds.length ? await s.from("profiles").select("id,display_name").in("id", requesterIds) : { data: [] as any[] };
+    const reqProfiles = requesterIds.length ? await readJoinRequestNames(s,id) : [];
     const requesterMap = new Map((reqProfiles ?? []).map((r: any) => [r.id, r]));
     const memberNameMap = new Map(rows.map((m) => [m.id, m.display_name]));
     const normalizedReqs: JoinRequest[] = (jrRows ?? []).map((r: any) => ({
@@ -265,11 +262,12 @@ export default function GroupDetailPage() {
     if (facilityErr) setError("施設一覧の取得に失敗しました");
     setFacilities((facilityRows ?? []) as Facility[]);
 
-    await loadStats();
+    if(own||superUser)await loadStats();
+    else{setIndividualRows([]);setPairRows([]);setEventHistoryRows([]);}
     setLoading(false);
   };
 
-  useEffect(() => { void load(); }, [id]);
+  useEffect(() => { void load().catch(()=>{setError("グループ情報を取得できませんでした。再度読み込んでください");setLoading(false);}); }, [id]);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("tab") === "stats") setTab("グループ戦績");
   }, [id]);
@@ -279,7 +277,7 @@ export default function GroupDetailPage() {
     const s = getSupabaseClient();
     if (s && targetMemberId) {
       setPreviewLoading(true);
-      void profileLinkRpc<ProfileMergePreview>(s, "preview_profile_join", { p_club_id: id, p_member_id: targetMemberId })
+      void profileLinkRpc<PublicClaimPreview>(s, "preview_public_club_claim", { p_club_id: id, p_reference: targetMemberId })
         .then(data => { if (active) setJoinPreview(data); })
         .catch(cause => { if (active) setError(profileErrorMessage(cause)); })
         .finally(() => { if (active) setPreviewLoading(false); });
@@ -418,7 +416,7 @@ export default function GroupDetailPage() {
     if (targetMemberId && (!joinPreview || !joinConsent || previewLoading)) return setError("引き継ぐ内容を確認して同意してください");
     setLoading(true); setError(""); setMessage("");
     try {
-      await profileLinkRpc<string>(s, "submit_profile_join_request", { p_club_id: id, p_member_id: targetMemberId || null, p_message: joinMessage.trim() || null, p_review_token: joinPreview?.review_token ?? null });
+      await profileLinkRpc<string>(s, "submit_public_club_claim", { p_club_id: id, p_reference: targetMemberId || null, p_message: joinMessage.trim() || null, p_review_token: joinPreview?.review_token ?? null });
       setMessage("加入申請を送信しました"); setTargetMemberId(""); setJoinMessage(""); setJoinConsent(false);
       await load();
     } catch (cause) { setError(profileErrorMessage(cause)); }
@@ -455,7 +453,7 @@ export default function GroupDetailPage() {
       {loading && <p className="text-xs text-zinc-400">処理中...</p>}
 
       <div className="grid grid-cols-3 gap-2 text-xs">
-        {(["グループ管理", "メンバー管理", "グループ戦績"] as MainTab[]).map((t) => (
+        {(["グループ管理", "メンバー管理", "グループ戦績"] as MainTab[]).filter(t=>t!=="グループ戦績"||isMemberOfGroup||isSuperUser).map((t) => (
           <button key={t} className={`rounded-lg px-2 py-2 ${tab === t ? "bg-accent text-black" : "bg-zinc-800 text-zinc-200"}`} onClick={() => setTab(t)}>{t}</button>
         ))}
       </div>
@@ -464,7 +462,7 @@ export default function GroupDetailPage() {
 
       {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} onRename={renameMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManageTargetMember(roleCtx, x.role)) return deny(); setError(""); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManageTargetMember(roleCtx, m.role) && <button disabled={loading} className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
 
-      {tab === "グループ戦績" && (
+      {tab === "グループ戦績" && (isMemberOfGroup||isSuperUser) && (
         <Card title="グループ戦績">
           <div className="flex gap-2 text-xs">
             <button className={`rounded-lg px-2 py-2 ${statTab === "個人ランキング" ? "bg-accent text-black" : "bg-zinc-800"}`} onClick={() => setStatTab("個人ランキング")}>個人ランキング</button>
@@ -544,12 +542,12 @@ export default function GroupDetailPage() {
 
       {!isMemberOfGroup && visibility === "public" && <Card title="加入申請"><div className="space-y-3">
         <p className="text-xs text-zinc-300">本人の仮登録選手を選ぶ場合は、引き継ぐ内容への同意が必要です。</p>
-        <select aria-label="加入時に引き継ぐ仮登録選手" disabled={loading || !!myPendingRequest} className="w-full rounded-xl bg-zinc-800 p-3" value={targetMemberId} onChange={e => setTargetMemberId(e.target.value)}><option value="">選択しない（正規プロフィールで加入）</option>{members.filter(m => !m.linked_auth_user_id).map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select>
+        <select aria-label="加入時に引き継ぐ仮登録選手" disabled={loading || !!myPendingRequest} className="w-full rounded-xl bg-zinc-800 p-3" value={targetMemberId} onChange={e => setTargetMemberId(e.target.value)}><option value="">選択しない（正規プロフィールで加入）</option>{members.filter(m => m.public_unlinked===true).map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select>
         {previewLoading && <p className="text-xs text-zinc-400">引き継ぐ内容を確認中...</p>}
-        {joinPreview && <><ProfileMergeSummary preview={joinPreview} /><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={joinConsent} onChange={e => setJoinConsent(e.target.checked)} /><span>この仮登録選手が自分であり、管理者の承認後に表示された所属・戦績を引き継ぐことに同意します</span></label></>}
+        {joinPreview && <><div className="space-y-2 text-sm"><p>仮登録選手：{joinPreview.display_name}</p><p>引き継ぐ所属 {joinPreview.membership_count}件・参加 {joinPreview.participant_count}件・通常試合 {joinPreview.match_count}件・チーム戦 {joinPreview.team_match_count}件・公式戦 {joinPreview.official_match_count}件</p><p>本人プロフィール：{joinPreview.target_display_name??"未作成"}</p><p>管理者の承認後、過去の所属・参加・戦績を本人プロフィールへ引き継ぎます。</p></div><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={joinConsent} onChange={e => setJoinConsent(e.target.checked)} /><span>この仮登録選手が自分であり、管理者の承認後に表示された所属・戦績を引き継ぐことに同意します</span></label></>}
         <textarea disabled={loading} className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メッセージ" value={joinMessage} onChange={e => setJoinMessage(e.target.value)} />
         <p className="text-xs text-zinc-400">正規プロフィールが未作成の場合は、<Link href="/profile" className="underline">プロフィール画面</Link>で作成してください。申請は7日で期限切れになります。</p>
-        {myPendingRequest ? <p className="text-sm text-zinc-300">申請中です</p> : <button disabled={loading || previewLoading || (!!targetMemberId && (!joinConsent || !joinPreview?.target_profile_id))} className="w-full rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void submitJoinRequest()}>申請する</button>}
+        {myPendingRequest ? <p className="text-sm text-zinc-300">申請中です</p> : <button disabled={loading || previewLoading || (!!targetMemberId && (!joinConsent || !joinPreview?.has_target))} className="w-full rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void submitJoinRequest()}>申請する</button>}
       </div></Card>}
       {joinRequests.some(r => r.requester_auth_user_id === myAuthUserId) && <Card title="自分の加入申請"><div className="space-y-2">{joinRequests.filter(r => r.requester_auth_user_id === myAuthUserId).map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p>{linkStatusLabel[r.status]}</p><p className="text-xs text-zinc-400">対象：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.status === "pending" && <button disabled={loading} onClick={() => void reviewJoinRequest(r,"cancelled")} className="mt-2 rounded-lg border border-zinc-500 p-2">申請を取り消す</button>}</div>)}</div></Card>}
       {canManage && <Card title="連携申請一覧"><div className="space-y-2">{linkRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : linkRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><Link href={`/profile/links/${r.id}`} className="underline">{r.source_display_name} / {linkStatusLabel[r.status]}</Link>{r.status === "pending" && <button disabled={loading} className="mt-2 block rounded-lg border border-zinc-500 p-2" onClick={() => void cancelLinkRequest(r)}>申請を取り消す</button>}</div>)}</div></Card>}
@@ -608,7 +606,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
 
   return (
     <div className="rounded-xl bg-zinc-800 p-3">
-      <p className="text-xs text-zinc-400">在籍 / {member.linked_auth_user_id ? "連携済み" : pending ? "承認待ち" : "未連携"}</p>
+      <p className="text-xs text-zinc-400">在籍 / {member.linked_auth_user_id || member.public_unlinked===false ? "連携済み" : pending ? "承認待ち" : "未連携"}</p>
       {editing ? (
         <div className="space-y-2">
           {member.linked_auth_user_id !== null ? <><p className="font-semibold">{member.display_name}</p><p className="text-xs text-zinc-300">アカウント連携済みの選手名は、本人のプロフィール画面から変更できます</p></> : <div className="space-y-2"><label className="block text-xs" htmlFor={`member-name-${member.id}`}>選手名</label><input id={`member-name-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={n} onChange={e => setN(e.target.value)} /><button disabled={loading} className="w-full rounded-lg bg-accent py-2 text-black" onClick={() => void onRename(member,n)}>選手名を保存</button></div>}

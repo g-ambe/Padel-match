@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：旧申請RPC・連携詳細/一覧のステージング対策とH13候補
+
+**ステージングのみの追加修正：** 旧`submit_profile_join_request`直接EXECUTEを拒否（新`submit_public_club_claim`は維持）、`get_player_profile_link_request`を管理者向け最小10項目に制限・受取人の`scoped_preview`/同意tokenは維持、`list_player_profile_link_requests`から不要な`target_auth_user_id`だけを除外（申請中表示に必要な`source_player_profile_id`は維持）。本番の既存関数/権限・アプリ機能は変更していない。
+
+各対策は[14](14_legacy_join_submit_acl_rollback_probe.sql)→[15](15_legacy_join_submit_staging_apply.sql)、既存[06](06_staging_link_detail_candidate.sql)→[16](16_link_detail_staging_apply.sql)、[20](20_link_list_target_id_rollback_probe.sql)→[21](21_link_list_minimal_staging_apply.sql)を参照。実Auth/PostgREST HTTPは[run #44490847281](https://github.com/g-ambe/Padel-match/actions/runs/44490847281) **16 PASS**、[run #44492138197](https://github.com/g-ambe/Padel-match/actions/runs/44492138197) **19 PASS/1未解消観測**、最終[run #44494344175](https://github.com/g-ambe/Padel-match/actions/runs/44494344175) **21 PASS**。
+
+HTTPに使ったテスト申請1件と通知1件は[17](17_link_detail_staging_http_fixture_setup.sql)と[18](18_link_detail_staging_http_fixture_cleanup.sql)によって識別し、**各試験後に回収済み**。パスワード・内部UUID・JWT/同意tokenの値は記録していない。現時点でステージングMigration **49件**、既存所属8件・fixture4件、検証用申請0件。
+
+**H13は未適用：** `clubs`と`club_members`双方にauthenticatedのINSERT権限/ポリシーがない。[`19_h13_initial_owner_insert_rollback_candidate.sql`](19_h13_initial_owner_insert_rollback_candidate.sql)の最小列GRANT＋本人owner/main初期所属の正負例7判定はROLLBACKで成功。owner行のロックも加えたが、**別接続の同時実行や実JWTの作成/復旧が未検証**のため、正式ステージング適用を停止している。
+
+今回の21判定はP0全体やH01〜H14全件の合格ではない。別の旧基底表SELECT/権限差・本人レビュー/統合・管理更新・共有/戦績/本番互換は未完了。本番DB/Cloudflare/マージ・デプロイなし。**PR #265 Draft維持**。詳細は[STAGING_HTTP_PLAN.md 0.9節](STAGING_HTTP_PLAN.md)へ。
+
 ## 2026-11-19 更新：H06/H03のステージング閉鎖・実JWT HTTP 15判定PASS
 
 **ステージング専用のP0部分修正を実施。本番DB未変更、PR #265はDraft維持。** 既存検証用3Authアカウントと2グループを使用して、旧`preview_profile_join`（H06）と`public_player_profiles` View（H03）の公開経路を閉じた。

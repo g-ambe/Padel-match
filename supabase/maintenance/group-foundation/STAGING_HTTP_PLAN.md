@@ -32,6 +32,12 @@
 
 関連7表のRLSポリシー（全command）は**本番27件／ステージング15件**、定義指紋と構成が不一致。特に本番は`club_members_read`の公開許可を残している。上記フラグは関数本文の一部キーワードをDB内で走査したもので、実際の返却値・認可分岐・動的SQL・ロック/同意の意味レビューを完全に終えたものではない。
 
+### 追加確認：ステージングの既存ViewとSQLロール試験
+
+- `public.public_player_profiles` は**ステージングのみに存在**し、`security_invoker=true` の指定がない既存View（`security_barrier=true`）。anon/authenticatedともにViewの`id`・`display_name`・`avatar_url`列へSELECT可能。基底表のanon SELECTを拒否していても、Viewの権限・定義は別の公開経路になり得るため、B0/B2の確認対象に追加する。
+- ステージングへの**実DBの読取専用SQLロール検査**（`SET LOCAL ROLE anon`）では、現状このViewからの可視行は0件、avatar URLも0件だった。既存の仮メンバーが見えないことを示す限定結果であり、実Auth/JWT・PostgREST経由で将来も安全という証明ではない。ViewのSQL定義本文、プロフィール行、画像URL自体は返却/保存していない。
+- 本番にはこの名称のViewがない。両環境の機能/認可差として記録し、権限を広げたりViewを改変したりせず、実HTTPの前に何を検証するかを決める。
+
 ### 既存の修正候補SQLに対する停止判断
 
 `03_link_detail_candidate.sql`は、受取人向けに**本番0039の `profile_link_private.preview` を呼ぶ設計**。これをステージングへ確定適用すると、現状の `scoped_preview` 経路が置き換わる。**プレビュー/同意/tokenの意味が変化する危険があるため、現状の候補SQLをステージングへ適用しない**。保護対象・認可境界・返却契約を揃えたステージング専用の修正案を、独立した隔離DB・実Auth試験と既存定義の安全な復旧方針が整うまで決め打ちしない。

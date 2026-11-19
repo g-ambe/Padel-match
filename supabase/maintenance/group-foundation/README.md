@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：H06/H03のステージング閉鎖・実JWT HTTP 15判定PASS
+
+**ステージング専用のP0部分修正を実施。本番DB未変更、PR #265はDraft維持。** 既存検証用3Authアカウントと2グループを使用して、旧`preview_profile_join`（H06）と`public_player_profiles` View（H03）の公開経路を閉じた。
+
+- H06：[`10_h06_legacy_preview_acl_candidate.sql`](10_h06_legacy_preview_acl_candidate.sql)でROLLBACK負例＋新限定公開プレビュー正例を検証し、[`11_h06_staging_apply.sql`](11_h06_staging_apply.sql)をステージングのみ確定適用。認証済みユーザーの**旧RPC直接EXECUTEのみをREVOKE**し、新`preview_public_club_claim`を内部経由で維持。
+- H03：View自体や行/RLSを変更せず、[`12_h03_public_player_profiles_view_acl_candidate.sql`](12_h03_public_player_profiles_view_acl_candidate.sql)で匿名/認証利用者のSELECT拒否と新公開名簿の正常動作をROLLBACK検証。その後[`13_h03_staging_apply.sql`](13_h03_staging_apply.sql)で**ステージングのみView直接SELECTをREVOKE**。現行ブランチのapp/lib/components計136ファイルとDB関数群でこのView名の直接参照は見つからず、service_roleアクセスは維持。
+- ステージングのSupabase Migration履歴は**46件**。既存8所属+fixture4所属を維持。H06の旧関数本体、H03のView定義、アプリのUIやデプロイ設定、既存`03`/`06`のROLLBACK候補は変更なし。
+- 実Auth/JWT付きHTTP再試験：[run #44487713301](https://github.com/g-ambe/Padel-match/actions/runs/44487713301) は**15判定すべてPASS**。旧preview直接呼出し403、新限定preview200、匿名View401。H01/H02/H07/H11もPASS。これはH01〜H14全件でもP0完了でもない。
+- 未完了：旧`submit_profile_join_request`等の認可経路、管理者詳細候補06の確定適用、他の旧表/列SELECTとRLS差、本番とステージングの相違、初期所属INSERT/管理UPDATE/本人同意・統合/共有・ランキング/実機の回帰。本番適用・マージ・デプロイは禁止。
+
+詳細・停止条件：[STAGING_HTTP_PLAN.md 0.7/0.8節](STAGING_HTTP_PLAN.md)。過去の「H06/H03未解消」記録は作成当時の状態であり、**ステージング現状は本節を正とする**。
+
 ## 2026-11-19 更新：B0実HTTP検証をGitHub Actionsから実行可能にする準備
 
 実Auth・PostgREST用の既存[`08_staging_auth_http_smoke.mjs`](08_staging_auth_http_smoke.mjs)をGitHub Actionsから**本番/マージ/デプロイを行わず**に実行するため、[`.github/workflows/task08-staging-b0-auth-http.yml`](../../../.github/workflows/task08-staging-b0-auth-http.yml)と非秘密の[`.task08-b0-trigger`](.task08-b0-trigger)を追加。

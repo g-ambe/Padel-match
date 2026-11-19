@@ -121,7 +121,11 @@ async function main() {
       const oldPreview = await clients.outsider.rpc('preview_profile_join', {
         p_club_id: clubA, p_member_id: provisional.id,
       });
-      mark('H06', 'outsider', 'OBSERVED_NOT_ACCEPTED', {
+      const expectingClosed = process.env.TASK08_EXPECT_H06_CLOSED === '1';
+      const blocked = oldPreview.error?.code === '42501' &&
+        [401, 403].includes(oldPreview.status) && oldPreview.data === null;
+      mark('H06', 'outsider',
+        expectingClosed ? (blocked ? 'PASS' : 'FAIL') : 'OBSERVED_NOT_ACCEPTED', {
         http_status: oldPreview.status ?? null,
         error_code: oldPreview.error?.code ?? null,
         returned_source: !!oldPreview.data?.source,
@@ -129,6 +133,36 @@ async function main() {
         membership_count: Array.isArray(oldPreview.data?.memberships)
           ? oldPreview.data.memberships.length : null,
       });
+      if (expectingClosed) {
+        const directory = await clients.outsider.rpc('get_public_club_directory', { p_club_id: clubA });
+        const ref = !directory.error && Array.isArray(directory.data)
+          ? directory.data.find(row => row.display_name === 'TASK08-P0 provisional U' && row.is_unlinked)?.reference
+          : null;
+        if (typeof ref !== 'string') {
+          mark('H06_SAFE', 'outsider', 'BLOCKED', safeResult(directory));
+        } else {
+          const safePreview = await clients.outsider.rpc('preview_public_club_claim', {
+            p_club_id: clubA, p_reference: ref,
+          });
+          const allowed = new Set([
+            'display_name', 'target_display_name', 'has_target', 'review_token',
+            'membership_count', 'participant_count', 'match_count', 'result_count',
+            'team_match_count', 'official_match_count',
+          ]);
+          const dtoOk = safePreview.data && !Array.isArray(safePreview.data) &&
+            Object.keys(safePreview.data).length === 10 &&
+            Object.keys(safePreview.data).every(key => allowed.has(key)) &&
+            typeof safePreview.data.review_token === 'string' &&
+            safePreview.data.display_name === 'TASK08-P0 provisional U' &&
+            safePreview.data.membership_count === 1;
+          mark('H06_SAFE', 'outsider',
+            !safePreview.error && safePreview.status === 200 && dtoOk ? 'PASS' : 'FAIL', {
+            http_status: safePreview.status ?? null,
+            error_code: safePreview.error?.code ?? null,
+            only_minimal_fields: !!dtoOk,
+          });
+        }
+      }
     }
 
     for (const [actor, client] of Object.entries({ anonymous, outsider: clients.outsider })) {

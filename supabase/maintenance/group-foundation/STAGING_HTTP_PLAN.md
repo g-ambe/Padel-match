@@ -15,6 +15,47 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.9. 2026-11-19：旧加入申請・連携詳細/一覧の最小化とH13初期登録の隔離試験
+
+**ステージング `padel-hub-staging` のみに実施。本番・デプロイ・マージなし。** 前節のH03/H06対策は保持。今回のステージング履歴は**46件→49件**、現在`ACTIVE_HEALTHY`。新しいブランチ/PRは作成していない。
+
+### 旧加入申請RPCの直接EXECUTEを閉鎖
+
+- `submit_profile_join_request(uuid,uuid,text,text)`は、内部所属IDを引数に取る旧RPC。既存アプリの公開グループ加入導線は、公開参照を検証する`submit_public_club_claim`を利用。内部呼び出し先はSECURITY DEFINERで維持できる。
+- [`14_legacy_join_submit_acl_rollback_probe.sql`](14_legacy_join_submit_acl_rollback_probe.sql)を実ステージングでROLLBACK検証。旧RPC直接拒否、無効な同意token拒否、**正しい公開参照+本人tokenで新ラッパー経由の加入申請・同意snapshot生成が成功**し、申請/通知は保存されないことを確認。最初の試験SQLは認証済みロールで非公開申請表をSELECTしようとして失敗、検証照会だけpostgresへ戻して再実行成功。RLS/GRANTを緩めて対処していない。
+- [`15_legacy_join_submit_staging_apply.sql`](15_legacy_join_submit_staging_apply.sql)をステージング限定で適用（履歴`task08_legacy_join_submit_acl_staging`）。**PUBLIC/anon/authenticatedの旧関数直接EXECUTEのみREVOKE**。新`submit_public_club_claim`の認証EXECUTEと旧関数のSECURITY DEFINER内部呼出しは維持。
+- ステージング固定のB0 HTTPスモークに、無効tokenしか送らない`LEGACY_SUBMIT_DIRECT`負例を追加。正規Auth JWT HTTP [run #44490847281](https://github.com/g-ambe/Padel-match/actions/runs/44490847281)で**16判定すべてPASS**、旧直接呼出し403/42501・申請作成なし。これはH08本人承認の全面試験ではない。
+
+### 旧連携詳細RPCの管理者DTO限定と一時fixtureの安全な回収
+
+- 以前の本番用`03_link_detail_candidate.sql`は変更せず、ステージング固有`scoped_preview`を守る`06_staging_link_detail_candidate.sql`を再ROLLBACK試験。管理者用10キー限定／他グループBの非返却、申請先本人のpreviewとreview_token不変、無関係者拒否を確認。
+- [`16_link_detail_staging_apply.sql`](16_link_detail_staging_apply.sql)をガード付きで**ステージングだけに適用**（履歴`task08_staging_link_detail_minimal_dto`）。旧関数`get_player_profile_link_request(uuid)`を管理者用の最小DTOに置換、受取人には従来の`scoped_preview`同意内容を維持。既存EXECUTE/ACL/RLSは変更していない。
+- 実HTTP検証は、一時的なテスト専用リンク申請1件＋正常通知1件を[`17_link_detail_staging_http_fixture_setup.sql`](17_link_detail_staging_http_fixture_setup.sql)でステージングにだけ作成。対象は固定識別名`TASK08-P0-20261119-A`の仮選手U、申請者main-A、受取人recipient。パスワード・token・内部UUIDはGitHub/Issueへ出力しない。
+- [run #44492138197](https://github.com/g-ambe/Padel-match/actions/runs/44492138197)：**20判定＝19 PASS/1未解消観測**。管理者詳細HTTP200・許可10キーのみ、受取人の同意preview/token一致、outsider詳細拒否。残る1観測は管理者向け一覧`list_player_profile_link_requests`に`target_auth_user_id`と`source_player_profile_id`が返ること。
+- テスト後は[`18_link_detail_staging_http_fixture_cleanup.sql`](18_link_detail_staging_http_fixture_cleanup.sql)で**当該1件の申請とその通知1件だけ**を照合して削除。一般プロフィール/club/所属、別通知、Authユーザーは保持。ワークフローの一時的な詳細テストフラグを解除。
+
+### 一覧RPCの不要な認証IDを削除（画面の申請中表示は維持）
+
+- 現行UI`app/groups/[id]/page.tsx`では、管理者の連携申請一覧にある`source_player_profile_id`を、メンバー行の「申請中」表示と結びつけている。一方、`target_auth_user_id`は現行画面で使われていない。
+- [`20_link_list_target_id_rollback_probe.sql`](20_link_list_target_id_rollback_probe.sql)により、管理者・受取人の両一覧から**target_auth_user_idだけを除外**し、本人の指定/管理者一覧の閲覧条件・source_player_profile_id・status/表示名を維持できることをROLLBACK検証。outsiderの他クラブ一覧は0件。
+- [`21_link_list_minimal_staging_apply.sql`](21_link_list_minimal_staging_apply.sql)をステージング限定で適用（履歴`task08_staging_minimal_link_request_list`）。既存関数所有者・現物ハッシュ照合あり、ACL/RLSは不変。`lib/profile-links.ts`の型から不要な認証IDを除き、UI機能は変更しない。
+- 同じステージングの専用fixtureを1回だけ再作成し、[run #44494344175](https://github.com/g-ambe/Padel-match/actions/runs/44494344175)の実Auth JWT＋PostgRESTで**21判定すべてPASS**。管理者一覧と受取人一覧にtarget認証IDを含めず、管理者には必要な同クラブsource選手IDを維持。連携詳細3役、旧RPC/H03/H06を含む既存負例もPASS。HTTP試験後、専用cleanupで申請1件/通知1件を削除。B0 workflowの一時的なリンク詳細検証フラグを再び解除した。
+- **source_player_profile_idは管理者が既存グループ内メンバーと突合するため現時点では残存**。将来の全内部ID非公開化とは別のUI/DTO変更に分割し、ここではユーザーに見える機能を変更しない。
+
+### H13：初期メイン管理者登録は候補のみ（ステージング未適用）
+
+- 実DB読取監査で、ステージングは`clubs`も`club_members`もauthenticatedの**INSERT表/列GRANTが0、INSERT RLS policyも0**。対して本番は両表にINSERT権限と所有者ベースのINSERT policyがある。以前の「club_membersだけ欠落」という説明は不十分だった。現行画面`app/groups/new/page.tsx`は`clubs INSERT ... RETURNING id`→`club_members INSERT(main_admin)`の二段階。
+- [`19_h13_initial_owner_insert_rollback_candidate.sql`](19_h13_initial_owner_insert_rollback_candidate.sql)を**ROLLBACK専用**で作成。ステージングの既存ACL/RLSは永続変更せず、トランザクション内だけで限定列INSERT GRANT、`owner_id=auth.uid()`限定のclubs INSERT policy、およびSECURITY DEFINER判定関数を経由した**本人/本人に連携済みの選手ID/main_admin/最初の所属のみ**のclub_members INSERT policyを試す。本人以外のowner、誤役職、別選手ID、二重self、別アカウントによる登録は拒否。
+- 既存`guard_club_owner`と`guard_reference`トリガーの負例が`P0001`を返すため、試験SQLは権限を緩めずに期待する拒否を識別するよう修正。**現物の正例/負例はすべて成功**：本人クラブ作成1、本人main所属1、その他5種拒否。
+- 初期登録の競合を意識し、判定関数に**ownerクラブ行`FOR UPDATE`ロック**を追加して再ROLLBACK。7判定すべて成功（owner1/main1/5拒否）。ただし**実際の2接続同時実行・JWT HTTPでの作成/回収・既存契約の広範な互換試験は未実施**。この候補をステージングに確定適用せず、`clubs`/`club_members`の現行INSERT拒否を維持。**本番の旧INSERT policyを丸ごとコピーしない**。
+- H13候補は正式Migrationに昇格していない。特に複数同時操作・ロック待機・途中失敗後の孤立club/復旧・複数回操作の不変性・owner変更トリガーを別検証する。必要な権限を一括GRANTせず列単位に限定したまま判断する。
+
+### 終了時点と次の停止条件
+
+- **ステージングMigration 49件、稼働状態`ACTIVE_HEALTHY`。** 既存所属8件＋専用fixture所属4件は維持。検証用の連携申請・通常加入申請ともに0件、一時H13クラブ0件、H13専用INSERT policy 0件。`clubs`/`club_members`のauthenticated INSERTは引き続き拒否。
+- **未完了**：H13の真の同時実行・実JWT HTTP/復旧、本番とステージングの広範なRLS/ACL差、旧公開基底表SELECT、H08本人レビュー・統合、H09/H10更新系、H12共有、H14試合/戦績の不変性。H01〜H14全体の完了と判断しない。
+- **本番DB／Cloudflare／PRマージ・デプロイは未変更**。従来`03`本番候補は既定ROLLBACKのまま。PR #265 Draft、Issue #264 OPENを維持。
+
 ## 0.8. 2026-11-19：H03旧Viewの直接SELECT閉鎖・H06/H03実HTTP全15判定PASS
 
 **実施対象は既存ステージング `padel-hub-staging` のみ。H03とH06の公開経路を両方閉じ、正規Auth + PostgREST HTTPで検証した。本番DBへの適用・本番デプロイ・マージは一切していない。**

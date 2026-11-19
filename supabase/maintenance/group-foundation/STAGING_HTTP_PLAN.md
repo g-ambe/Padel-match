@@ -15,6 +15,28 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.5. 2026-11-19：秘密値をChatGPTに渡さないB0 HTTP GitHub Actions起動手順
+
+**ここは実行手段の整備のみ。GitHub Actions上での実Auth・PostgREST HTTP試験は依然として未実施。** ステージング用3ユーザーの既存パスワードはチャット、PR、Issue、README、GitHubコメントへ転記しない。
+
+1. 既存Draft PR #265に[`.github/workflows/task08-staging-b0-auth-http.yml`](https://github.com/g-ambe/Padel-match/blob/codex/task-08-group-foundation/.github/workflows/task08-staging-b0-auth-http.yml)を追加。**このブランチの`.task08-b0-trigger`変更を伴うpushだけ**で起動する。通常のPR修正・Migration更新・mainブランチでは起動しない。必要な秘密値が欠落していればネットワーク認証前に停止する。
+2. **本人が**GitHubリポジトリ `Settings > Secrets and variables > Actions > New repository secret` で以下の4件を登録する。パスワードは**テスト専用アカウントのもののみ**で、個人/本番/再利用パスワード禁止。ステージングの鍵はSupabase `padel-hub-staging > Project Settings > API Keys` で確認した`sb_publishable_`から始まる**Publishable key**を使う。anon JWT/Service Role/Secret Keyは使わない。
+   - `TASK08_STAGING_PUBLISHABLE_KEY`
+   - `TASK08_STAGING_MAIN_A_PASSWORD`
+   - `TASK08_STAGING_RECIPIENT_PASSWORD`
+   - `TASK08_STAGING_OUTSIDER_PASSWORD`
+3. UserがSecrets登録完了を知らせてから、ChatGPT/GitHub連携で既存ブランチ`supabase/maintenance/group-foundation/.task08-b0-trigger`の**非秘密テキストだけを更新**。これにより1回の `push` イベントでB0ジョブが起動する。**未登録のうちにトリガーは更新しない**。
+4. WorkflowはGitHub提供ランナー上でSHAピン留めの`actions/checkout`・`actions/setup-node`を使い、`permissions.contents=read`、元リポジトリ/対象ブランチ限定、既存`08_staging_auth_http_smoke.mjs`の構文を`node --check`で確認し、必要な`@supabase/supabase-js@2.49.8`のみ隔離ディレクトリに`--ignore-scripts`でインストールする。**Secrets環境変数は秘密値事前検査ステップ・実際のスモーク試験ステップにだけ注入し、checkout/依存インストールへは渡さない**。
+5. スモーク側はステージングURL`https://zzjwpresqkefnyjyisgd.supabase.co`に固定。Publishable Keyが`sb_publishable_`形式でなければ最初に停止。ログインによりSupabase Authの最終サインイン時刻等は更新され得るが、アプリDBへのINSERT/UPDATE/DELETE、連携申請/レビュー/統合、RLS/GRANT変更、デプロイは実行しない。SQLログ/JSON応答/内部ID/ユーザーパスワード/JWTの実値は公開しない。結果はH01/H02/H03/H06/H07/H11の**一部B0観測**であり、H01〜H14全件完了とはしない。ステージングの旧preview/匿名Viewを`OBSERVED_NOT_ACCEPTED`などに分類し、P0合格に含めない。
+6. 完了後にGitHub Actionsの成否/検証数・匿名View/旧previewの**真偽・件数・HTTP statusのみ**をIssue #264に追記する。テストが動作しても旧`03`/`06`候補の永続適用、ステージングRLS変更、本番DB適用やPRマージへ自動進行しない。秘密値は試験不要になったらGitHub Actions Repository Secretsから削除/ローテーションを検討する。
+
+**コスト注記**：GitHub Actions使用分数とnpmインストール等の実行時間は発生する。無料枠が残っているかは本工程で確認していない。ランナーは`timeout-minutes: 10`、事前の秘密値チェックで未設定なら早期停止。Action公開コードはSHAで固定している。今はトリガーファイルに`NOT_TRIGGERED`と明記してあり、テスト未実施。
+
+### 匿名Viewの限定的なROLLBACK改善実験
+
+- 既存[`09_staging_view_invoker_rollback_probe.sql`](09_staging_view_invoker_rollback_probe.sql)を追加し、**GitHub上のSQLそのものを実ステージングへ適用してROLLBACKした**。既存テストプロフィール3件が見える状態で、匿名ロールの現行Viewは3件可視。トランザクション内でのみ`ALTER VIEW ... SET (security_invoker=true)`を試すと、匿名アクセスは**42501**で拒否された。ROLLBACK後は元のView設定に戻っている。
+- この実験は匿名公開を閉じる有効な選択肢を示すが、**既存の公開プロフィール画面/アバター等を壊す可能性**があるため、正式適用を禁止。Viewの呼び出し側・公開要件・正例/負例を確認してから、専用DTO・認可スコープを決める。P0全体の解決を意味しない。
+
 ## 0.4. 2026-11-19：06修正候補の実ステージングROLLBACK試験・実Auth HTTP実行器
 
 **対象は既存ステージング `zzjwpresqkefnyjyisgd` のみ。本番SQL未実行。** 直前工程のテスト用グループA/B・Auth3アカウントに付随するアプリデータを利用し、連携の漏えい検査を進めた。

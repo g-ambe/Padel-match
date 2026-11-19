@@ -287,6 +287,66 @@ async function main() {
       }
     }
 
+    if (process.env.TASK08_EXPECT_H08_SCOPE_GUARD === '1') {
+      // Guarded stage-only SQL creates exactly one pending synthetic A->outsider request.
+      // This HTTP test submits the real consent token; successful approval would be a FAIL.
+      const reqList = await clients.mainA.rpc('list_player_profile_link_requests', {
+        p_club_id: clubA,
+      });
+      const candidates = !reqList.error && Array.isArray(reqList.data)
+        ? reqList.data.filter(item => item.status === 'pending' &&
+            item.source_display_name === 'TASK08-P0 provisional U' &&
+            item.club_id === clubA)
+        : [];
+      if (candidates.length !== 1 || typeof candidates[0].id !== 'string') {
+        mark('H08_FIXTURE', 'mainA', 'BLOCKED', safeResult(reqList));
+      } else {
+        const requestId = candidates[0].id;
+        const preview = await clients.outsider.rpc('get_player_profile_link_request', {
+          p_request_id: requestId,
+        });
+        const previewOk = !preview.error && preview.status === 200 &&
+          preview.data?.detail_scope === 'recipient' &&
+          preview.data?.status === 'pending' &&
+          typeof preview.data?.review_token === 'string' &&
+          Array.isArray(preview.data?.memberships) &&
+          preview.data.memberships.length === 1 &&
+          !JSON.stringify(preview.data.memberships).includes('TASK08-P0-20261119-B');
+        mark('H08_SCOPE_PREVIEW', 'outsider',
+          previewOk ? 'PASS' : 'FAIL', {
+          http_status: preview.status ?? null,
+          error_code: preview.error?.code ?? null,
+          only_selected_club_shown: !!previewOk,
+        });
+        if (previewOk) {
+          const review = await clients.outsider.rpc('review_player_profile_link', {
+            p_request_id: requestId,
+            p_decision: 'approved',
+            p_review_token: preview.data.review_token,
+          });
+          const guardDenied = review.error?.code === '42501' &&
+            [401, 403].includes(review.status) && review.data === null;
+          mark('H08_REVIEW_SCOPE', 'outsider',
+            guardDenied ? 'PASS' : 'FAIL', {
+            http_status: review.status ?? null,
+            error_code: review.error?.code ?? null,
+            no_merge_result: review.data === null,
+          });
+          const after = await clients.outsider.rpc('get_player_profile_link_request', {
+            p_request_id: requestId,
+          });
+          const unchanged = !after.error && after.data?.status === 'pending' &&
+            after.data?.detail_scope === 'recipient';
+          mark('H08_PENDING_UNCHANGED', 'outsider',
+            unchanged ? 'PASS' : 'FAIL', {
+            http_status: after.status ?? null,
+            error_code: after.error?.code ?? null,
+            still_pending: !!unchanged,
+          });
+        }
+      }
+    }
+
     const view = await anonymous.from('public_player_profiles').select('id,display_name');
     const expectViewClosed = process.env.TASK08_EXPECT_H03_CLOSED === '1';
     const viewDenied = view.error?.code === '42501' &&

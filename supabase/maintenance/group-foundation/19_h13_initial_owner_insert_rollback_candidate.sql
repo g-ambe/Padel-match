@@ -60,6 +60,8 @@ BEGIN
   INSERT INTO public.clubs(name,owner_id,is_active,visibility)
   VALUES('TASK08-H13-ROLLBACK-FOREIGN',current_setting('task08.recipient')::uuid,true,'private');
  EXCEPTION WHEN insufficient_privilege THEN denied_other_owner:=true;
+ WHEN SQLSTATE 'P0001' THEN
+   denied_other_owner:=position('グループ所有者' IN SQLERRM)>0;
  END;
  INSERT INTO public.clubs(name,owner_id,is_active,visibility)
  VALUES('TASK08-H13-ROLLBACK-SELF',current_setting('task08.main')::uuid,true,'private')

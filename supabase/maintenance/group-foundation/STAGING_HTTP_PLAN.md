@@ -1,5 +1,20 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.20 2026-11-20：H16 グループ内別名・本人公開同意のDB基盤とCodexへの分担
+
+**分担のユーザー承認：ChatGPT＝DB設計・Migration・Stage適用・権限/データ検証・レビュー、Codex＝Next.js/UI/アプリ処理・アプリ側テスト、ユーザー＝本番リリース判断。** この区分により今回は**アプリ側のUI/型ファイルをGPTが直接変更していない**。Stage DBの専用smoke期待値のみ、DB仕様変更に合わせて更新。
+
+- **本番READ ONLY比較**：Prod `club_members` 41行、公開グループ内のlinked activeは13行／unlinked activeは12行。Prodには `club_display_name` 専用列も新しい読取RPCもなく、`anon` が基底表を直接SELECTできる。**本番へ追加の名前列を入れると公開リスクになるため、0056にはanon SELECT遮断済みの事前ガードを導入**。
+- **Stage**：`supabase/migrations/0056_club_scoped_display_names.sql` をGitHubの既存Draft PR #265へ正式ファイルとして追加し、Stage `BEGIN/ROLLBACK` 成功後、Stage限定 `task08_stage_0056_club_scoped_display_names` で適用成功。Stageの既存12所属全件の別名・公開同意時刻は**NULLを維持**、グローバル`player_profiles.display_name`や試合・所属/役職・本人リンクは変更せず。
+- 追加DB列：`club_members.club_display_name text NULL`、`club_display_name_public_confirmed_at timestamptz NULL`。`public.save_club_member_display_name(club_id,member_id,display_name,expected_name,public_confirmation)` は意図的なSECURITY DEFINER・空search_path・`auth.uid()`認可・club/memberロック・CAS(40001)・入力制約付き。linked本人のみ編集（管理者でも他人のlinked名不可）、unlinkedは既存`can_edit_player_profile_member`役職制限。public linked本人には明示`p_public_confirmation=true`必須、privateは公開同意にならない。**本人プロフィール名をUPDATEしない**。
+- `get_club_roster` は従来のRETURNS TABLE形状を維持し、所属者専用`player_profiles` JSONBに `club_display_name`・`public_name_confirmed` を追加。`get_public_club_directory`は従来と同じ3列`reference/display_name/is_unlinked`だけ返す。未連携はグループ別名があればそれ、なければ**本人が仮登録された時の名前**。既存linkedで別名・公開同意が未確認の行は**公開名簿から除外**し、一律「メンバー」や本人プロフィール名の公開で穴埋めしない。結果としてStage旧公開名簿は各グループの既存linked行が確認まで一時非表示となる。これは公開名の安全な移行判断であり、表示UIの本番受入は未完了。
+- `64_h16_club_display_names_rollback_probe.sql`：Stage専用の合成2クラブ＋2未連携・3linkedを利用した**単一ROLLBACK**検証。publicの未承諾/他人linked/一般による未連携改名/サブからmain仮選手改名を拒否、linked本人の同意済み公開改名、サブ管理者の一般仮選手改名、main管理者のmain仮選手改名、CAS競合、private別名の非公開、同一プロフィールの他グループ別名独立、元のプロフィール名不変、公開側は確認済み名だけ、をすべてPASS。既存Stageデータの追加/残存なし。
+- Stage postflight：alias列直UPDATE（authenticated/anon）不可、anonのclub_members直接SELECT不可、anonからalias RPC実行不可、authenticated経由のalias RPC可、旧12所属全件NULL、保存済公開同意0。Stage Supabase Security Advisorは意図的なauthenticated SECURITY DEFINER RPCを警告するが、スコープ内のanon新規公開は検出されず、既存のその他警告は未解消で別途確認が必要。
+- `08_staging_auth_http_smoke.mjs` 内のDB名簿H07期待値を**旧Stage publicグループAのlinked1名除外後のunlinked1名のみ**に変更。別名のない既存linkedを公開する想定は撤去。[**GitHub Actions #44627676077**](https://github.com/g-ambe/Padel-match/actions/runs/44627676077) **SUCCESS**（Stage Auth/PostgREST、TypeScript、既存H12/H14/H15 static checks）。
+- Codexへのアプリ側引継ぎは `65_h16_codex_app_handoff.md` に記録。**Codex作業はまだ起動しておらず、UI/型/ヘルプ実装は未着手**。正式DB Migrationの再編集は不可、既存PR/AGENTS.md順守、UIは既存共通POP、linked本人名・括弧内プロフィール名の別管理、未連携名の旧グローバルプロフィールUPDATE廃止、public確認チェック／保存失敗維持、グループ間分離、非所属向けデータ最小化、関連ヘルプ同期を指示。
+- **継続ブロッカー**：本番には匿名の`club_members`直接SELECTが残る。0054/0055のStage限定読み取り分離と本番SQL/Cloudflare配信を順序立てて反映する必要あり。また新規加入／未連携選手の本人連携時の表示名確認・引継ぎ・同意snapshotは別途DB検証・Codex UI実装が必要。これらなしに**本番への0056適用/PRマージは禁止**。旧スコア不一致6件はユーザー指示により保留、戦績ルールは不変。
+
+
 ## 0.19 2026-11-19：TASK-08-03／H15 本人自主退会RPC・確認POP・実JWT試験
 
 **対象**：既存 `codex/task-08-group-foundation`／Draft PR #265／Issue #264。**本番DB、Cloudflare、マージ、デプロイは未変更。**

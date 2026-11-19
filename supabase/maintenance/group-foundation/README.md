@@ -1,5 +1,13 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：既存ステージングへ0054/0055を適用
+
+[STAGING_HTTP_PLAN.md](STAGING_HTTP_PLAN.md#0-2026-11-19chatgpt連携からの最新db照合ステージング追加migration適用後続更新) に最新の実測・適用結果を記録。GitHubでの最新ヘッドに含む0054/0055と同じ内容を、既存 `padel-hub-staging` **だけ**に追加適用した。履歴名は `task08_0054_group_read_interfaces_staging` / `task08_0055_group_read_consumer_support_staging`。本番DBは未適用。
+
+既存ステージングの所属8件を保持し、非公開公開参照8件、用途別RPCのACL、匿名への非公開スキーマ拒否を読取で確認。実Auth/HTTPは未実施。旧連携関数・RLSの本番との差、旧公開SELECT、権限閉鎖、既定ROLLBACKの`03_link_detail_candidate.sql`、不足11表は未対応。**Draft・P0未完了を維持し、マージ・本番SQL・デプロイ禁止。**
+
+以下の過去段階の「未適用」「接続不可」は、その作業時点での記録であり、最新のステージング状態は上記計画の追記を参照。
+
 仕様：[#264](https://github.com/g-ambe/Padel-match/issues/264)、設計コメント6975098709、調査#229。
 既存ブランチ `codex/task-08-group-foundation` / Draft PR #265を使用。PR #261は変更しない。
 

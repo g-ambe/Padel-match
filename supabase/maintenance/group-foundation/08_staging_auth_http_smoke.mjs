@@ -205,11 +205,21 @@ async function main() {
         const item = candidates[0];
         // Retain only the ID in memory; never log target/user/source UUIDs.
         const requestId = item.id;
-        mark('LINK_LIST_PRIVACY', 'mainA',
-          item.target_auth_user_id || item.source_player_profile_id
-            ? 'OBSERVED_NOT_ACCEPTED' : 'PASS', {
+        const listFieldsSafe = !('target_auth_user_id' in item) &&
+          typeof item.source_player_profile_id === 'string';
+        mark('LINK_LIST_PRIVACY', 'mainA', listFieldsSafe ? 'PASS' : 'FAIL', {
           exposes_target_auth_id: typeof item.target_auth_user_id === 'string',
           exposes_source_player_id: typeof item.source_player_profile_id === 'string',
+        });
+        const recipientList = await clients.recipient.rpc('list_player_profile_link_requests', {});
+        const recipientListSafe = !recipientList.error &&
+          Array.isArray(recipientList.data) && recipientList.data.length === 1 &&
+          recipientList.data[0].id === requestId &&
+          !('target_auth_user_id' in recipientList.data[0]);
+        mark('LINK_LIST_RECIPIENT', 'recipient',
+          recipientListSafe ? 'PASS' : 'FAIL', {
+          ...safeResult(recipientList),
+          no_target_auth_id: !!recipientListSafe,
         });
         const mgr = await clients.mainA.rpc('get_player_profile_link_request', {
           p_request_id: requestId,

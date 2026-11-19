@@ -3,4 +3,4 @@
 # FOUR dedicated staging GitHub Actions repository secrets.
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
-# Status: TRIGGERED_H12_AFTER_SHARED_TABLE_ANON_SELECT_REVOKE_2026-11-19_4
+# Status: TRIGGERED_H12_AFTER_FIXTURE_CLEANUP_READ_ONLY_B0_2026-11-19_5

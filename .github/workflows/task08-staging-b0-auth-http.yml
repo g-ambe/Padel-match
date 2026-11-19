@@ -1,0 +1,66 @@
+# TASK-08 P0: staging-only, manually triggered by editing the inert trigger file.
+# Secrets are NEVER exposed to a forked PR or an arbitrary push path.
+# No deployment, production access, app database writes, or PR merge.
+name: TASK-08 staging B0 Auth HTTP
+on:
+  push:
+    branches:
+      - codex/task-08-group-foundation
+    paths:
+      - supabase/maintenance/group-foundation/.task08-b0-trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: task08-staging-auth-http
+  cancel-in-progress: false
+
+jobs:
+  staging-b0-http:
+    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+      TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+      TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+      TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+    steps:
+      - name: Checkout the existing task branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Check staging secret availability without printing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          for var in TASK08_STAGING_PUBLISHABLE_KEY TASK08_STAGING_MAIN_A_PASSWORD TASK08_STAGING_RECIPIENT_PASSWORD TASK08_STAGING_OUTSIDER_PASSWORD; do
+            if [[ -z "${!var:-}" ]]; then
+              echo "::error title=Missing test secret::Missing ${var} in repository Actions secrets"
+              exit 2
+            fi
+          done
+
+      - name: Check B0 script syntax
+        run: node --check supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs
+
+      - name: Isolated test dependency install
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/task08-b0"
+          cp supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs "$RUNNER_TEMP/task08-b0/smoke.mjs"
+          npm install --prefix "$RUNNER_TEMP/task08-b0" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund @supabase/supabase-js@2.49.8
+
+      - name: Run B0 real Auth and PostgREST smoke (staging only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node "$RUNNER_TEMP/task08-b0/smoke.mjs"

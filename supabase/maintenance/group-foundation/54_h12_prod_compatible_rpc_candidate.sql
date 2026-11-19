@@ -19,8 +19,8 @@ BEGIN
   IF NOT EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid='public.event_team_matches'::regclass AND attname=c AND attnum>0 AND NOT attisdropped)
   THEN RAISE EXCEPTION 'H12 0045 prerequisite column missing: %',c; END IF;
  END LOOP;
- IF to_regprocedure('public.get_shared_event(text,text)') IS NOT NULL AND
-    (SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid='public.get_shared_event(text,text)'::regprocedure)<>'postgres'
+ IF EXISTS(SELECT 1 FROM pg_proc WHERE oid=to_regprocedure('public.get_shared_event(text,text)')
+    AND pg_get_userbyid(proowner)<>'postgres')
  THEN RAISE EXCEPTION 'H12 existing RPC owner drift'; END IF;
 END $h12_preflight$;
 CREATE SCHEMA IF NOT EXISTS security_private;

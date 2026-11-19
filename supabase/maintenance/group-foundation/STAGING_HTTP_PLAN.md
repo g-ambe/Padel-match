@@ -1,5 +1,19 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.16 2026-11-19：本番互換の共有RPC新設候補と導入順序（Stage適用・Prod未実施）
+
+**対象**：PR #265、Issue #264。**本番DB・本番Cloudflareデプロイ・PRマージは一切変更なし**。
+
+- ProdをREAD ONLYで再監査：実行所有者 `postgres`、`security_private` schema・`get_shared_event(text,text)` が不存在、0045混合/ラウンドの必須15列欠落0。終了済み共有ONの有効な通常9件＋公式1件、現行共有tokenに不正な文字0（実token値は取得・記録していない）。
+- Stageの旧限定共有SQLとProdのカラムを照合し、`54_h12_prod_compatible_rpc_candidate.sql` を既存PRに追加。新設では `security_private` schemaを必要な場合のみ作成し、`security_private.shared_event` をprivileged内部関数、`public.get_shared_event(token,kind)` を匿名/ログインの意図的なtoken検証付き `SECURITY DEFINER` 公開RPCとする。内部関数の `PUBLIC/anon/authenticated` の直接EXECUTEをREVOKE。**既存`security_private` schemaのUSAGEは他のRLS helperを壊さないため一括REVOKEしない**。基底表anon SELECTの変更は明確に別工程。
+- `54` のStage `BEGIN/ROLLBACK` では、既存関数上書き・両関数を同一トランザクション内で一時DROPした**Prod初回導入相当**の双方で作成成功。初期版のpreflightに存在しない関数への `::regprocedure` 参照があり、存在検査を `to_regprocedure` + `pg_proc` の安全なSQLに修正した後、新設相当のROLLBACK試験PASS。
+- 新しいRPCを同一ROLLBACK内で `50_h12_mixed_round_rollback_probe.sql` と `46_h12_share_token_rollback_probe.sql` に通し、混合のラウンド/コート/4-2/所属/匿名化と通常/公式の正規token、無効/共有OFF/種別違いの返却、基底表直接拒否はいずれも期待値一致。
+- **Stageだけ** `task08_staging_h12_prod_compatible_rpc_boundary` としてRPC更新成功。更新後の独立ROLLBACK試験もPASS。Stage公開RPCはanon/auth EXECUTE可、内部helperはanon/auth直接EXECUTE不可、匿名基底表SELECTも従前どおり不可。Stageイベント・公式イベントはそれぞれ0件のまま。
+- `tests/shared-event-rpc-release.test.cjs` を追加し、`test(H12)` ワークフローへ登録。初回CI [#44536061885](https://github.com/g-ambe/Padel-match/actions/runs/44536061885) はテストがpreflight以外の正常なpostflightの `regprocedure` まで拾う**静的テスト自身の過剰検出**で失敗。テスト対象をpreflight区間に限定して修正し、[**#44536600145**](https://github.com/g-ambe/Padel-match/actions/runs/44536600145) ではH12 DTO/新設時権限検査、TypeScriptコンパイル、Stage実Auth/PostgREST B0の全ステップ成功。
+- 将来の本番リリース手順と失敗時の中断条件は `55_h12_production_cutover_plan.md` に記録。本番では **①RPC導入→②他P0互換確認/アプリ切替→③実リンク画面確認→④7表の匿名SELECT遮断** の順序とする。既存PRは他のP0改修も含むため、H12だけを先に本番デプロイしない。元の `53` の固定合成tokenチェックはProd用に置換が必要。
+- **未完了**：本番の正式Migration化と本番適用/実トークン動作確認、H12画面E2E、全P0本番移行条件、H14実履歴例外。**Draft PRを維持**。
+
+
 ## 0.15 2026-11-19：H12実HTTP正例・混合0044/0045 Stage互換・匿名SELECT遮断
 
 **対象**：既存 `codex/task-08-group-foundation` / Draft PR #265 / Issue #264。**本番 DB、Cloudflare本番、マージ、デプロイは無変更**。

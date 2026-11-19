@@ -18,7 +18,7 @@ export const readEventNames = (db: SupabaseClient, event: string) => rows<Contex
 export const readSharedEventNames = (db: SupabaseClient, token: string) => rows<ContextName>(db, "get_shared_event_player_names", { p_token: token });
 export const readSharedOfficialNames = (db: SupabaseClient, token: string) => rows<{ id: string; display_name: string }>(db, "get_shared_official_player_names", { p_token: token });
 export const readClubStatsNames = (db: SupabaseClient, club: string) => rows<{ id: string; display_name: string }>(db, "get_club_stats_player_names", { p_club_id: club });
-export type RosterMember = { id: string; club_id: string; profile_id: string|null; player_profile_id:string|null; role:"main_admin"|"sub_admin"|"member"; is_active:boolean; status:string; created_at:string; player_profiles:{id:string;display_name:string;linked_auth_user_id:string|null;is_active:boolean}|null };
+export type RosterMember = { id: string; club_id: string; profile_id: string|null; player_profile_id:string|null; role:"main_admin"|"sub_admin"|"member"; is_active:boolean; status:string; created_at:string; player_profiles:{id:string;display_name:string;linked_auth_user_id:string|null;is_active:boolean;club_display_name:string|null;public_name_confirmed:boolean}|null };
 export const readClubRoster = (db:SupabaseClient,club:string)=>rows<RosterMember>(db,"get_club_roster",{p_club_id:club});
 export const readStatsMembers = (db:SupabaseClient,club:string)=>rows<{player_profile_id:string|null;is_active:boolean}>(db,"get_club_stats_members",{p_club_id:club});
 export const readClubCandidates = (db:SupabaseClient,club:string)=>rows<{member_id:string;player_profile_id:string;display_name:string}>(db,"get_club_selection_candidates",{p_club_id:club});

@@ -1,5 +1,7 @@
 "use client";
-import { readMyMemberships, readClubRoster, readPublicDirectory, readJoinRequestNames, type PublicClaimPreview } from "@/lib/group-read";
+import { readMyMemberships, readClubRoster, readPublicDirectory, readJoinRequestNames, type PublicClaimPreview, type RosterMember } from "@/lib/group-read";
+import { ClubDisplayNameDialog } from "@/components/club-display-name-dialog";
+import { ClubDisplayNameError, canEditClubDisplayName, groupMemberLabel, saveClubDisplayName, type ClubNameMember } from "@/lib/club-display-name";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -9,7 +11,7 @@ import { getSupabaseClient } from "@/lib/supabase";
 import { firstMatchResult, getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
 import { fetchGroupStatsHistory } from "@/lib/stats-history";
 import { canDeleteGroup, canEditGroupProfile, canManageMembers, canManageTargetMember, toAppRole } from "@/lib/permissions";
-import { profileErrorMessage, PlayerProfileError, saveClubMemberRole, saveUnlinkedClubMemberName, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
+import { profileErrorMessage, PlayerProfileError, saveClubMemberRole, setClubMemberActive, type ClubMemberSnapshot } from "@/lib/player-profiles";
 import { effectiveJoinStatus, linkStatusLabel, profileLinkRpc, requestPlayerProfileLink, reviewPlayerProfileLink, type AccountCandidate, type LinkStatus, type ProfileLinkRequest, type ProfileMergePreview } from "@/lib/profile-links";
 import { ProfileMergeSummary } from "@/components/profile-merge-summary";
 import { FacilitySelector } from "@/components/facility-selector";
@@ -17,16 +19,10 @@ import type { Facility } from "@/lib/padel-facilities";
 import { AppDialog } from "@/components/app-dialog";
 
 type Role = "main_admin" | "sub_admin" | "member";
-type Member = {
-  id: string;
+type Member = ClubNameMember & {
   profile_id: string | null;
-  player_profile_id: string | null;
   display_name: string;
-  linked_auth_user_id: string | null;
   public_unlinked?:boolean;
-  is_active: boolean;
-  player_active: boolean;
-  role: Role;
 };
 type StatTab = "個人ランキング" | "ペアランキング" | "イベント履歴";
 type IndividualMode = "総合ランキング" | "勝率ランキング";
@@ -42,6 +38,16 @@ const resolveDisplayName = (playerProfiles: any) => {
   const displayName = getProfileRow(playerProfiles)?.display_name;
   return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";
 };
+const rosterMember = (r: RosterMember): Member => ({
+  id:r.id, club_id:r.club_id, profile_id:r.profile_id, player_profile_id:r.player_profile_id,
+  // Keep the existing profile-name value for unrelated management/join flows.
+  display_name:resolveDisplayName(r.player_profiles),
+  profile_display_name:resolveDisplayName(r.player_profiles),
+  club_display_name:r.player_profiles?.club_display_name ?? null,
+  public_name_confirmed:r.player_profiles?.public_name_confirmed === true,
+  linked_auth_user_id:r.player_profiles?.linked_auth_user_id ?? null,
+  is_active:r.is_active, status:r.status, player_active:!r.player_profile_id||!!r.player_profiles?.is_active, role:r.role,
+});
 const formatRecord = (wins: number, losses: number, draws: number) => `${wins}勝${losses}敗${draws}分`;
 
 const roleLabel: Record<Role, string> = { main_admin: "メイン管理者", sub_admin: "サブ管理者", member: "メンバー" };
@@ -71,6 +77,7 @@ export default function GroupDetailPage() {
 
   const [members, setMembers] = useState<Member[]>([]);
   const [inactiveMembers, setInactiveMembers] = useState<Member[]>([]);
+  const [nameEditMember, setNameEditMember] = useState<Member | null>(null);
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
   const [myMemberId, setMyMemberId] = useState<string | null>(null);
   const [myAuthUserId, setMyAuthUserId] = useState<string | null>(null);
@@ -106,6 +113,7 @@ export default function GroupDetailPage() {
   const [myPendingRequest, setMyPendingRequest] = useState<JoinRequest | null>(null);
 
   const roleCtx = { isSuperUser, myRole };
+  const nameContext = { ...roleCtx, clubId: id, userId: myAuthUserId, visibility };
   const canManage = canManageMembers(roleCtx);
   const canDeleteGroupAction = canDeleteGroup(roleCtx);
   const appRole = toAppRole(roleCtx);
@@ -229,9 +237,9 @@ export default function GroupDetailPage() {
     let rows: Member[];
     if(own||superUser){
       const data=await readClubRoster(s,id);
-      rows=data.map(r=>({id:r.id,profile_id:r.profile_id,player_profile_id:r.player_profile_id,display_name:resolveDisplayName(r.player_profiles),linked_auth_user_id:r.player_profiles?.linked_auth_user_id??null,is_active:r.is_active,player_active:!r.player_profile_id||!!r.player_profiles?.is_active,role:r.role}));
+      rows=data.map(rosterMember);
     } else {
-      rows=(await readPublicDirectory(s,id)).map(r=>({id:r.reference,profile_id:null,player_profile_id:null,display_name:r.display_name,linked_auth_user_id:null,is_active:true,player_active:true,role:"member",public_unlinked:r.is_unlinked}));
+      rows=(await readPublicDirectory(s,id)).map(r=>({id:r.reference,club_id:id,profile_id:null,player_profile_id:null,display_name:r.display_name,profile_display_name:"",club_display_name:null,public_name_confirmed:false,linked_auth_user_id:null,is_active:true,status:"active",player_active:true,role:"member",public_unlinked:r.is_unlinked}));
     }
     const sorted = sortMembers(rows);
     setMembers(sorted.filter((m) => m.is_active && m.player_active));
@@ -274,6 +282,7 @@ export default function GroupDetailPage() {
   };
 
   useEffect(() => { void load().catch(()=>{setError("グループ情報を取得できませんでした。再度読み込んでください");setLoading(false);}); }, [id]);
+  useEffect(() => { setNameEditMember(null); }, [id]);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("tab") === "stats") setTab("グループ戦績");
   }, [id]);
@@ -325,20 +334,6 @@ export default function GroupDetailPage() {
     const error = cause instanceof Error && cause.cause ? cause.cause : cause;
     const detail = error as { message?: string; code?: string; details?: string; hint?: string };
     console.error(label, { message: detail?.message, code: detail?.code, details: detail?.details, hint: detail?.hint });
-  };
-  const renameMember = async (member: Member, newName: string) => {
-    const s = getSupabaseClient(); if (!s || loading) return false;
-    if (!canManageTargetMember(roleCtx, member.role)) { deny(); return false; }
-    if (member.linked_auth_user_id !== null) { setError("アカウント連携済みの選手名は、本人のプロフィール画面から変更できます"); return false; }
-    const trimmed = newName.trim();
-    if (!trimmed) { setError("メンバー名を入力してください"); return false; }
-    if (members.some(row => row.id !== member.id && row.display_name.trim().toLowerCase() === trimmed.toLowerCase())) { setError("同じ名前のメンバーが既にいます"); return false; }
-    setLoading(true); setError(""); setMessage("");
-    try {
-      await saveUnlinkedClubMemberName(s, memberSnapshot(member), trimmed);
-      setMessage("選手名を更新しました"); await load(); return true;
-    } catch (cause) { logMemberError("選手名の更新に失敗しました", cause); setError(profileErrorMessage(cause)); return false; }
-    finally { setLoading(false); }
   };
   const changeMemberRole = async (member: Member, role: Role) => {
     const s = getSupabaseClient(); if (!s || loading) return false;
@@ -501,7 +496,7 @@ export default function GroupDetailPage() {
         </button>
       )}
 
-      {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} onRename={renameMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManageTargetMember(roleCtx, x.role)) return deny(); setError(""); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManageTargetMember(roleCtx, m.role) && <button disabled={loading} className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
+      {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} nameEditable={canEditClubDisplayName(m, nameContext)} onEditName={setNameEditMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManageTargetMember(roleCtx, x.role)) return deny(); setError(""); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManageTargetMember(roleCtx, m.role) && <button disabled={loading} className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
 
       {tab === "グループ戦績" && (isMemberOfGroup||isSuperUser) && (
         <Card title="グループ戦績">
@@ -626,6 +621,24 @@ export default function GroupDetailPage() {
           </div>
         </div>
       </AppDialog>
+      {nameEditMember?.club_id === id && <ClubDisplayNameDialog key={`${id}:${nameEditMember.id}`} member={nameEditMember} context={nameContext}
+        onClose={() => setNameEditMember(null)}
+        onSave={async (target, input, confirmation) => {
+          const s = getSupabaseClient();
+          if (!s) throw new ClubDisplayNameError("接続情報を確認できません。入力は保持されています");
+          return saveClubDisplayName(s, target, nameContext, input, confirmation);
+        }}
+        onRefresh={async () => {
+          const s = getSupabaseClient(); if (!s) throw new Error("接続できません");
+          const latest = (await readClubRoster(s, id)).find(row => row.id === nameEditMember.id);
+          if (!latest) throw new Error("対象の所属がありません");
+          return rosterMember(latest);
+        }}
+        onSaved={result => {
+          setMembers(rows => rows.map(row => row.id === result.member_id && row.club_id === id
+            ? { ...row, club_display_name: result.club_display_name, public_name_confirmed: result.public_name_confirmed } : row));
+          setNameEditMember(null); setMessage("グループ内表示名を更新しました");
+        }} />}
       {confirmLeave && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" role="presentation">
         <div role="dialog" aria-modal="true" aria-labelledby="leave-title" aria-describedby="leave-description" className="max-h-[calc(100dvh-2rem)] w-full max-w-md space-y-4 overflow-y-auto rounded-xl bg-card p-5" onKeyDown={event => { if (event.key === "Escape" && !loading) { setConfirmLeave(null); setConfirmChecked(false); } }}>
           <h2 id="leave-title" className="font-semibold">{confirmLeave.display_name}さんを非表示／退会にしますか？</h2>
@@ -639,9 +652,8 @@ export default function GroupDetailPage() {
   );
 }
 
-function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, onRename, onRole, onLink, clubId, pending, onDeactivate }: { member: Member; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; onRename: (m: Member, name: string) => Promise<boolean>; onRole: (m: Member, role: Role) => Promise<boolean>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
+function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, nameEditable, onEditName, onRole, onLink, clubId, pending, onDeactivate }: { member: Member; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; nameEditable: boolean; onEditName: (m: Member) => void; onRole: (m: Member, role: Role) => Promise<boolean>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
   const [editing, setEditing] = useState(false);
-  const [n, setN] = useState(member.display_name);
   const [r, setR] = useState<Role>(member.role);
   const [search, setSearch] = useState("");
   const [candidates, setCandidates] = useState<AccountCandidate[]>([]);
@@ -652,7 +664,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
   const isLinkedSelf = !!myAuthUserId && member.linked_auth_user_id === myAuthUserId;
   const cannotEdit = !editable || !canManageTargetMember({ isSuperUser, myRole: currentRole }, member.role);
   const hideRoleAndOps = !canViewRole;
-  useEffect(() => { if (!editing) { setN(member.display_name); setR(member.role); } }, [member.display_name, member.role, editing]);
+  useEffect(() => { if (!editing) setR(member.role); }, [member.role, editing]);
   const searchAccounts = async () => {
     const s = getSupabaseClient();
     const q = search.trim();
@@ -667,11 +679,11 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
   };
 
   return (
-    <div className="rounded-xl bg-zinc-800 p-3">
+    <div data-member-id={member.id} className="rounded-xl bg-zinc-800 p-3">
       <p className="text-xs text-zinc-400">在籍 / {member.linked_auth_user_id || member.public_unlinked===false ? "連携済み" : pending ? "承認待ち" : "未連携"}</p>
       {editing ? (
         <div className="space-y-2">
-          {member.linked_auth_user_id !== null ? <><p className="font-semibold">{member.display_name}</p><p className="text-xs text-zinc-300">アカウント連携済みの選手名は、本人のプロフィール画面から変更できます</p></> : <div className="space-y-2"><label className="block text-xs" htmlFor={`member-name-${member.id}`}>選手名</label><input id={`member-name-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={n} onChange={e => setN(e.target.value)} /><button disabled={loading} className="w-full rounded-lg bg-accent py-2 text-black" onClick={() => void onRename(member,n)}>選手名を保存</button></div>}
+          <p className="break-words font-semibold">{groupMemberLabel(member)}</p>
           {!hideRoleAndOps && <div className="space-y-2"><label className="block text-xs" htmlFor={`member-role-${member.id}`}>役職</label><select id={`member-role-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={e => setR(e.target.value as Role)}><option value="main_admin" disabled={!canManageTargetMember({isSuperUser,myRole:currentRole},"main_admin")}>メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option></select><button disabled={loading} className="w-full rounded-lg border border-zinc-500 py-2" onClick={() => void onRole(member,r)}>役職を保存</button></div>}
           <button disabled={loading} className="w-full rounded-lg border border-zinc-500 py-2" onClick={() => setEditing(false)}>閉じる</button>
           {!member.linked_auth_user_id && !pending && !hideRoleAndOps && <div className="mt-2 rounded-lg border border-zinc-600 p-2">
@@ -691,10 +703,11 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
         </div>
       ) : (
         <div className="space-y-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2"><p className="min-w-0 break-all font-semibold">{member.display_name}</p>{isLinkedSelf && <span className="app-badge badge-self">あなた</span>}{canViewRole && <span className="app-badge badge-role">{roleLabel[member.role]}</span>}</div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2"><p className="min-w-0 break-words font-semibold">{member.public_unlinked !== undefined ? member.display_name : groupMemberLabel(member)}</p>{isLinkedSelf && <span className="app-badge badge-self">あなた</span>}{canViewRole && <span className="app-badge badge-role">{roleLabel[member.role]}</span>}</div>
           {!cannotEdit && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!cannotEdit && <button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示／退会</button>}</div>}
         </div>
       )}
+      {nameEditable && !hideRoleAndOps && <button type="button" disabled={loading} className="mt-2 min-h-11 rounded-xl border border-zinc-500 px-3 text-sm" onClick={() => onEditName(member)}>{member.club_display_name === null ? "グループ内表示名を設定" : "表示名を編集"}</button>}
     </div>
   );
 }

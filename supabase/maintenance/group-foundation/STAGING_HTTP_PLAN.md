@@ -1,5 +1,27 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.18 2026-11-19：H14退会後の履歴・編成候補の実認証HTTP受入
+
+**ユーザー判断（最新）**：過去の「6対−1」「2対2/B勝利」の不一致は、**今回は追及・修正せず保留**。現行の得点保存・勝者・GP・ランキング計算式および履歴行を変更しない。以前の調査結果は記録として維持し、これを本タスクの完了ブロッカーにしない。現行表示のスコア/勝者解釈差自体が解消したという意味ではない。
+
+**対象**：既存 `codex/task-08-group-foundation` / Draft PR #265 / Issue #264。**本番DB・Cloudflare本番・マージ/デプロイの変更なし。**
+
+- Stage専用 `58_h14_retired_history_http_fixture_setup.sql` を追加。Stageでイベント/試合/参加者が0件・既存テスト用A/Bグループ2件・対象クラブ/選手名重複なし等をガードし、`BEGIN/ROLLBACK` 事前検証PASSの後、**Stageにのみ** 一時的な非公開グループ1件、所属4名（在籍3・退会1）、終了済/official/自動試合1件、参加者4名（退会者を含む）、4対2のスコア1件を作成。既存の実ユーザー・所属・プロフィールは変更しない。
+- `08_staging_auth_http_smoke.mjs` に `TASK08_H14_RETIRED_HISTORY_POSITIVE=1` **一時フラグ時のみ**実行するStage実JWT/PostgRESTの7検証を追加。
+  1. `mainA` の `get_club_stats_members` は退会済1件を含む4名を返す（H14_RETIRED_STATS_MEMBERS）
+  2. `get_club_selection_candidates` は在籍中3名のみを返し、退会者を含まない（H14_RETIRED_NOT_CANDIDATE）
+  3. 過去名取得RPCは退会者を含む4名を返す（H14_RETIRED_HISTORICAL_NAME）
+  4. 他グループのログイン利用者の統計RPCは42501拒否（H14_OTHER_GROUP_DENIED）
+  5. 匿名利用者の統計RPCは42501拒否（H14_ANON_STATS_DENIED）
+  6. イベントが `closed / official / not deleted` であること（H14_RETIRED_HISTORY_EVENT）
+  7. 退会者を含む4名全員の試合参加と4対2の保存スコアが履歴として読める（H14_RETIRED_HISTORICAL_MATCH）
+- [**GitHub Actions #44543825385**](https://github.com/g-ambe/Padel-match/actions/runs/44543825385) **全体成功、H14上記7ケースすべてPASS、TypeScriptと既存B0チェックもPASS**。ログに個人名/選手ID/認証情報/結果本文を出さない。
+- `59_h14_retired_history_http_fixture_cleanup.sql` を追加し、事前の`BEGIN/ROLLBACK`削除試験PASSを確認後、**Stageのみ**で厳格な対象一致条件により、一時的なグループ、選手3名、所属4名、イベント1件、出場4件、試合/スコア各1件を削除。Authユーザー・既存プロフィールは削除しない。
+- 削除後のREAD ONLY検証：Stage events=0 / matches=0 / event_participants=0 / official_events=0 / 合成fixtureクラブと選手=0。**既存baseline clubs=3、club_members=12、player_profiles=12**、inactive=0、pending join=0の状態に復帰。
+- CIから`TASK08_H14_RETIRED_HISTORY_POSITIVE`の一時フラグを除去し、通常の読み取り専用B0へ復元。後片付け後の別のGitHub Actions実行は [#44544103274](https://github.com/g-ambe/Padel-match/actions/runs/44544103274)。
+- **結論**：Stageの実JWT/HTTP上では「退会者の過去試合・戦績取得を保持」「現在の編成候補には入れない」「部外者/匿名による取得拒否」の既存仕様を確認。実ブラウザ画面表示・本番導入・他P0 UI/DBゲートは未完了。**Draft維持。**
+
+
 ## 0.17 2026-11-19：H14旧スコア例外6件・退会者履歴のREAD ONLY精査
 
 **対象**：既存 `codex/task-08-group-foundation` / Draft PR #265 / Issue #264。**本番・Stageとも試合/所属データの書換えなし。本番Migration/デプロイ/PRマージなし。**

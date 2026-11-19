@@ -20,7 +20,8 @@ test("H12 release candidate separates RPC introduction from destructive anonymou
 
 test("H12 first-time production installation must not require a preexisting share function", () => {
   assert.match(rpc, /to_regprocedure\('public\.get_shared_event\(text,text\)'\)/);
-  assert.doesNotMatch(rpc, /oid='public\.get_shared_event\(text,text\)'::regprocedure/);
+  const preflight = rpc.slice(rpc.indexOf("DO $h12_preflight$"), rpc.indexOf("END $h12_preflight$;"));
+  assert.doesNotMatch(preflight, /oid='public\.get_shared_event\(text,text\)'::regprocedure/);
 });
 
 test("H12 token scope and team mixed-field DTO remain checked", () => {

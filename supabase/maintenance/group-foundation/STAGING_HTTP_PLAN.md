@@ -1,5 +1,19 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.21 2026-11-20：Codex H16アプリ実装レビューと実認証HTTP 15件（CAS 504→409是正）
+
+**役割分担**：GPTはDB/Stage実HTTPのみ対応。CodexがNext.js/TypeScript/POP・単体/合成ブラウザ実装。**本番SQL・Cloudflareデプロイ・PRマージは未実施**。
+
+- Codex H16更新コミット `513876875a42f12413baf234c4274c1e1a94e7ef` を直接レビュー。変更8ファイル（グループ詳細/共通編集POP/aliasロジック/ロスター型/ヘルプ/ユニット・合成ブラウザテスト/結果文書）。**既存0056は変更なし**。ロスターのraw aliasとglobal profile名を区別し、linked本人のみ編集、public linked本人の確認、競合時のPOP/入力保持、他メンバー/グループへの影響限定を実装。Codex報告の軽量8テスト・375px明暗・TypeScript・Cloudflare互換ビルド成功を文書確認。既存`player-profiles.test.cjs`の12件失敗はCodexが変更前でも同件数再現したと記録、本件の合格扱いにはしない。
+- GPTはStageに一時データ `67_h16_real_http_fixture_setup.sql` で合成公開/非公開クラブ2、6所属（既存StageテストAuth3人のprofileを一時所属に使用、未連携合成プロフィール1）を作成。**初回Stage SQLはROLLBACK検証済み**。既存所属・本人プロフィール名・試合/戦績の書換えなし。
+- 実Auth/PostgRESTワンショット `69_h16_real_auth_http_once.mjs` と専用CIを一時起動。[**Actions #44635404370**](https://github.com/g-ambe/Padel-match/actions/runs/44635404370) は**15件中14件PASS**、例外は古いCASの再保存。DBで意図的に `RAISE EXCEPTION ... ERRCODE='40001'` を使用したためPostgRESTでトランザクション再試行が発生、約2分後にHTTP 504/error.code=null。**これはStage実HTTPで発見した修正要件であり、最初の失敗を隠さない**。
+- Supabase公式ナレッジ: https://supabase.com/kb/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b 。PostgRESTのカスタムSQLSTATE `PT409` はHTTP 409。既存0056を上書きせず、前進型正式Migration **`supabase/migrations/0057_club_alias_cas_http_conflict.sql`** を新規作成。Stage `BEGIN/ROLLBACK` 実行後、**Stageのみ** `task08_stage_0057_club_alias_cas_http_conflict` 適用。RPCの競合だけを `PT409` にし、認証・権限・alias/同意保存と全DTOは維持。
+- 初回fixtureは厳密一致ガード付き `68_h16_real_http_fixture_cleanup.sql` により完全削除（既存Stage baseline clubs3/members12/player_profiles12/events0）。再度fixtureを作成して [**Actions #44636277178**](https://github.com/g-ambe/Padel-match/actions/runs/44636277178) 実JWT/HTTP **15/15 PASS** をログで確認（公開前の旧linked隠し/anon拒否/管理者のlinked他人名変更拒否/public本人同意必須/本人保存と名前公開2件/CAS競合HTTP 409+code PT409/一般による仮登録編集拒否/subの仮登録編集/非公開別名/グループ別独立と元のプロフィール名不変/直接alias UPDATE拒否/private公開名簿拒否/3列最小DTO）。TypeScriptと既存B0もPASS。
+- **2回目のfixtureもSQL 68で完全削除**。Stage baseline clubs3/members12/profiles12/events0、合成データなし、既存alias変更0。CIから一時Stage書込ステップを削除して恒常のREAD ONLY B0に復旧。後片付け後の別Runは [#44636530572](https://github.com/g-ambe/Padel-match/actions/runs/44636530572)。
+- Codexへの追補 `70_h16_codex_cas_pt409_handoff.md` を追加。**Codex未実装の残件：アプリの`lib/club-display-name.ts`の競合コードはまだ`40001`だけ**。Codexが`PT409`を認識し、合成テストも409/PT409に更新する。GPTはアプリコードを直接変更していない。
+- 既存の加入/本人リンクのSQL現物も確認。現行`join_requests`に別名希望・公開確認の専用列はなく、`submit_profile_join_request`はrequesterグローバル名のsnapshotのみ、`review_profile_join_request`はjoin承認時に新所属を追加/選手統合する。`player_profile_link_requests`の承認は`review_player_profile_link`で`profile_link_private.merge_profiles`を呼ぶ。これらにグループ名・公開同意snapshotを原子的に追加する設計と、既存同意snapshot/CAS・過去履歴の非改変が次のDBゲート。**未完了のため本番切替禁止**。
+
+
 ## 0.20 2026-11-20：H16 グループ内別名・本人公開同意のDB基盤とCodexへの分担
 
 **分担のユーザー承認：ChatGPT＝DB設計・Migration・Stage適用・権限/データ検証・レビュー、Codex＝Next.js/UI/アプリ処理・アプリ側テスト、ユーザー＝本番リリース判断。** この区分により今回は**アプリ側のUI/型ファイルをGPTが直接変更していない**。Stage DBの専用smoke期待値のみ、DB仕様変更に合わせて更新。

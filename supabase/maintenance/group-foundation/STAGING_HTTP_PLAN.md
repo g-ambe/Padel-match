@@ -15,6 +15,34 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.8. 2026-11-19：H03旧Viewの直接SELECT閉鎖・H06/H03実HTTP全15判定PASS
+
+**実施対象は既存ステージング `padel-hub-staging` のみ。H03とH06の公開経路を両方閉じ、正規Auth + PostgREST HTTPで検証した。本番DBへの適用・本番デプロイ・マージは一切していない。**
+
+### H03の調査・最小適用
+
+- ステージングの`public.public_player_profiles`は`postgres`所有の`security_barrier=true` View（`security_invoker`未設定）。本番に同名Viewはない。現物ViewはactiveかつAuth連携済みの`player_profiles.id/display_name`、`profiles.avatar_url`を返す。旧anon/authenticated SELECTが両方付与されており、合成fixtureの連携済み選手名3件が匿名HTTPから取得可能だった。View定義MD5：`42f906073d724e0636cbd0e4e1c7b909`。
+- GitHub既存ブランチの`app/`37、`lib/`52、`components/`47、計**136ソースファイル**を調査し、`public_player_profiles`への直接参照がないことを確認。ステージングのpublic/profile_link_private/group_read_privateの関数定義内にも同View名参照はなかった。**旧外部クライアント・今後の仕様まで非依存という証明ではない**。
+- 新規`12_h03_public_player_profiles_view_acl_candidate.sql`は既定ROLLBACK。元Viewのowner/MD5/ステージングfixtureと現行SELECT ACLを照合し、Viewを削除・改変せず`PUBLIC/anon/authenticated`への`REVOKE SELECT`だけを試す。
+- 現物の同一トランザクション試験：従来のSQL匿名ロールで合成3件→ACLを一時閉鎖するとanon/authenticatedとも**SQLSTATE42501**で拒否。新限定公開名簿`get_public_club_directory`は認証済み利用者へ2件返り、service_roleのView SELECTも維持。**ROLLBACK**で元に戻してから確定適用を判断。
+- 事前ガードとROLLBACK試験を経て、`13_h03_staging_apply.sql`をSupabaseのDDL管理操作で**ステージングにのみ適用**。Migration履歴名`task08_h03_close_global_profile_view_staging`、ステージング履歴45→46件。View本体の定義/行、RLS、プロフィール本人取得RPC、アプリのUI/ヘルプ/ルーティングは変更しない。anon/authenticatedのView SELECTはfalse、service_roleはtrue、View MD5は不変。
+
+### H06/H03両対策後の正規JWT・HTTP再試験
+
+- `08_staging_auth_http_smoke.mjs`に`TASK08_EXPECT_H03_CLOSED=1`のHTTP401/403・code42501負例条件を追加。前節の`TASK08_EXPECT_H06_CLOSED=1`と併用し、GitHub Actionsの**ステージング専用トリガーファイルだけ**を更新。
+- [GitHub Actions run #44487713301](https://github.com/g-ambe/Padel-match/actions/runs/44487713301)、trigger commit `fd8835bbc97c1b15a34d6d5645630a8340433798`。**run/job`completed/success`、ジョブログの15判定すべてPASS、FAIL/BLOCKED/OBSERVEリスクは今回0件**。
+- H06：無所属outsiderの旧`preview_profile_join`直接HTTPは**403・42501**、`source`・`review_token`非返却。H06_SAFE：限定公開`preview_public_club_claim`は**200・最小DTO10キーのみ**、レビュー用プレビュー取得を維持。
+- H03：匿名`public_player_profiles`へのHTTP SELECTは**401・42501**（行取得なし）。H01ログイン3、H02旧基底SELECT4、H11内部名簿3、H07公開名簿2は引き続きPASS。
+- **15判定はH01〜H14の全ケースではない。** 本番とステージングのRLS/関数/不足11表差、旧公開表/列SELECT、未処理のRPC経路、グループ作成後の初期所属INSERT、レビュー・統合などは別ゲートで未完了。H03/H06のclosureだけでP0の完了/PRマージ可とは判定しない。
+
+### 復旧境界・後続作業
+
+- **H06 ACLの戻し方**（安全審査で本当に必要な場合のみ）：`GRANT EXECUTE ON FUNCTION public.preview_profile_join(uuid,uuid) TO authenticated;`。H06リスクを再度公開するため、安易に戻さない。
+- **H03 ACLの戻し方**（必要性と公開範囲を確認してから）：`GRANT SELECT ON TABLE public.public_player_profiles TO anon, authenticated;`。これも元のプロフィール公開リスクを再導入するため、原則として戻さず、特定画面用の限定DTOで対応する。
+- 両適用はステージング限定の管理SQL（`supabase/maintenance/group-foundation/11_h06_staging_apply.sql`、`13_h03_staging_apply.sql`）。**本番へそのまま適用禁止**。既存の`03`/`06`連携詳細修正候補はROLLBACKのまま、ステージング未適用。
+- 今回のステージングの既存所属8件、検証専用所属4件は維持。サービス側Authセッション更新を除き、追加のアプリDB行変更なし。本番データは読み取り検証以外変更なし。
+- **次に進む対象**：旧`submit_profile_join_request`直接EXECUTEと新公開ラッパーの認可/同意契約、`get_player_profile_link_request`管理者DTO（候補06の適用可否）、旧公開表SELECT閉鎖の依存、H13初期所属INSERT・H09 UPDATE RETURNING、通知/プロフィール統合・共有/ランキングの実HTTP正負例。Issue #264に従い単位を絞って進める。
+
 ## 0.7. 2026-11-19：H06旧RPC直接EXECUTEのステージング閉鎖と実JWT HTTP再試験
 
 **重要：本節は前節B0のH06問題をステージングだけで修正し、実JWT HTTPで確認した結果。H03およびP0全体は引き続き未解消。**

@@ -32,7 +32,6 @@ SET LOCAL ROLE authenticated;
 DO $owner$
 DECLARE existing public.player_profiles;saved public.player_profiles;n int;
  expected jsonb;values jsonb;err text;direct_code text:='OK';stale_code text:='OK';
- чуж text;
 BEGIN
  SELECT * INTO STRICT existing FROM public.get_my_player_profiles();
  IF existing.id <> current_setting('task08.main_player')::uuid THEN RAISE EXCEPTION 'owner-only list mismatch'; END IF;

@@ -1,5 +1,20 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0. 2026-11-19：ChatGPT連携からの最新DB照合・ステージング追加Migration適用（後続更新）
+
+この節は後続の作業結果。以下にある「当時は未実行」「接続不足」は、コミット `2b5ef1d` の作成時点の履歴として保持する。**本番への適用を意味しない。**
+
+- 接続済みSupabase管理連携で、明示した本番 `padel-hub`（`ntczrmvffmpjzilfebyi`）とステージング `padel-hub-staging`（`zzjwpresqkefnyjyisgd`）それぞれに、リポジトリ内の**同一の** `04_http_preflight.sql` を実行。`BEGIN READ ONLY` / `ROLLBACK` で完了し、関数本文やデータ行の取得・外部保存はしていない。
+- 2026-11-19 05:06 UTC時点：本番の履歴22件／監査対象relations 42／policies 59／functions 28。ステージングは履歴42件／relations 32／policies 38／functions 30。**監査対象件数でありDB全件数ではない。**
+- 本番では `clubs`・`club_members`・`player_profiles` に匿名SELECT許可があり、ステージングでは3表とも匿名SELECTなし。`profiles.display_name`の匿名列SELECTも本番のみ許可。旧連携5関数の定義ハッシュは本番・ステージングで不一致。RLS指紋も主要表で不一致。**この意味差・既存の旧公開リスクは未解消。**
+- 0054・0055由来の主要公開RPCは、適用前は**両環境に存在しない**ことを確認。ステージングで既存カラム・呼出先関数の事前照合は欠落0件、所有者 `postgres`、既存所属8件、選手プロフィール8件、Authユーザー0件、対象所属／選手プロフィールの孤立参照0件。非公開スキーマと新RPCも事前には存在しなかった。
+- ユーザーからChatGPT側での作業・DB修正を進める指示を受け、**ステージングのみにリポジトリの追加型Migration 0054→0055を原文で適用**。SupabaseのMigration履歴は `task08_0054_group_read_interfaces_staging`（`20261119051640`）と `task08_0055_group_read_consumer_support_staging`（`20261119051703`）の2件が追加され、計44件。**本番DBは未適用**。旧表ACL/RLS/旧連携関数・既存データの一括更新は行っていない。
+- 適用後の読み取り専用検証：新公開RPC 17件、非公開helper 6件、`group_directory_reference`トリガー1件。既存所属8件に対し公開参照も8件、欠落0件。匿名の非公開スキーマUSAGE・公開名簿RPC・本人申請RPC・加入申請一覧RPCは拒否。ログインユーザー向けの必要なEXECUTEは許可。ステージングの `club_members` / `player_profiles` の匿名基底表SELECTは引き続き拒否。
+- **未実施**：現行ステージングの本物のAuth試験アカウント作成・JWT付きHTTP試験、`03_link_detail_candidate.sql` の確定適用、旧連携RPCや表/列の公開権限切替、ステージングと本番のRLS・5関数意味差の解消、通常/チーム/公式等の完全な実HTTP互換検証。ステージングの不足11表はそのまま。**既定ROLLBACKの候補SQLは変更していない。**
+- セキュリティAdvisorには既存View `public.public_player_profiles` のSecurity Definer設定などが報告されている。新Migrationに起因するとは確認しておらず、この作業で無関係なView・権限・機能を変更しない。
+
+**残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
+
 2026-11-19。基準コミット `98598df55d1e2473751ec241110dfa1e1c322c53`。
 仕様：Issue #264、設計コメント6975098709。停止条件：[STAGE3.md](STAGE3.md)。
 既存 `codex/task-08-group-foundation` / Draft PR #265を使用する。

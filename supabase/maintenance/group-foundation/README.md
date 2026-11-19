@@ -1,5 +1,13 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：旧連携RPC・RLSの追加比較（READ ONLY）
+
+新規 [`05_legacy_link_acl_semantics.sql`](05_legacy_link_acl_semantics.sql) は、両環境の旧連携関数とRLS/表・列権限の**メタデータだけ**をREAD ONLYで比較する。関数本文/RLS式/データ行は返さず、戻り値は関数ハッシュ・キーワード検出フラグ・ポリシー名/指紋等に限定。両実DBで同等SQLを実行成功（関数5件のハッシュは不一致、RLSも不一致）。詳細は [STAGING_HTTP_PLAN.md の0.1節](STAGING_HTTP_PLAN.md) を参照。
+
+**重大な差分**：本番の旧`get_player_profile_link_request`は内部`preview`を呼ぶが、ステージングは独自の`scoped_preview`を呼ぶ。双方に`to_jsonb(request)`が残るため過剰返却の懸念はあるが、`03_link_detail_candidate.sql`をそのままステージングへ適用すると既存のpreview処理を置換する可能性がある。現状の修正候補は**既定ROLLBACKのまま、実環境への適用を停止**する。ステージングの初期所属INSERTポリシーも本番と一致しない。旧公開ACL/RLSを無差別にコピーしない。
+
+この比較はSQL/メタデータ上の観測であり、実Auth/HTTP認可・既存動作の安全性証明ではない。本番SQL適用・マージ・デプロイは行わない。
+
 ## 2026-11-19 更新：既存ステージングへ0054/0055を適用
 
 [STAGING_HTTP_PLAN.md](STAGING_HTTP_PLAN.md#0-2026-11-19chatgpt連携からの最新db照合ステージング追加migration適用後続更新) に最新の実測・適用結果を記録。GitHubでの最新ヘッドに含む0054/0055と同じ内容を、既存 `padel-hub-staging` **だけ**に追加適用した。履歴名は `task08_0054_group_read_interfaces_staging` / `task08_0055_group_read_consumer_support_staging`。本番DBは未適用。

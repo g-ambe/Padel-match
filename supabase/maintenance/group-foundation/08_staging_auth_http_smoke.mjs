@@ -287,6 +287,41 @@ async function main() {
       }
     }
 
+    if (process.env.TASK08_EXPECT_JOIN_REVIEW_GUARD === '1') {
+      // One pending synthetic claim for the A+B source; do not log its internal IDs.
+      const before = await clients.mainA.rpc('get_club_join_requests', { p_club_id: clubA });
+      const requestCandidates = !before.error && Array.isArray(before.data)
+        ? before.data.filter(item => item.status === 'pending' &&
+          item.message === 'TASK08 isolated H08 negative HTTP review' &&
+          item.club_id === clubA && item.consent_at)
+        : [];
+      if (requestCandidates.length !== 1 || typeof requestCandidates[0].id !== 'string') {
+        mark('H08_JOIN_FIXTURE', 'mainA', 'BLOCKED', safeResult(before));
+      } else {
+        const id = requestCandidates[0].id;
+        const approval = await clients.mainA.rpc('review_profile_join_request', {
+          p_request_id: id, p_decision: 'approved',
+        });
+        const correctlyDenied = approval.error?.code === '42501' &&
+          [401,403].includes(approval.status) && approval.data === null;
+        mark('H08_JOIN_MANAGER_REVIEW', 'mainA',
+          correctlyDenied ? 'PASS' : 'FAIL', {
+            http_status: approval.status ?? null,
+            error_code: approval.error?.code ?? null,
+            no_merge_result: approval.data === null,
+          });
+        const after = await clients.mainA.rpc('get_club_join_requests', { p_club_id: clubA });
+        const pending = !after.error && Array.isArray(after.data) &&
+          after.data.filter(item => item.id === id && item.status === 'pending').length === 1;
+        mark('H08_JOIN_PENDING_UNCHANGED', 'mainA',
+          pending ? 'PASS' : 'FAIL', {
+            http_status: after.status ?? null,
+            error_code: after.error?.code ?? null,
+            still_pending: !!pending,
+          });
+      }
+    }
+
     if (process.env.TASK08_EXPECT_H08_SCOPE_GUARD === '1') {
       // Guarded stage-only SQL creates exactly one pending synthetic A->outsider request.
       // This HTTP test submits the real consent token; successful approval would be a FAIL.

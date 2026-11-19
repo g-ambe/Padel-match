@@ -15,6 +15,45 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.12. 2026-11-19：H09最後のメイン管理者保護・H10本人限定プロフィール保存と実JWT HTTP全PASS
+
+**ステージング限定の段階的な対策。** Stage Migration **52→53件**、本番SQL/Cloudflare/マージ/デプロイなし。判定は「正常許可・PASS」「仕様どおり拒否・PASS」「想定外の許可・FAIL」「想定外の拒否・FAIL」「未確認」で区分し、HTTP200・更新0件は正常な更新と混同しない。
+
+### H09：最後のメイン管理者をDBで保護
+
+- 現行画面の更新は[`lib/player-profiles.ts`](../../../../lib/player-profiles.ts)の`setClubMemberActive`/`saveClubMemberRole`で、`club_members`の`role/is_active`を列単位UPDATEし、`id,club_id,player_profile_id,role,is_active`を`RETURNING`で確認。ステージングではこれらの列UPDATE/SELECTは可能、`profile_id/player_profile_id`の列UPDATEは拒否。
+- [`38_h09_members_update_returning_rollback_probe.sql`](38_h09_members_update_returning_rollback_probe.sql)で管理者Aによる役職変更・非管理者の欠席/復帰、サブ管理者Bによる一般/サブ変更とメイン変更禁止、別クラブへの変更拒否を実ロール模擬で確認（すべてROLLBACK）。
+- **問題を発見：** UIを経由せず、DB API相当の直接UPDATEで**最後のメイン管理者自身の`is_active=false`が許可された**。RLSの`can_edit_player_profile_member`だけでは最後の1人の保護がない。これは「メイン管理者は最低1人必要」という確定仕様に反する**想定外の許可・FAIL**。
+- [`39_h09_last_main_guard_rollback_candidate.sql`](39_h09_last_main_guard_rollback_candidate.sql)で、`club_members`の`role/is_active/status/club_id`更新に対するBEFORE UPDATEトリガー候補を作成。`main_admin`在籍者が退会・降格・ステータス変更される場合、**対象グループ行を`FOR UPDATE`で直列化し、別のactive mainがいなければ42501で停止**。一般/サブメンバーや別main引継ぎ後の変更は妨げない。`security_private`内のSECURITY DEFINER関数はpostgres所有・search_path空・anon/authenticatedの直接EXECUTEをREVOKEし、既存GRANTやRLSは拡大しない。
+- [`40_h09_last_main_role_status_rollback_probe.sql`](40_h09_last_main_role_status_rollback_probe.sql)を候補39と組み合わせてROLLBACK試験。単独mainのrole変更/在籍ステータス変更＝**仕様どおり拒否・PASS（42501）**、同グループに他のmainを準備した場合の退会＝**正常許可・PASS**。38との組合せでも管理者/サブの通常UPDATE・RETURNINGは維持。
+- [`41_h09_last_main_stage_apply.sql`](41_h09_last_main_stage_apply.sql)をステージングに限りMigration`task08_h09_staging_last_main_departure_guard`として適用、**履歴53件**。実適用後に38/40を単体ROLLBACK再試験し、上記の正負例がすべてPASSであることを再確認。
+
+### H10：本人専用RPCで既存画面の詳細取得・保存を復旧
+
+- 既存画面は自己紹介/レベル/利き手/ポジション/活動エリア/表示名の6項目を保存する。旧`fetchLinkedPlayerProfiles`と`saveLinkedPlayerProfile`は**直接`player_profiles`をSELECT/PATCH・RETURNING**するため、ステージングで詳細列のSELECT/UPDATE権限が不足していた（`bio/play_level/dominant_hand/preferred_position/activity_area`のauthenticated SELECT/UPDATEはfalse）。これは画面の期待する取得/保存と権限に不一致。
+- **広い列GRANTは付与しない。** `security_private.can_read_player(id)`は本人だけでなく同一グループ在籍者・同イベント閲覧者を許すため、詳細列を`authenticated`に一律GRANTすると他人の詳細を漏らすリスクがある。
+- 現存する**本人限定のRPC**を監査：`public.get_my_player_profiles()` → `security_private.my_players()`（本人`auth.uid`に紐づくactive選手のみ）、`public.save_my_player_profile(uuid,jsonb,jsonb)` → `security_private.save_my_player`（本人リンク・許可6項目・expectedスナップショットに基づく競合保護・更新後の行返却）。両方とも既存の認証済みEXECUTEあり。
+- [`42_h10_owner_profile_rpc_rollback_probe.sql`](42_h10_owner_profile_rpc_rollback_probe.sql)で、本人詳細取得/6列更新と返却、古いフォームの期待値拒否、他アカウントからの保存拒否、認証ID書換え拒否、管理者の未連携選手表示名変更成功、非所属者の更新拒否、直接`bio`取得42501を**全8判定ROLLBACKで確認**。
+- [`lib/player-profiles.ts`](../../../../lib/player-profiles.ts)の**プロフィール本人の読込/保存関数だけ**を既存RPC経由に切替。取得後は`linked_auth_user_id`と本人uidの一致を必須検証。保存時は既存RPCが期待値比較・項目制限・本人確認を一括処理し、返却後にも本人RPCで再読込して保存一致を確認する。アプリ画面UI/ラベル/他の権限は変更していない。未連携仮選手名の管理者編集は現行の限定列PATCHを維持。
+- **H10のDB Migrationなし**。全ログイン利用者への`player_profiles`詳細列SELECT/UPDATEは引き続きfalse、本人用RPCだけで更新可能。
+
+### 実Auth/JWT・TypeScript・専用fixture
+
+- [`43_h09_h10_stage_http_fixture_setup.sql`](43_h09_h10_stage_http_fixture_setup.sql)で、ステージングに**一時的な非公開テスト用クラブ1・未連携選手1・所属3（mainA main、outsider sub、未連携member）**だけ作成。既存A/Bの所属やプロフィールを変更せず、一般ユーザーの本物のデータも使わない。所有者・Auth ID・合成名の事前条件を厳格に確認。
+- 初回[GitHub Actions #44509830613](https://github.com/g-ambe/Padel-match/actions/runs/44509830613)では、既存B0認証・名簿16件、Node構文、TypeScript/プロフィール画面の関連試験は成功。ただし専用H09/H10試験が**テスト前提の`clubs.owner_id`取得をHTTP403/42501で拒否**されたため`BLOCKED`。これは`owner_id`を通常ユーザーへ公開しない設計が適用されたものであり、アプリのグループ更新機能のFAILと取り違えない。DB側でowner本人を事前検証済みのため、スクリプトだけを非公開列不要な`id,name,visibility`取得へ修正。GRANT/RLSは変更していない。
+- 2回目の[GitHub Actions #44510146124](https://github.com/g-ambe/Padel-match/actions/runs/44510146124)は**B0既存16/16 PASS＋専用実JWT/HTTP [`45_h09_h10_stage_http_write_smoke.mjs`](45_h09_h10_stage_http_write_smoke.mjs) 18/18 PASS**。さらにNode構文、`bun x tsc --noEmit`（TypeScript）と`node --test tests/profile-v4.test.cjs`が成功。
+- H09 HTTP：mainのrole変更、subの非main変更、mainの非main休止/復帰は**HTTP200・UPDATE/RETURNING 1行＝正常許可PASS**。sub→mainと他クラブへの操作は**HTTP200・UPDATE 0行＝RLSの仕様どおり拒否PASS**（HTTP200でも操作成功ではない）。最後のmain退会・降格は**HTTP403/42501＝仕様どおり拒否PASS**。
+- H10 HTTP：`get_my_player_profiles`はHTTP200で本人の詳細のみ。既存`save_my_player_profile`で**変更値が全て元と同一のno-op保存**を使い本人とRETURNINGを検証（本物の個人プロフィール内容は変更しない）。古い期待値／他人の編集／認証ID書換えは**HTTP400/P0001＝仕様どおり拒否PASS**。通常テーブル詳細SELECTは403/42501（本人用RPCだけを利用）、管理者によるテスト専用未連携選手名更新/復元はHTTP200で各1件、非所属者はHTTP200/0行で仕様どおり拒否PASS。
+- 直後に[`44_h09_h10_stage_http_fixture_cleanup.sql`](44_h09_h10_stage_http_fixture_cleanup.sql)で、関連する全FK子参照・所属3件のAuth・テスト用player/clubの組み合わせを照合してから**テストクラブ1/未連携player1/関連所属3件のみ回収**。残存0。既存所属8、従来A/Bテスト所属4、A/Bに共通の仮選手2所属は変化なし。検証用join/link申請0、active merge0。
+- 専用の**H09/H10書き込み試験ステップはGitHub Actionsから削除**し、workflowを再び読み取り専用のB0へ戻している。パスワード・JWT・実UID・個人プロフィール内容はGitHubログ/PR/Issueへ出力しない。
+
+### 現時点の停止条件・次の作業
+
+- Stage `padel-hub-staging`：**ACTIVE_HEALTHY、Migration 53件**。H09トリガー有効、SECDEF関数を匿名・認証済みが直接EXECUTE不可。H10詳細列の幅広いGRANTなし、本人限定RPCは使用可能。
+- 本番`padel-hub`：**ACTIVE_HEALTHY、未変更**。本番とステージングの旧SELECT/RLS/関数差・不足11表が残り、ステージングの成功を本番へ無条件展開しない。PR #265はDraft、Issue #264はOPEN、マージ/デプロイを行わない。
+- **未完了**：H12の匿名共有tokenの閲覧境界、H14既存の試合/結果/ランキング履歴の不変性、全イベント/権限/複数actorの高並列性、本番との差分解消と最終移行。本タスクIssueで確定した**グループごと独立した表示名**や詳細3タブ等の全面実装はこのH09/H10で完成していない。現在の未連携選手名変更は従来どおり共有playerプロフィール名の操作なので、グループ専用別名モデルは別工程で要実装。
+- **次の作業予定**：H12共有イベントの公開tokenと閲覧可能な名前/スコアの範囲をREAD ONLYで調査し、匿名REST経由の正負例を準備。続いてH14の試合/戦績の整合性・非所属者の閲覧漏洩を調査する。必要ならStageだけに最小変更し、必ずROLLBACK→実HTTP→fixture回収→ドキュメント更新の順で進める。
+
 ## 0.11. 2026-11-19：H08本人承認と管理者承認の別経路をステージングで閉鎖／H09・H10の読取監査
 
 **今回のステージング限定対策。** H13の並列JWTテスト後、H08のレビュー処理2経路を再現・保護した。拒否の分類は「**仕様どおり拒否・PASS**」「**想定外の拒否・FAIL**」「**想定外の許可・FAIL**」「**未確認**」の4種類で統一する。旧コードが動作していただけでは正しい仕様とは判定しない。

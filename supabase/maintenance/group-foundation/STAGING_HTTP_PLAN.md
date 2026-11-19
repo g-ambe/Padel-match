@@ -15,6 +15,44 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.3. 2026-11-19：既存ステージングに実Auth登録3アカウント・合成グループA/Bの検証データを準備
+
+ユーザーがSupabaseの**既存ステージングだけ**で検証用Authユーザー3名を作成し、ChatGPT管理接続から3名のAuthレコード・メール確認済み状態を読み取り専用で確認。パスワード・JWT・APIキーは取得していない。その後、アプリ側のプロフィール/所属は未作成（3名とも0件）であることと、既存ステージングのクラブ1件・所属8件・選手8件を確認してから新しいfixtureを準備した。
+
+### 追加したステージング専用fixture
+
+- 固定識別名：クラブ `TASK08-P0-20261119-A` / `TASK08-P0-20261119-B`、アプリ側の表示名は`TASK08-P0 …`。実名、既存クラブ、既存試合、既存選手、既存認証情報は使用しない。正規のAuthユーザーはユーザー作成済みの3アカウントだけを参照し、Authスキーマへ直接INSERTしない。
+- 追加：`public.profiles`にAuth ID対応のテストアカウント3行、`player_profiles`に連携済み3行＋未連携の仮選手U1行、`clubs`に公開テストクラブA/B 2行、`club_members`に所属4行。`group_read_private.directory_refs`へトリガーを通じて参照4行。
+- 所属：main-AはAのmain_admin、recipientはBのmain_admin、仮選手UはAのmember・Bのsub_admin。outsiderは無所属。仮選手Uを2グループに所属させ、旧連携詳細の他グループ情報漏えいを安全な合成データで再現できる状態にした。
+- 最初に**同じINSERTのROLLBACKドライランが成功**し、新規クラブ2・所属4・選手4を検証。ROLLBACK後にテストクラブ/選手が0件、元のクラブ1・所属8・選手8を確認してから、事前の一致件数・ID競合無し・確認済みAuth・FK/トリガー整合を条件に**単一トランザクションでCOMMIT**。
+- COMMIT後の読取確認：テストクラブ2、所属4、新選手4、新アプリプロフィール3、公開参照4。既存クラブは残り、既存所属8件は維持。外部者の所属0、仮選手Uの所属グループ数2。**削除・マージ・既存レコードUPDATEなし**。
+- 将来回収時は`TASK08-P0-20261119-`のクラブと`TASK08-P0 `の選手/アカウントのみを、個別のFK確認/明示承認後に対象ID台帳と照合して回収する。既存ユーザー／既存クラブのCASCADE・無条件削除は禁止。Authユーザーも自動削除しない。
+
+### SQLロール別ベースライン（実Auth HTTPではない）
+
+`BEGIN READ ONLY`でテストアカウントの実DB上のAuth IDを読み取り、トランザクションローカルの`request.jwt.claim.sub`と`SET LOCAL ROLE authenticated`を使って**疑似ロール**試験した。**正規に発行されたJWTを使うGoTrue/PostgREST HTTP試験ではない**。
+
+| 疑似actor | 本人所属RPC | A内部名簿 | A公開名簿 | B公開名簿 |
+| --- | --- | --- | --- | --- |
+| main-A | 1件 | 2件取得 | 2件 | 2件 |
+| recipient（B管理者） | 1件 | 権限エラー42501 | 2件 | 2件 |
+| outsider | 0件 | 権限エラー42501 | 2件 | 2件 |
+
+基底表`club_members`のA直接SELECTもmain-Aで2行、recipient/outsiderで0行。公開名簿は**ログイン済み外部者も公開グループなら取得できる設計**のため、取得成功自体を漏えいとみなさず、内部ID・役職・本人名が出ないDTOであることを別途確認する。
+
+### 旧連携経路の残存を合成データで確認
+
+- outsiderが**既知の内部所属ID**を渡して旧`preview_profile_join`を直接実行すると、仮選手の`source`と`review_token`を含むプレビューが返った。ステージングのscoped previewでA所属1件に限定され、Bのクラブ名はこの応答には含まれなかったが、**旧RPCの直接実行可能経路は残る**。この結果は実HTTPと区別する。
+- main-Aの疑似認証で旧`request_player_profile_link`からrecipient宛の申請を作成し、旧`get_player_profile_link_request`の管理者・受取人応答を比較する**ROLLBACKドライラン**を実施。現行ステージングの管理者向けレスポンスには`target_auth_user_id`・申請の内部`source_player_profile_id`・`review_token`が存在。本人の応答にも`source`・`review_token`が存在。管理者向け`memberships`はscopedによりB名を含まなかった。**トークン値・認証ID・申請行本体は取得/保存せず、Booleanフラグのみ**記録。
+- ドライラン後の読取確認で`player_profile_link_requests`の残存申請は0件。新規の本人申請・通知は保存していない。今回のP0問題は**別グループの名前が出なくても、管理者に不要な認証IDや同意トークンを含む申請全行を返す**問題も含むため、限定DTO化の必要性は変わらない。
+
+### 未実施と次の停止条件
+
+- 既存の`03_link_detail_candidate.sql`と`06_staging_link_detail_candidate.sql`は**既定ROLLBACKのまま実環境未適用**。旧公開表/列SELECT、旧`preview_profile_join`などの直接EXECUTE、RLS変更・権限閉鎖もしていない。
+- Authユーザーが存在しても、**パスワード/セッション/JWTを使った実HTTPのH01〜H14は未実施**。パスワード/JWTをチャットやGitHubに貼らない。現行B0 HTTPの安全な試験クライアント接続と、追加権限/修正が必要なB1/B2の各ゲートを分ける。
+- ステージングの`club_members` INSERTポリシー欠如や、本番と異なる旧連携関数/RLSは未解決。認証付きHTTPを試すために権限を無差別にGRANTしたり、プロジェクトのURL/キーを本番から流用しない。
+- PR #265 Draft、Issue OPEN、本番SQL・本番デプロイ・マージは禁止。
+
 ## 0.2. 2026-11-19：ステージング固有scoped_previewの維持候補とREAD ONLY確認
 
 既存ステージングの旧詳細RPCは `profile_link_private.scoped_preview(p_source uuid,p_user uuid,p_club uuid)` を使用し、旧連携5関数の定義が本番と異なる。前節の差分を踏まえ、**ステージング用の隔離検証候補** [`06_staging_link_detail_candidate.sql`](06_staging_link_detail_candidate.sql) を追加した。元の本番系 `03_link_detail_candidate.sql` は不変。

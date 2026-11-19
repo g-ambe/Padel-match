@@ -133,6 +133,23 @@ async function main() {
         membership_count: Array.isArray(oldPreview.data?.memberships)
           ? oldPreview.data.memberships.length : null,
       });
+      if (process.env.TASK08_EXPECT_LEGACY_SUBMIT_CLOSED === '1') {
+        // Invalid consent token is deliberate: this test must never create a join request
+        // even if a future privilege regression re-exposes the legacy RPC.
+        const legacySubmit = await clients.outsider.rpc('submit_profile_join_request', {
+          p_club_id: clubA,
+          p_member_id: provisional.id,
+          p_message: null,
+          p_review_token: 'TASK08-INTENTIONALLY-INVALID-CONSENT',
+        });
+        const denied = legacySubmit.error?.code === '42501' &&
+          [401, 403].includes(legacySubmit.status) && legacySubmit.data === null;
+        mark('LEGACY_SUBMIT_DIRECT', 'outsider', denied ? 'PASS' : 'FAIL', {
+          http_status: legacySubmit.status ?? null,
+          error_code: legacySubmit.error?.code ?? null,
+          created_request: typeof legacySubmit.data === 'string',
+        });
+      }
       if (expectingClosed) {
         const directory = await clients.outsider.rpc('get_public_club_directory', { p_club_id: clubA });
         const ref = !directory.error && Array.isArray(directory.data)

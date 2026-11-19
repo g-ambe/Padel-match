@@ -75,6 +75,6 @@ begin
     values (request.target_auth_user_id,'profile_link_status',case p_decision when 'approved' then '連携が完了しました' when 'rejected' then '連携を拒否しました' else '連携申請が取り消されました' end,request.club_id,request.id);
   perform profile_link_private.notify_admins(request.club_id,case p_decision when 'approved' then '連携が完了しました' when 'rejected' then '連携が拒否されました' else '連携申請を取り消しました' end,request.id,null,request.target_auth_user_id);
   return jsonb_build_object('status',p_decision,'merge_id',merge_id);
-end $function$
+end $function$;
 
 ROLLBACK;

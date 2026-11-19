@@ -1,5 +1,23 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.19 2026-11-19：TASK-08-03／H15 本人自主退会RPC・確認POP・実JWT試験
+
+**対象**：既存 `codex/task-08-group-foundation`／Draft PR #265／Issue #264。**本番DB、Cloudflare、マージ、デプロイは未変更。**
+
+- [Issue #264](https://github.com/g-ambe/Padel-match/issues/264) の本人自主退会を実装する第1単位。連携済み本人、サブ／一般／非オーナーのメイン管理者（ただし他のメイン在籍が必要）が自分の所属のみ `is_active=false` にできる。所有者 `clubs.owner_id` は**受取人の承諾を伴う引継ぎ完了前に退会不可**。既存 H09 の「最後のメイン」DBトリガーが必須で、機能が欠けるDBには移行自体を拒否する。
+- `60_h15_self_withdraw_stage_candidate.sql`：`public.leave_my_club(p_club_id,p_member_id)` を追加。ownerは `postgres`、`SECURITY DEFINER SET search_path=''`、実 `auth.uid()` と選手プロフィール本人連携を検証。他人所属・既に非active・別クラブ・未ログインを拒否。**クラブ行→本人所属行をFOR UPDATE**、オーナー/最後のmainを拒否、本人の `club_members.is_active` だけ変更し、他クラブ・認証・選手・試合・履歴・過去戦績は更新しない。関数のanon実行はREVOKE、authenticatedだけEXECUTE。Stage `BEGIN/ROLLBACK` PASS後、Stageのみ `task08_stage_h15_self_withdraw_owner_guard` 適用成功。
+- `61_h15_self_withdraw_rollback_probe.sql`：合成非公開グループにStageテストAuth3名を所属させ、ロール切替で **owner拒否／第三者拒否／一般退会OK／sub_admin退会OK／再退会拒否／最後のmain保持／所属行とプロフィール履歴保持** を確認、すべて真。全合成行ROLLBACK。
+- `app/groups/[id]/page.tsx` の既存「グループ管理」画面に本人専用「このグループを退会する」アクションと**既存共通`AppDialog`確認POP**を追加。二重送信防止、チェック承認、失敗時POP・入力保持、成功時 `/profile#profile-groups` へ遷移。管理者の他人非表示機能とは独立し、直接UPDATEではなく新RPCのみ。既存3タブUIは依然旧表示で、最終「概要／メンバー／戦績」への改修は後続。関連ヘルプ `lib/tutorial-content.ts` を同期、実プロフィール/テストデータへは触れない。
+- `tests/h15-self-withdraw.test.cjs` をCIに追加。UIとSQLの権限境界、最後のメイン/オーナー、本人認証、退会後の移動、チュートリアルを静的回帰で保護。
+- `62_h15_self_exit_stage_http_setup.sql` でStage baseline（clubs3／members12／profiles12／events0）から、**一時合成グループ1件に既存テストAuth3名（mainA=owner、outsider=sub_admin、recipient=member）を追加**。事前ROLLBACK PASS。
+- 一時フラグ `TASK08_H15_SELF_EXIT_HTTP=1` を有効化した [Actions #44546877618](https://github.com/g-ambe/Padel-match/actions/runs/44546877618) は**全体SUCCESS**。ログのH15実JWT/PostgRESTは **9/9 PASS**（owner引継ぎ前拒否、他人変更拒否、匿名拒否、一般退会、再実行拒否、サブ退会、履歴所属行保持、退会者名簿読取拒否、他グループ所属不変）。H12/H14/H15静的回帰・TypeScript・既存B0もPASS。ログにJWT・パスワード・実名・IDを出さない。
+- `63_h15_self_exit_stage_http_cleanup.sql` を事前ROLLBACKで検証し、Stage上で**合成グループ・3つの合成所属のみ**を削除。既存3人のAuth/プロフィールや他クラブの所属は変更せず。Stage復帰確認：clubs=3、club_members=12、player_profiles=12、events=0、合成クラブ=0。
+- CIの一時フラグを除去し、恒常READ-ONLY B0へ戻して [Actions #44547247468](https://github.com/g-ambe/Padel-match/actions/runs/44547247468) **SUCCESS**。
+- Stage/Prodを再度READ ONLYで確認：**Stage self-leave RPCあり／anon実行不可・authenticated可、Prod RPCなし・未適用**。Prodテーブル・履歴・ユーザーは一切操作していない。
+
+**継続ゲート**：オーナーの**相手本人承諾付き所有権移行**（通知・承諾・競合対策）は今回未実装、オーナー退会は安全側で禁止。非オーナーメインの2人以上状態からの実HTTP、並行退会2接続、再加入/復帰実機、3タブUI/公開名簿/グループ内表示名/写真・ヘルプ全体の受入は残る。旧スコア例外6件はユーザー判断により保留し、本作業に含めない。**Draft維持／本番デプロイ禁止**。
+
+
 ## 0.18 2026-11-19：H14退会後の履歴・編成候補の実認証HTTP受入
 
 **ユーザー判断（最新）**：過去の「6対−1」「2対2/B勝利」の不一致は、**今回は追及・修正せず保留**。現行の得点保存・勝者・GP・ランキング計算式および履歴行を変更しない。以前の調査結果は記録として維持し、これを本タスクの完了ブロッカーにしない。現行表示のスコア/勝者解釈差自体が解消したという意味ではない。

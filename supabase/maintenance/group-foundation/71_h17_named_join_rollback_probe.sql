@@ -101,6 +101,17 @@ SELECT jsonb_build_object('rollback_only',true,
    FROM public.club_members cm WHERE cm.id=current_setting('h17.member_id')::uuid),
  'provisional_profile_inactivated',(SELECT NOT is_active AND linked_auth_user_id IS NULL
  FROM public.player_profiles WHERE id=current_setting('h17.source')::uuid),
+ 'merge_audit_consistent',(SELECT count(*)=1
+  FROM public.player_profile_merges m
+  JOIN profile_link_private.merge_changes c ON c.merge_id=m.id
+  WHERE m.join_request_id=current_setting('h17.outsider_req')::uuid
+   AND c.source_schema='public' AND c.source_table='club_members'
+   AND c.row_id=current_setting('h17.member_id')::uuid
+   AND c.before_row->>'club_display_name'='H17 Old Provisional Name'
+   AND c.after_row->>'club_display_name'='H17 Approved Chosen Provisional'
+   AND c.before_row->>'club_display_name_public_confirmed_at' IS NULL
+   AND c.after_row->>'club_display_name_public_confirmed_at' IS NOT NULL),
+
  'public_directory_only_consented',(SELECT count(*)=2
  FROM public.get_public_club_directory(current_setting('h17.club')::uuid)),
  'public_ref_not_real_member_id',(current_setting('h17.public_reference')::uuid <> current_setting('h17.member_id')::uuid),

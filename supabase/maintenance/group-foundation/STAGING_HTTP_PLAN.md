@@ -1,5 +1,22 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.14 2026-11-19：H12チーム共有DTO／共有ページRPC移行（Stage限定）
+
+**対象**：既存ブランチ `codex/task-08-group-foundation`・Draft PR #265・Issue #264。
+**本番DB・Cloudflare・PRマージ・デプロイ：変更なし。**
+
+- `49_h12_shared_team_dto_stage_candidate.sql` を既存 `security_private.shared_event(text,text)` の返却DTOを拡張する候補として追加。変更前後とも公開ラッパー `get_shared_event(token,kind)` を使用し、共有ON・終了・有効クラブ・token一致の条件を維持。匿名の基底表SELECT権限は追加しない。
+- 追加項目：通常の参加者種別、チーム試合の試合順・ラウンド・コート・対決/混合モード・混合スコア・所属元・匿名化ゲストID・チームゲスト一覧。チーム選手のプロフィールIDは既存の共有イベント単位の仮名に留め、本人IDや共有tokenをDTOに載せない。
+- **Stage ROLLBACK**：候補関数の作成・無効token/null・匿名呼出しを確認。合成手動チーム戦（2チーム、試合1、ゲスト2）で `team_matches=1`、`team_sides=2`、`team_guests=2`、`match_order=1`、得点表示用の最低限のフィールドを確認。全データROLLBACK。
+- 上記を確認後、**ステージングのみ** `task08_h12_shared_event_team_dto_staging` として関数変更を適用成功。元の `46_h12_share_token_rollback_probe.sql` を再実行し、通常・公式の正規token、無効/共有OFF/種類違い、匿名基底表取得拒否はすべて期待通り。ステージングの実イベント・試合は0件のまま。
+- `app/share/events/[token]/page.tsx` を匿名基底表/プロフィール直接取得から **token専用 `get_shared_event('event')`** に移行。チームDTO欠落時は結果を推測補完せずエラー表示。公式共有画面は既存のtoken RPC移行を維持。`tests/shared-event-page-rpc.test.cjs` で基底表直取得復活とDTO漏れをガード。
+- **追加発見：匿名共有基底表のACL/RLS**。Stage `event_team_matches`・`event_team_guests`・`event_video_links` には匿名SELECT表権限と共有ON等を条件とするSELECT policyが残存。ただし**合成イベントを用いた共有ヘッダーなしanonの実SQL直接SELECTは3表とも42501拒否**（Stageの現在の他表権限との合成結果）。実漏えいを再現したとは判断しない。今後の権限差解消時はこれらも明示的に閉じ、共有RPCだけを許すことを再検証。Prodで確認済みの公式共有関連の匿名直接取得リスクは別途未修正。
+- **制約**：Stageは `event_team_rounds`・混合列が本番と未一致。候補関数は `to_jsonb(etm)` による存在列参照でStageと本番の差を吸収するが、**実混合モードの正例は未確認**。正規token実HTTP、ユーザー実機表示、正式な本番互換Migration、全H12/H14受入は未完了。既存PRはDraft/OPEN維持。
+- Stage B0・DTOガード・TypeScriptをGitHub Actionsで再実行するよう既存workflowを更新し、`.task08-b0-trigger` から起動（最終結果は実行ログ確認後に追記）。Secrets値はコード・ログに含めない。
+
+**次工程**：①GitHub Actions結果確認 ②Stageチーム混合/ラウンド同等スキーマ・正規token HTTP正例 ③本番の匿名基底表公開を閉じる候補をStage負例→互換検証 ④H14既存スコア例外/退会履歴確認。**本番変更は別承認。**
+
+
 ## 0. 2026-11-19：ChatGPT連携からの最新DB照合・ステージング追加Migration適用（後続更新）
 
 この節は後続の作業結果。以下にある「当時は未実行」「接続不足」は、コミット `2b5ef1d` の作成時点の履歴として保持する。**本番への適用を意味しない。**

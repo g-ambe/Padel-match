@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：候補06の実DB ROLLBACK検証とB0 HTTP実行器
+
+ステージングの検証用A/B・Auth3名のfixtureに対し、既定ROLLBACKの`06_staging_link_detail_candidate.sql`を**同一トランザクションで一時的に有効化**し、旧連携RPCの管理者過剰返却の再現と候補DTOの限定、本人`review_token`の前後一致、無関係者拒否を実DBで確認。後続のREAD ONLY照合で旧関数MD5が元の値に戻り、申請レコードが0件であることを確認した。**候補06は正式適用していない**。
+
+管理UPDATE RETURNINGはA管理者で成功し無関係者で0件、所属レコードの新規INSERTは現行ステージングで42501拒否。後者は本番との差分であり、権限を安易に緩めずにH13の検証前提として扱う。公開View`public.public_player_profiles`は合成の連携済み選手3名追加後に匿名SQLロールから3行可視となったため、HTTPでの公開影響調査が必要。
+
+実Auth・PostgREST B0用の**書込みなしアプリデータ検証スクリプト**：[`08_staging_auth_http_smoke.mjs`](08_staging_auth_http_smoke.mjs)。既存の`@supabase/supabase-js`を使用し、**URLはステージング固定**。以下4つの環境変数を秘密管理された実行環境で用意する（値はチャット/GitHubに貼らない）。
+
+`TASK08_STAGING_PUBLISHABLE_KEY`、`TASK08_STAGING_MAIN_A_PASSWORD`、`TASK08_STAGING_RECIPIENT_PASSWORD`、`TASK08_STAGING_OUTSIDER_PASSWORD`。
+
+実行：`node supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs`。必要値が欠ける場合は開始せず、認証/RESTレスポンス本文・個人ID・token/パスワードをログに出さない。**現時点では実Auth/HTTP試験未実施**で、スクリプトのNode実行検証も未実施。実施時の記録は[STAGING_HTTP_PLAN.md](STAGING_HTTP_PLAN.md)の0.4節へ。B0の観測をB1/B2やP0全体の合格と扱わず、PR Draftのまま本番マージ・デプロイ禁止。
+
 ## 2026-11-19 更新：scoped_preview維持のステージング専用候補
 
 [`06_staging_link_detail_candidate.sql`](06_staging_link_detail_candidate.sql) を検証候補として追加。従来の`03_link_detail_candidate.sql`は変更せず、受取人のpreview取得だけをステージング固有の`profile_link_private.scoped_preview(source,user,club)`へ切替。旧関数の現物MD5/所有者、非公開helperの所有者/EXECUTEを事前検査し、**末尾ROLLBACK、ステージングDBにも未適用**とする。

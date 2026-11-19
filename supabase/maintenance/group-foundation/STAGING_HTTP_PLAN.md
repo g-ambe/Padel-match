@@ -15,6 +15,51 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.10. 2026-11-19：H13初期グループ・管理者INSERTの最小権限適用と正規JWT並列試験
+
+本節以降、「拒否」と書く場合は**(A) 仕様どおりの拒否・PASS（既存実装/セキュリティ要件が拒否すべきもの）／(B) 想定外の拒否・FAIL（正当な処理ができない不具合）／(C) 想定外の許可・FAIL（不正な処理が成功する不具合）／(D) 未確認**に明確に分類する。単にHTTPエラーとなったことをPASSと呼ばず、対象actor・許可条件・実SQLトリガー/RLSと照合する。
+
+### H13をステージングへ最小権限で適用
+
+- 既存[`19_h13_initial_owner_insert_rollback_candidate.sql`](19_h13_initial_owner_insert_rollback_candidate.sql)の正例/負例を再利用し、[`22_h13_staging_owner_insert_apply.sql`](22_h13_staging_owner_insert_apply.sql)に**ステージング固定fixture、元のINSERT policy 0件、本人既存所属8件、所有者postgres**等の検査を追加。**本番DBへの適用は禁止**。
+- ステージングで`task08_h13_staging_owner_bootstrap_insert`として適用。Migration履歴49→**50件**。次の列への`authenticated INSERT`だけを許可：`clubs(name,description,owner_id,is_active,visibility)`と`club_members(club_id,profile_id,player_profile_id,role,is_active)`。匿名INSERT/非対象列INSERTの広範な権限は追加していない。
+- clubs INSERTは`owner_id=auth.uid()`かつactive/非削除だけを許可。club_members INSERTは本人が作ったクラブ・本人のaccount profile・本人にAuth連携済みのactive選手・`main_admin`・active・`status=active`・**まだ初期所属が存在しないクラブ**の組合せのみ。private `security_private.task08_initial_owner_member_allowed`関数において、対象クラブ行を`SELECT ... FOR UPDATE`でロックした後に既存所属を再確認する。SECURITY DEFINERはpostgres所有、search_path空、anon EXECUTE禁止、authには最小のEXECUTEのみ。
+- この変更は「グループ作成→所属作成」という**既存UIの2段階HTTPフローを維持**するものであり、途中で登録が失敗した場合のクラブ孤立をすべて解消する原子的な変更ではない。既存UIのエラー表示・再作成禁止は維持、独自の新UIは追加していない。
+
+### 実Auth + PostgREST HTTP（独立2リクエストの並列性を含む）
+
+- [`23_h13_staging_http_write_smoke.mjs`](23_h13_staging_http_write_smoke.mjs)をステージングURL固定・専用`main-A`と`recipient`のみのログインで実行。**事前にテスト専用クラブ不存在を確認**し、合成クラブ名`TASK08-H13-HTTP-20261119-SINGLE/RACE`だけを作成。パスワード/JWT/内部UUID/個人データの出力なし。
+- [GitHub Actions run #44498384116](https://github.com/g-ambe/Padel-match/actions/runs/44498384116) のworkflowとログを直接検査。通常の**読み取り専用B0：16 PASS**、追加の**H13実JWT試験：10 PASS／FAIL・BLOCKED 0**。2件のmain_admin同時挿入はJS`Promise.all`で別HTTPリクエストとして並列送信し、**1件201成功・1件403/42501拒否、保存は1件**。
+- HTTP負例の拒否は、既存RLSとトリガーに照らし、すべて**「仕様どおりの拒否・PASS」**。HTTP 400/403だけで判断せず、根拠を以下に記載：
+
+| テスト | HTTP/DB結果 | 判定 | 仕様・実装根拠 |
+| --- | --- | --- | --- |
+| H13_AUTH | main-Aとrecipient双方のログイン成功 | 正常成功 PASS | Authユーザー本人の接続 |
+| H13_CREATE | main-Aがownerでprivateクラブを201作成 | 正常成功 PASS | `clubs`の自分ownerのみINSERT可能 |
+| H13_ROLE | 初期role=memberを403/42501で拒否 | **仕様どおり拒否 PASS** | 初期所属はmain_admin固定 |
+| H13_PLAYER_MISMATCH | 本人account＋他人のlinked player IDを400/P0001で拒否 | **仕様どおり拒否 PASS** | 既存`profile_link_private.guard_reference`の連携整合チェックと新policy |
+| H13_BOOTSTRAP | 本人main_adminを201で登録 | 正常成功 PASS | owner本人・選手本人・初期一名だけ許可 |
+| H13_DUPLICATE | 同じmain_adminの追加を403/42501で拒否 | **仕様どおり拒否 PASS** | 新policyは同クラブ既存所属がある場合INSERT不可 |
+| H13_OTHER_ACTOR | recipientによるAクラブ初期main_admin登録を403/42501で拒否 | **仕様どおり拒否 PASS** | owner不一致、新SECDEF判定 |
+| H13_BOOTSTRAP_COUNT | Aクラブ所属を1件だけ確認 | 正常成功 PASS | 役職/所属行の不変性 |
+| H13_RACE_CREATE | 別の空クラブを201作成 | 正常成功 PASS | テスト専用のownerクラブ |
+| H13_CONCURRENT | main-Aが同クラブへ同時2件INSERT→201×1、403/42501×1、DB所属1件 | **仕様どおり1件拒否 PASS** | クラブ行ロック＋既存所属検査の実挙動 |
+
+- この並列検証は**1回の本物のAuth/PostgREST同時2リクエスト**であり、負荷試験、複数DB分離レベル、トランザクション障害復旧、異なるプロフィールの高並列性を網羅するものではない。すべてのレース条件への保証ではない。
+
+### テストfixtureの限定削除と書き込みジョブの撤去
+
+- 実HTTP後、Stage READ ONLYでテストクラブ2・専用所属2、その他既存所属8、想定外の子レコード0を確認。
+- [`24_h13_stage_http_fixture_cleanup.sql`](24_h13_stage_http_fixture_cleanup.sql)でクラブ名・owner本人・選手のAuth連携・役職・同クラブの子FKを**個別に確認**し、当該テストクラブ2件/所属2件のみ削除。先に関連する他の試合・通知・申請・連携統合等が存在すれば削除を停止する安全ガードつき。専用公開directory_refsはFK連鎖の範囲内のみ。既存クラブ/プロフィール/試合/他所属は削除なし。
+- cleanup結果：**専用クラブ2・専用所属2回収、残存0**。完了後にGitHub Actionsの**H13書き込み試験ステップ自体を削除**し、ワークフローを元の読み取り専用B0スモークに復帰。Secretsの値は閲覧/保存していない。
+- READ ONLYの最終確認：`ACTIVE_HEALTHY`、Migration**50件**、元の既存所属**8件**、既存のgroup-A/B検証所属**4件**、一時H13クラブ**0**、pending加入/リンク申請**0**、新INSERT policyは**2つのみ**。旧H03/H06/submit公開経路の閉鎖は維持。本番DBとCloudflareは未変更。
+
+### 未完了／次ゲート
+
+- **H13の「同時2要求で重複0」まではステージングで確認済み**。ただし、本番同等のDDL/アプリ動作・二段階HTTP途中失敗時の復旧、特異な隔離レベル・複数actor/高並列時の不変性は要継続。
+- H08の本人最終承認/統合は、既存A/Bの複数所属の参照と履歴を変更し得る。十分な隔離fixtureと**既定ROLLBACK**のSQL正負例・FK/戦績不変を最初に検証し、承認を無条件COMMITしない。H09/H10の更新RETURNING、H12共有、H14既存試合/戦績も未完了。
+- 本番はステージングとRLS/ACL・旧関数MD5が異なるため、Stageでの成功を本番へ無条件展開しない。**PR #265 Draft、Issue #264 OPEN。新ブランチ・新PR、main merge、本番SQL/Cloudflareデプロイは禁止。**
+
 ## 0.9. 2026-11-19：旧加入申請・連携詳細/一覧の最小化とH13初期登録の隔離試験
 
 **ステージング `padel-hub-staging` のみに実施。本番・デプロイ・マージなし。** 前節のH03/H06対策は保持。今回のステージング履歴は**46件→49件**、現在`ACTIVE_HEALTHY`。新しいブランチ/PRは作成していない。

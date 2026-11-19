@@ -1,5 +1,29 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.15 2026-11-19：H12実HTTP正例・混合0044/0045 Stage互換・匿名SELECT遮断
+
+**対象**：既存 `codex/task-08-group-foundation` / Draft PR #265 / Issue #264。**本番 DB、Cloudflare本番、マージ、デプロイは無変更**。
+
+### Stageで追加したDB互換性とロールバック検証
+- 本番には存在しStageで欠落していた `0044_friendly_team_attendance.sql` と `0045_friendly_team_random_rounds.sql` を、リポジトリ内の原本から取得。両ファイルを同じトランザクションで **BEGIN→ROLLBACK** して、CREATE TABLE/ALTER/関数/RLS/制約/匿名RPC EXECUTE拒否などの成立を検証。Stageのイベント・公式イベント・試合・ゲストが0件であることを確認後、**Stage限定** `task08_staging_only_0044_attendance_parity`→`task08_staging_only_0045_team_rounds_parity` として順次適用成功。Prodは既存Migration済みのまま。
+- `50_h12_mixed_round_rollback_probe.sql` を追加し、新スキーマの実 `event_team_rounds` に1ラウンド、混合4対2、A/B両所属から2人ずつ、ゲスト4名を合成。**匿名共有RPCの混合得点4対2・ラウンド/コート1・ペア勝敗・所属元4枠・匿名化ゲストID・無効token非返却がすべて真**。全件ROLLBACK（Stage試合データに未保存）。
+- `51_h12_stage_http_fixture_setup.sql` でStageだけに限定した合成通常1件・チーム混合1件・公式1件を事前条件でガードし一時作成。関連4人/1試合ずつ、公式・混合スコア4対2。共有tokenは合成fixture専用（本番token/プロフィールID/JWT等を使用しない）。
+- `08_staging_auth_http_smoke.mjs` へ `TASK08_H12_TEST_POSITIVE=1` のときのみ走る正規tokenの実HTTPケースを追加。通常・混合・公式の正規tokenがHTTP200で最小結果を返すこと、匿名直接テーブル3件の取得拒否を検証。[**run #44533019156**](https://github.com/g-ambe/Padel-match/actions/runs/44533019156) **成功**。一時フラグは試験後に除去。
+
+### Stage限定の匿名基底表権限の閉鎖
+- **追加発見**：本番/Stageとも `event_team_matches`, `event_team_guests`, `event_video_links` にanon SELECTを持ち、Prodの公式3表とチームサイドはさらに公開。本番公式の無token生データ閲覧リスクは依然 **本番未対応**。
+- `53_h12_anon_shared_base_acl_candidate.sql` に、token共有RPC存在・EXECUTE権限・PostgreSQL実ロールのガードと、**共有関連7表のanon SELECTだけをREVOKE**する候補を追加。authenticatedのSELECT/RLS/INSERT/UPDATE/DELETEは無変更。StageでBEGIN→ROLLBACKの正負例確認後、Stage限定 `task08_stage_h12_close_anon_shared_base_select` として適用。
+- Stage適用後の `has_any_column_privilege('anon',...,'SELECT')` は対象7表すべてfalse、authenticated SELECTは7表すべてtrue。token RPC正規共有（通常/混合/公式）の実HTTPを再試験し、直接GET負例も維持。[**run #44533432780**](https://github.com/g-ambe/Padel-match/actions/runs/44533432780) **成功**。この結果は本番への適用許可を意味しない。
+- `52_h12_stage_http_fixture_cleanup.sql` を事前BEGIN→ROLLBACKでテスト後、本適用。対象3開催、2組の試合/出場/スコア/ゲスト・ラウンド/公式戦をガード付きで全件削除。Authユーザー/クラブ/所属/実プロフィールは変更なし。**終了後Stage events=0, official_events=0, event_team_rounds=0, event_team_matches=0, event_team_guests=0, match_results=0**、既存テスト用グループ2件・所属12件は維持。
+- Stage GitHub Actionsの一時正例フラグを削除し恒常の読み取り専用B0へ復元。後片付け後の [**run #44533669933**](https://github.com/g-ambe/Padel-match/actions/runs/44533669933) で **H12 DTOガード・TypeScript `tsc --noEmit`・実Auth/PostgREST B0すべて成功**。共有名・トークン・資格情報の生出力なし。
+- セキュリティAdvisorは既存の `SECURITY DEFINER` / immutable search_path等を警告。今回のH12だけで全警告がなくなったわけではなく、対象関数の利用元と認可の別レビューが必要。
+
+### 残るリリースゲート
+1. **Prod互換RPC Migration候補**：Stageに既存だった `security_private.shared_event` と `public.get_shared_event` はProd未実装。Prodのスキーマ・ポリシー差と列一覧に合わせた追加Migration、利用側への切替、匿名SELECT REVOKEの**段階的な本番適用順**が必要。現時点では本番migration/デプロイ禁止。
+2. **H12画面・副作用の実機確認**：リンク表示（通常・混合・公式）、動画クリック、個人/ペアランキングが本番既存UI/集計と完全互換かは未確認。HTTPのDTOだけで画面のE2Eを合格扱いしない。
+3. **H14の既存履歴・スコア例外6件**、退会者戦績、グループ別名/自主退会/画像/3タブ、本番/Stage環境差、H01〜H14全体受入は残件。**PR #265 Draft・Issue #264 OPENを維持。**
+
+
 ## 0.14 2026-11-19：H12チーム共有DTO／共有ページRPC移行（Stage限定）
 
 **対象**：既存ブランチ `codex/task-08-group-foundation`・Draft PR #265・Issue #264。

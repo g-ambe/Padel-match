@@ -16,7 +16,7 @@ BEGIN
 END $guard$;
 CREATE FUNCTION security_private.task08_initial_owner_member_allowed(
  p_club uuid,p_profile uuid,p_player uuid,p_role text,p_is_active boolean,p_status text)
-RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path='' AS $
+RETURNS boolean LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path='' AS $task08_owner$
 DECLARE owner_ok boolean;
 BEGIN
  IF auth.uid() IS NULL OR p_profile IS DISTINCT FROM auth.uid()
@@ -32,7 +32,7 @@ BEGIN
  RETURN EXISTS (SELECT 1 FROM public.player_profiles p WHERE p.id=p_player
                  AND p.linked_auth_user_id=auth.uid() AND p.is_active)
         AND NOT EXISTS (SELECT 1 FROM public.club_members cm WHERE cm.club_id=p_club);
-END $;
+END $task08_owner$;
 REVOKE ALL ON FUNCTION security_private.task08_initial_owner_member_allowed(uuid,uuid,uuid,text,boolean,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION security_private.task08_initial_owner_member_allowed(uuid,uuid,uuid,text,boolean,text) TO authenticated;
 GRANT INSERT(name,description,owner_id,is_active,visibility) ON public.clubs TO authenticated;

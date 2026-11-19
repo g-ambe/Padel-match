@@ -1,5 +1,20 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.17 2026-11-19：H14旧スコア例外6件・退会者履歴のREAD ONLY精査
+
+**対象**：既存 `codex/task-08-group-foundation` / Draft PR #265 / Issue #264。**本番・Stageとも試合/所属データの書換えなし。本番Migration/デプロイ/PRマージなし。**
+
+- `56_h14_score_semantics_readonly.sql` を作成し、**同じBEGIN READ ONLY/ROLLBACK原文**でProd/Stageを実行。イベント名・UUID・選手名・実token・対象日付・試合単位の行を出力せず、件数と匿名の分類のみを取得。
+- Prod `match_results` 329件中、例外は以前確認したとおり**合計6件**。内訳：
+  - **6対-1、A勝利：1試合/1イベント**。イベントはclosed/auto/officialだが**削除済み(`is_deleted=true`)**。現在のグループ通算スコープには入らない。試合行は変更せず残す。
+  - **2対2、保存された勝者B：5試合/同じ1イベント**。closed/auto/official/未削除。すべてA2名/B2名の4人構成、グループ過去所属4名・現在所属4名、ゲストなし。**5件ともグループ通算対象条件に入り得る**。
+- 得点と保存勝者の参照先を照合：`app/groups/[id]/page.tsx` はスコア比較により当該5試合を引分扱い。一方 `app/profile/page.tsx` は保存済み`winner_team`一致でB側へ勝利を付ける。計20出場枠（B側10枠）の勝敗意味が不一致。対象5選手プロフィールのうち連携済み本人アカウントは2件で、B側の連携済み出場枠は5。これだけで実画面の最終勝率差は断定しない。
+- 現行の通常保存処理は得点が同点なら`draw`を保存するが、DB CHECKは値`A/B/draw`しか検証せずスコア/勝者整合を保証しない。GPや旧手動勝者操作が当時5件へ作用したかは**保存された3列だけから判定不可**。自動補正、ランキング計算式変更は禁止。
+- Prodのinactive所属2件中、歴史的イベント参加をもつ所属1件。うち**現在の未削除・終了済み・公式通算対象イベントに紐づく退会所属は0件**。Stageの`get_club_stats_members`（0055）はinactive行も含めて戻し、グループ集計は過去所属の成立判定/70-20-10正規化を維持し、現在ランキングの表示だけをactive所属へ絞る既存仕様。退会だけで過去履歴を消す処理を追加しない。
+- `tests/h14-history-audit.test.cjs` を追加し、read-only SQL、未削除・終了済み・officialイベントの対象制限、非active履歴の取得、プロフィール/グループの既存スコア解釈差を静的回帰へ登録。GitHub Actions [**#44540080060**](https://github.com/g-ambe/Padel-match/actions/runs/44540080060) で当該回帰テスト・TypeScript・Stage Auth HTTP B0すべて成功。
+- 詳細・判断保留点は `57_h14_history_review.md` に記録。**未完了**：旧GPルール/当時の勝者入力経路の確証、5件をどう表示整合させるかの仕様承認、退会者の実アカウントHTTP検証、UIランキング実機受入、H01–H14全体ゲート。**Draft維持**。
+
+
 ## 0.16 2026-11-19：本番互換の共有RPC新設候補と導入順序（Stage適用・Prod未実施）
 
 **対象**：PR #265、Issue #264。**本番DB・本番Cloudflareデプロイ・PRマージは一切変更なし**。

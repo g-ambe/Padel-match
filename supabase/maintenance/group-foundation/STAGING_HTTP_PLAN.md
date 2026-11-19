@@ -15,6 +15,39 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.11. 2026-11-19：H08本人承認と管理者承認の別経路をステージングで閉鎖／H09・H10の読取監査
+
+**今回のステージング限定対策。** H13の並列JWTテスト後、H08のレビュー処理2経路を再現・保護した。拒否の分類は「**仕様どおり拒否・PASS**」「**想定外の拒否・FAIL**」「**想定外の許可・FAIL**」「**未確認**」の4種類で統一する。旧コードが動作していただけでは正しい仕様とは判定しない。
+
+### H08-1：申請先本人による`review_player_profile_link`
+
+- 既存の`scoped_preview`は申請対象グループAの所属**1件のみ**表示するが、レビューtokenは`profile_link_private.preview`の全体snapshotに由来する。元の仮選手がA/Bに**2件所属**している場合、`review_player_profile_link(...,'approved',token)`が`merge_profiles`を呼びA/B両方の所属を移していた。[`25_h08_scoped_consent_cross_club_rollback_probe.sql`](25_h08_scoped_consent_cross_club_rollback_probe.sql)で**想定外の許可・FAIL**をROLLBACK再現（データ永続変更なし）。
+- [`26_h08_cross_club_approval_guard_rollback_candidate.sql`](26_h08_cross_club_approval_guard_rollback_candidate.sql)で、申請対象以外のグループ所属/参加履歴/加入申請/チーム戦/公式戦が統合で変更され得る場合に権限エラー42501で停止する候補を作成。A/B複数所属の承認は**仕様どおり拒否・PASS**、別途[`27_h08_single_group_approval_rollback_probe.sql`](27_h08_single_group_approval_rollback_probe.sql)の単一A所属では承認・統合が正常成功することをROLLBACKで確認。
+- Stage Migration `task08_h08_staging_block_hidden_cross_club_merges`として[`28_h08_staging_consent_scope_guard_apply.sql`](28_h08_staging_consent_scope_guard_apply.sql)のみ**ステージングへ適用**。改変は対象レビュー関数のみでGRANT/RLSを拡張しない。
+- 正規Auth/JWT [GitHub Actions #44501997672](https://github.com/g-ambe/Padel-match/actions/runs/44501997672) は**19判定PASS**。本人のAのみ詳細previewはHTTP200、A/B全体を見せずに承認する操作はHTTP403/42501で**仕様どおり拒否・PASS**、申請statusはpendingのまま。保護対象のA/B所属とプロフィールの変更はなし。一時的なリンク申請**1件・関連通知1件**は照合後に削除。試験フラグも解除。
+
+### H08-2：公開グループの本人申請を管理者が承認する`review_profile_join_request`
+
+- **別の未保護経路を確認**。`preview_public_club_claim`はAのみを表示し、`submit_public_club_claim`が全snapshot付きの同意を作る。元の`review_profile_join_request(...,'approved')`は別の`merge_profiles`呼出しから、A/B両方を統合していた。[`31_h08_join_approval_cross_club_rollback_probe.sql`](31_h08_join_approval_cross_club_rollback_probe.sql)で**想定外の許可・FAIL**をROLLBACK再現。
+- [`32_h08_join_manager_approval_guard_rollback_candidate.sql`](32_h08_join_manager_approval_guard_rollback_candidate.sql)で管理者承認の別経路にも同じ「表示外の所属/履歴が書き換わる場合は42501拒否」のチェックを追加。A/Bは**仕様どおり拒否・PASS**、[`33_h08_join_single_club_positive_rollback_probe.sql`](33_h08_join_single_club_positive_rollback_probe.sql)によるAのみの正当な加入同意・管理者承認は**正常許可・PASS**。いずれも同一transaction ROLLBACK。
+- Stage Migration `task08_h08_stage_block_hidden_join_manager_merge`として[`34_h08_join_manager_stage_guard_apply.sql`](34_h08_join_manager_stage_guard_apply.sql)を**ステージングだけに適用**。再度元の[`31`](31_h08_join_approval_cross_club_rollback_probe.sql)/[`33`](33_h08_join_single_club_positive_rollback_probe.sql)をROLLBACK実行して結果不変を確認。
+- `35_h08_join_manager_http_fixture_setup.sql`で、既存のテスト専用仮選手U（A/B所属2件）と`outsider`に限定したpending加入申請**1件・関連通知2件**を作成。実Auth/JWT [GitHub Actions #44504198179](https://github.com/g-ambe/Padel-match/actions/runs/44504198179) は**18判定PASS**。管理者の`review_profile_join_request(...,'approved')`はHTTP403/42501＝**仕様どおり拒否・PASS**、申請はpendingのまま。正規ログインや従来のB0負例16件もPASS。
+- 試験用申請/通知は[`36_h08_join_manager_http_fixture_cleanup.sql`](36_h08_join_manager_http_fixture_cleanup.sql)によりID/グループ/本人同意/未承認/統合なしの照合後、**pending加入申請1件＋通知2件を限定削除**。最初のcleanup SQLはPL/pgSQLローカル`club_id`名が曖昧で実行失敗し、transactionはROLLBACK。変数名を`v_club_id`に限定修正して再実行成功。cleanup専用フラグはGitHub Actionsから解除済み。
+
+### H09/H10 UPDATE ... RETURNINGの読み取り専用監査
+
+- [`37_h09_h10_update_returning_acl_preflight.sql`](37_h09_h10_update_returning_acl_preflight.sql)を**GitHub上の実ファイルから両DBへ同一SQL**で実行。すべて`BEGIN READ ONLY`、書き込みなし。RLS predicate全文/行データは公開せず名前とMD5で差分照合。
+- Stage/prodどちらも`club_members`/ `player_profiles`にUPDATE用RLS policyは存在し、対象2表の`authenticated`表全体UPDATE権限はfalseだが**列単位UPDATE権限あり**。表UPDATE=falseを「全更新不可」と誤解しない。
+- `club_members`：`role/is_active/status`は両環境で`authenticated`列UPDATE=true。`profile_id/player_profile_id`は列UPDATE=false。Stageでは`authenticated SELECT`は表全体trueだが対象グループ限定RLS、prodは匿名SELECT可能でRLSに差があるため**本番公開は未対策**。
+- `player_profiles`：両環境で`display_name`の列UPDATE=true、`linked_auth_user_id`はfalse。**Stageの`bio/play_level`列UPDATEと列SELECTはfalse**、prodはtrue。Stageでは`authenticated`表全体SELECT=false（表示名等の列SELECTはtrue）、prodは表SELECT=trueで匿名SELECTも可能。したがって本人詳細のPATCH/RETURNING互換を未確認のまま「PASS」としない。
+- **H09/H10とも本物のJWT PATCH + `Prefer: return=representation`の正/負例は未実施**。RLS USING/WITH CHECKと各列GRANT、既存クライアントの`RETURNING`列を照合してから、既存データを変更しないROLLBACKシナリオ/専用fixtureで追加検証する。本番の公開SELECT/広いGRANTを安易にコピーしない。
+
+### 終了時点のチェック・次に行うこと
+
+- Stage `padel-hub-staging`：**ACTIVE_HEALTHY、Migration 52件**（H13 50件＋H08本人側51件＋H08管理者側52件）。既存所属8件、A/Bテスト所属4件、元のA/B仮選手はactive・未連携で2グループ所属のまま。H13一時クラブ0件、pending加入/リンク申請0件、active merge0件。H03旧View匿名SELECT/旧H06・旧直接加入申請EXECUTEの閉鎖は維持。
+- **本番DB・Cloudflare本番・PRマージ/デプロイは未変更**。Draft PR #265とIssue #264はOPENを維持する。
+- **次の作業予定：** H09/H10の既存画面が要求するPATCH/RETURNING列とRLS/列GRANTを確認し、Stage専用の正例と仕様どおりの拒否負例を構築。その後H12共有（匿名共有token境界）、H14戦績・参照整合の隔離試験。複数グループをまたぐ本人連携は、本人が全対象と影響を確認できる新しい同意/権限設計ができるまで**安全側で承認停止**。一律「完全に実装済み」とは扱わない。
+
 ## 0.10. 2026-11-19：H13初期グループ・管理者INSERTの最小権限適用と正規JWT並列試験
 
 本節以降、「拒否」と書く場合は**(A) 仕様どおりの拒否・PASS（既存実装/セキュリティ要件が拒否すべきもの）／(B) 想定外の拒否・FAIL（正当な処理ができない不具合）／(C) 想定外の許可・FAIL（不正な処理が成功する不具合）／(D) 未確認**に明確に分類する。単にHTTPエラーとなったことをPASSと呼ばず、対象actor・許可条件・実SQLトリガー/RLSと照合する。

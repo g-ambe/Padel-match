@@ -63,9 +63,12 @@ async function run() {
     mark('AUTH','all','3 staged test Auth users signed in',true);
     const [mainId,recipientId,outsiderId]=ids;
 
-    const club=await main.from('clubs').select('id,owner_id,name,visibility')
+    // owner_id is intentionally NOT readable to authenticated users. The
+    // fixture creation SQL already checks owner_id=mainA; only read public
+    // columns here so the HTTP test does not weaken or bypass that ACL.
+    const club=await main.from('clubs').select('id,name,visibility')
       .eq('name',name).single();
-    if (club.error || club.data?.owner_id!==mainId || club.data?.visibility!=='private') {
+    if (club.error || club.data?.name!==name || club.data?.visibility!=='private') {
       results.push({id:'FIXTURE',expectation:'exact one private staged club owned by mainA',outcome:'BLOCKED',...safe(club)});
       process.exitCode=2;return;
     }

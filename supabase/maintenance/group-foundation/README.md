@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：H08両承認経路の安全停止とH09/H10列ACL照合
+
+**H08：ステージングのみで2つの承認経路を対策。** リンク申請先本人が承認する`review_player_profile_link`と、公開グループ本人申請を管理者が承認する`review_profile_join_request`は、どちらもプレビューがAだけなのにA/B両所属を統合し得た（**想定外の許可・FAIL**）。旧実装を[`25`](25_h08_scoped_consent_cross_club_rollback_probe.sql)/[`31`](31_h08_join_approval_cross_club_rollback_probe.sql)でROLLBACK再現し、[`28`](28_h08_staging_consent_scope_guard_apply.sql)/[`34`](34_h08_join_manager_stage_guard_apply.sql)をステージングだけに適用。A/Bを隠したままの承認は**仕様どおり拒否・PASS（42501）**、所属Aのみなら本人承認・管理者承認とも正常許可・PASS（ROLLBACK正例[`27`](27_h08_single_group_approval_rollback_probe.sql)/[`33`](33_h08_join_single_club_positive_rollback_probe.sql)）。
+
+実Auth/JWT HTTPは[本人承認側run #44501997672](https://github.com/g-ambe/Padel-match/actions/runs/44501997672) **19判定PASS**と[管理者承認側run #44504198179](https://github.com/g-ambe/Padel-match/actions/runs/44504198179) **18判定PASS**。実HTTPで両方403/42501・申請pending維持を確認。各回のテスト専用申請/通知は完全回収、書き込み専用の恒常ワークフロー化なし。後者のSQL cleanupは`club_id`変数名の曖昧性を修正して再実行成功。
+
+**H09/H10：** [`37_h09_h10_update_returning_acl_preflight.sql`](37_h09_h10_update_returning_acl_preflight.sql)で本番・ステージング両方の列単位GRANT/UPDATE RLSを**READ ONLY**比較。`club_members.role/is_active/status`の認証列UPDATEは両環境でtrue、`profile_id/player_profile_id`はfalse。`player_profiles.display_name`はtrueだが`bio/play_level`は**ステージングfalse・本番true**。元の`player_profiles`や`club_members`の公開SELECTも本番側は広く、コピー移行は禁止。実JWT PATCHと`RETURNING`正/負例は未実施。
+
+現在ステージングMigration **52件**、既存所属8件＋A/Bテスト所属4件、pending加入/リンク申請0件、active merge0件、稼働正常。**本番DB・デプロイ・マージ未変更、PR #265 Draft/P0 OPEN**。複数グループ連携の正規UIと事前の全影響同意は未完成なので、安全のため承認を一時制限中。
+
+**次に実施：H09/H10のPATCH/RETURNINGの画面依存調査→ステージングの最小権限ROLLBACK/実JWT正負例→H12共有token・H14戦績の保護検証。** 詳細は[`STAGING_HTTP_PLAN.md` 0.11節](STAGING_HTTP_PLAN.md)。
+
 ## 2026-11-19 更新：H13初期登録と並列2件の正規Auth HTTP結果
 
 **H13をステージングのみ適用・検証。** [`22_h13_staging_owner_insert_apply.sql`](22_h13_staging_owner_insert_apply.sql)で、`clubs`/ `club_members`に必要な列だけのINSERTを許可し、本人owner・本人の連携済み選手・初回`main_admin`・既存所属なしをRLS/SECURITY DEFINER関数で制限。ownerクラブ行を`FOR UPDATE`してから重複を確認する。既存アプリの2段階グループ作成UIは変更なし。Stage Migration `task08_h13_staging_owner_bootstrap_insert`を適用し**履歴50件**。

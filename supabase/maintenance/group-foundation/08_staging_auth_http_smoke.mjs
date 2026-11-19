@@ -54,6 +54,13 @@ async function main() {
     return;
   }
   const key = process.env.TASK08_STAGING_PUBLISHABLE_KEY;
+  // Reject legacy anon/JWT and service-role/secret keys before any authentication request.
+  // This workflow uses the staging modern publishable key only.
+  if (!key.startsWith('sb_publishable_')) {
+    mark('H00', 'staging', 'BLOCKED', { reason: 'staging_publishable_key_required' });
+    process.exitCode = 2;
+    return;
+  }
   const clients = {};
   try {
     for (const [actor, [email, passName]] of Object.entries(refs)) {

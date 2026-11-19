@@ -15,6 +15,32 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.1. 2026-11-19：旧連携RPC・RLSの読取専用意味フラグ比較
+
+この節は**ステージングへの0054/0055適用後**に、GitHub上の `05_legacy_link_acl_semantics.sql` と等価な読取専用SQLを、両実DBへ個別実行して得た追加調査。SQLは `BEGIN READ ONLY`／`ROLLBACK`、関数本文・RLS式そのもの・Authやアプリの行データは返さず、定義ハッシュと検出フラグ・ACL/ポリシー名だけを比較する。テキスト検出の成否だけでは関数の安全性を証明しない。実Auth・HTTPは未実施。
+
+| 対象 | 本番 `padel-hub` | ステージング `padel-hub-staging` | 意味・対応 |
+| --- | --- | --- | --- |
+| `get_player_profile_link_request` | `to_jsonb(request)`あり／`profile_link_private.preview`を呼出し | `to_jsonb(request)`あり／**`profile_link_private.scoped_preview`を呼出し** | 管理者へ申請行全体が返り得る問題は両側に残存。ただし呼出すpreviewの意味が異なるので、0039や候補SQLを無検証で上書きしない |
+| `preview_profile_join` | `profile_link_private.preview`を呼出し | `profile_link_private.scoped_preview`を呼出し | 本人申請の公開・同意範囲が変わる可能性があり、返却キー・preview計算・review_tokenを照合する必要あり |
+| 内部 `scoped_preview` | なし | **存在**（postgres所有／SECURITY DEFINER、anon/authenticatedの直接EXECUTE不可） | ステージング固有の保護ロジックとして扱い、復旧情報なしで削除・置換しない |
+| 旧連携5RPC | 5件ともpostgres所有・SECURITY DEFINER・authenticated EXECUTE／anon拒否 | 同左。ただし**5件の定義MD5はすべて不一致** | 名称/署名/ACLが同じでも同等動作とは証明できない |
+| `club_members_read` | SELECT `USING(true)`、anon/authenticated対象 | 認証ユーザー限定、条件付き | 本番の公開SELECTリスクをステージング単体の拒否結果で再現したとは扱わない |
+| `player_profiles_read` / `profiles_read_names` | SELECT条件/列GRANTがステージングより広い | 制限付きの別定義 | 本人名・公開名簿、管理のUPDATE RETURNINGを閉鎖前後で確認する |
+| `club_members` INSERTポリシー | 1件存在 | **0件** | ステージングのグループ新規作成・作成直後のmain管理者所属試験（H13）は、現状のままでは本番の互換証明に使えない |
+| `profiles.display_name` anon列SELECT | 許可 | 拒否 | `profiles.email`のanon列SELECTは両環境で拒否 |
+
+関連7表のRLSポリシー（全command）は**本番27件／ステージング15件**、定義指紋と構成が不一致。特に本番は`club_members_read`の公開許可を残している。上記フラグは関数本文の一部キーワードをDB内で走査したもので、実際の返却値・認可分岐・動的SQL・ロック/同意の意味レビューを完全に終えたものではない。
+
+### 既存の修正候補SQLに対する停止判断
+
+`03_link_detail_candidate.sql`は、受取人向けに**本番0039の `profile_link_private.preview` を呼ぶ設計**。これをステージングへ確定適用すると、現状の `scoped_preview` 経路が置き換わる。**プレビュー/同意/tokenの意味が変化する危険があるため、現状の候補SQLをステージングへ適用しない**。保護対象・認可境界・返却契約を揃えたステージング専用の修正案を、独立した隔離DB・実Auth試験と既存定義の安全な復旧方針が整うまで決め打ちしない。
+
+- 現時点では本番・ステージング双方で**旧連携RPC、RLS、表/列GRANTの変更なし**。0054/0055のステージング追加適用は前節の通り完了済み。
+- 実Authの試験ユーザーはステージングに未作成。管理者権限のDB接続や合成JWT・`SET ROLE`によるチェックは**本物のGoTrue/PostgREST HTTP正例/負例の代用にならない**。
+- 次の実施範囲は、①`scoped_preview`と本番`preview`の返却境界、②管理UPDATE RETURNINGと初期所属INSERT、③現行ステージングB0の試験アカウント/fixtureを安全に作る方法の設計。既存ステージング8名分のデータや本番データを変更・複製しない。
+- マージ・本番SQL適用・デプロイは禁止、PR #265 Draft・P0未完了を維持する。
+
 2026-11-19。基準コミット `98598df55d1e2473751ec241110dfa1e1c322c53`。
 仕様：Issue #264、設計コメント6975098709。停止条件：[STAGE3.md](STAGE3.md)。
 既存 `codex/task-08-group-foundation` / Draft PR #265を使用する。

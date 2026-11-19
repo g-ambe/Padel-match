@@ -76,6 +76,8 @@ BEGIN
   INSERT INTO public.club_members(club_id,profile_id,player_profile_id,role,is_active)
   VALUES(new_club,current_setting('task08.main')::uuid,current_setting('task08.recipient_player')::uuid,'main_admin',true);
  EXCEPTION WHEN insufficient_privilege THEN denied_wrong_player:=true;
+ WHEN SQLSTATE 'P0001' THEN
+   denied_wrong_player:=position('旧profile_idと選手の連携アカウント' IN SQLERRM)>0;
  END;
  INSERT INTO public.club_members(club_id,profile_id,player_profile_id,role,is_active)
  VALUES(new_club,current_setting('task08.main')::uuid,current_setting('task08.main_player')::uuid,'main_admin',true)

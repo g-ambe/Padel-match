@@ -16,7 +16,7 @@ export type ProfileMergePreview = {
   review_token: string;
 };
 export type ProfileLinkRequest = {
-  id: string; club_id: string; source_player_profile_id: string; target_auth_user_id: string;
+  id: string; club_id: string; source_player_profile_id: string;
   source_display_name: string; club_name: string; status: LinkStatus; created_at: string; expires_at: string;
 };
 type ProfileLinkDetailBase = {

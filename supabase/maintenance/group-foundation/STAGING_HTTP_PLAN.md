@@ -15,6 +15,33 @@
 
 **残るゲート**：現行B0の実Auth/HTTP基準取得には、既存データと分離した試験用Authユーザー/fixtureの安全な作成手段が必要。B1/B2の安全性証明には既存関数・RLSの意味差レビュー、独立した復旧手順、管理UPDATE RETURNING/初期所属/共有/戦績を含むHTTP負例が必要。PGliteやSQLの `SET ROLE` を実Auth/HTTPの代用にしない。PR #265はDraft、マージ・本番SQL・本番デプロイ禁止。
 
+## 0.7. 2026-11-19：H06旧RPC直接EXECUTEのステージング閉鎖と実JWT HTTP再試験
+
+**重要：本節は前節B0のH06問題をステージングだけで修正し、実JWT HTTPで確認した結果。H03およびP0全体は引き続き未解消。**
+
+### 根拠・影響範囲の確認
+
+- Issue #264の確定仕様では、公開グループの未所属ログインユーザーは、仮選手から**本人紐づけ申請に必要な最小限の内容**を事前プレビュー・同意できるが、他グループの役職・内部ID・本人プロフィール名・詳細戦績は取得させない。
+- 旧 `public.preview_profile_join(uuid,uuid)` はステージングでは `profile_link_private.scoped_preview` で旧プレビューの一部を限定しているが、全JSONには `source` や `review_token` を含み、内部所属IDを知る外部者が実HTTPで直接呼べる問題をH06で確認した。
+- Migration 0055で追加した限定公開 `public.preview_public_club_claim(uuid,uuid)` は、独立公開参照から内部所属IDを解決し、所有者`postgres`のSECURITY DEFINER経由で**内部から旧previewを呼んで最小DTOだけ返す**。したがって旧関数の`authenticated`直接EXECUTEを閉じても、このラッパーの認証済み実行は維持可能。
+- 新公開ラッパーによる申請previewと`review_token`一致を確保し、`submit_public_club_claim`／旧`submit_profile_join_request`の関数本体・権限はこのH06修正では変更しない。
+
+### 実施したこと
+
+1. `10_h06_legacy_preview_acl_candidate.sql` は**既定ROLLBACK**の安全な候補。現物旧preview MD5 `97a1f5de84750f0e3bf1cffa1d6805fd`／新ラッパーMD5 `dfc4453b42c6a734da9acd2f48e50e31`／所有者postgres／SECURITY DEFINER／既存EXECUTEをガードする。両呼出経路を同一トランザクションで一時テスト後ROLLBACK。
+2. ステージングA仮選手U・無所属`outsider`の疑似ロールSQL試験で、**直接旧previewは拒否**、一方`preview_public_club_claim`は**必要10キーを返し、元の同意`review_token`が変わらない**ことを確認。SQL試験のみで実HTTP合格とはしない。
+3. `11_h06_staging_apply.sql` を同じ署名/現物ハッシュ・ステージング専用fixture名でガードし、SupabaseのDDL用Migration管理ツールで**`padel-hub-staging`のみに永続適用**。履歴名`task08_h06_close_legacy_preview_staging`（20261119081303）、既存44→45件。変更は`public.preview_profile_join(uuid,uuid)`の`PUBLIC,anon,authenticated`からの直接EXECUTEのREVOKEに限定。関数本体、内部helper、RLS、表/列GRANT、既存アプリデータに変更なし。
+4. 適用後のREAD ONLY監査：旧previewの定義MD5は**不変**、anon/authenticated直接EXECUTEは**false**、service_roleは引き続き**true**。限定公開`preview_public_club_claim`と`submit_public_club_claim`のauthenticated EXECUTEは**true**。既存所属8件、検証用クラブ2件、連携申請0件を維持。
+5. 既存`08_staging_auth_http_smoke.mjs`に**H06実HTTPの拒否判定**と`H06_SAFE`（旧プレビューを内部的に使う新限定DTOの正例）を追加。ワークフローの実行ステップだけに`TASK08_EXPECT_H06_CLOSED=1`を設定し、対象ブランチの非秘密トリガー更新で**1回**実行した。
+6. [GitHub Actions実行 #44486005853](https://github.com/g-ambe/Padel-match/actions/runs/44486005853) において、正規GoTrueログインとJWT付きPostgRESTを再実行。ジョブ/試験ステップ`completed/success`、ジョブログの**15判定：PASS 14、OBSERVE_PRIVACY_RISK 1、FAIL/BLOCKED 0**。具体的には、H06 `outsider`の旧関数直接呼び出しが**HTTP403・code42501**、`source`と`review_token`非返却。H06_SAFE `outsider`による限定公開ラッパーは**HTTP200、許容10キーだけ、preview/tokenあり**。H01/H02/H07/H11は引き続きPASS。
+7. **H03匿名ViewはHTTP200・合成fixture名3件の公開を維持**（`OBSERVE_PRIVACY_RISK`）。H03はこのH06修正では対象外。14 PASSをP0全体の合格やH01〜H14全件消化と誤認しない。
+
+### 停止条件
+
+- **本番 `padel-hub` は完全未変更**であり、H06旧RPCの広い実行経路は本番側では閉じていない。ステージングで成立した修正の本番移行には、本番の関数本文・所有者・ACL・現行UI/消費者の照合と別承認が必要。本番は0054/0055自体も未適用。
+- H03の既存View、本番と異なる`club_members`初期INSERT・旧RLS/公開SELECT、未移行のRPC、申請/統合、共有/戦績の回帰、H01〜H14未実施項目は継続。
+- 本節でステージングAuthセッションメタデータを除くアプリ行の作成・更新・削除はなし。旧`03`/`06`候補は依然として既定ROLLBACK・未適用。**PR #265 Draft維持、Issue OPEN、マージ/本番SQL/本番デプロイ禁止。**
+
 ## 0.6. 2026-11-19：実Auth/PostgREST B0初回実行の確認済み結果
 
 ユーザーがGitHub Actionsの [run #44483674678](https://github.com/g-ambe/Padel-match/actions/runs/44483674678) を提示し、GitHub連携から**run本体、jobステップ、実ジョブログ**を直接確認した。対象は既存ブランチ `codex/task-08-group-foundation`・トリガーコミット `020f8fe5bd01b41911469eb5b477f196c151a6e9`。Workflow名 `TASK-08 staging B0 Auth HTTP`、event `push`、2026-11-19 07:57:59〜07:58:19 UTC、run/jobとも `completed/success`、attempt=1。**本物のGoTrueログインとJWT付きPostgREST HTTPが実行された**。チェックアウト/Node22/Secrets存在検査/構文検査/隔離SDKインストール/HTTP本試験の各step成功。

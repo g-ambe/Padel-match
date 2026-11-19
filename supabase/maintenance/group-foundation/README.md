@@ -1,5 +1,21 @@
 # TASK-08-03 / P0：段階的な取得・権限分離
 
+## 2026-11-19 更新：H09メイン管理者保護＋H10本人限定プロフィールRPCの実JWT試験
+
+**H09：最後のメイン管理者をDBでも保護。** 旧`club_members`UPDATEでは最後のメイン管理者がAPI直接操作で自身を非アクティブにできた（**想定外の許可・FAIL**）。[`38`](38_h09_members_update_returning_rollback_probe.sql)で再現、[`39`](39_h09_last_main_guard_rollback_candidate.sql)・[`40`](40_h09_last_main_role_status_rollback_probe.sql)でROLLBACK正負例を検証後、[`41`](41_h09_last_main_stage_apply.sql)を**ステージング限定**で適用。最後のmainの退会・降格・ステータス変更は**42501＝仕様どおり拒否・PASS**、別main引継ぎ後は正常許可。一般/サブ管理者の既存UPDATE/RETURNINGも維持。
+
+**H10：既存の本人用RPCへ画面側のみ切替。** `player_profiles`の自己紹介・レベル・利き手などの詳細列を全認証ユーザーへ直接GRANTすると、同じグループの他人の詳細まで閲覧できるため禁止。既存の`get_my_player_profiles`/`save_my_player_profile`を監査し、[`42`](42_h10_owner_profile_rpc_rollback_probe.sql)のROLLBACK正負例を確認。[lib/player-profiles.ts](../../../lib/player-profiles.ts)の本人プロフィール取得/保存を**既存の本人限定RPC経由**へ切替。6項目の編集・RETURNING、古い編集内容の上書き拒否、他人の編集/認証ID変更拒否、未連携仮選手の管理者編集を維持。DBの広範囲SELECT/UPDATE権限追加なし。H10追加Migrationもなし。
+
+**正規JWT/PostgREST HTTP：** 非公開テストクラブ1・未連携選手1・所属3を[`43`](43_h09_h10_stage_http_fixture_setup.sql)で一時作成。初回[run #44509830613](https://github.com/g-ambe/Padel-match/actions/runs/44509830613)の専用試験は保護された`clubs.owner_id`までSELECTしようとして**テスト前提がBLOCKED**（ACLは仕様どおり、アプリ不具合と認定しない）。テストだけ修正し、[run #44510146124](https://github.com/g-ambe/Padel-match/actions/runs/44510146124)は**B0 16件PASS＋H09/H10専用18件PASS**。TypeScript`tsc --noEmit`と`tests/profile-v4.test.cjs`もPASS。
+
+- H09：main/subの通常更新はHTTP200・更新1行、他グループとsub→mainは**HTTP200・更新0行＝仕様どおり拒否・PASS**、最後のmain退会・降格は**403/42501＝仕様どおり拒否・PASS**。
+- H10：本人限定RPCはHTTP200、本人だけの詳細返却と全6項目同値のno-op保存・RETURNINGを確認。古い値・他人・連携Auth ID書換えは**400/P0001＝仕様どおり拒否・PASS**。仮選手は管理者がHTTP200で改名と復元、非所属者は更新0行。
+- テスト後[`44`](44_h09_h10_stage_http_fixture_cleanup.sql)でFK依存・所有者と所属の整合を確認し、**テストクラブ1・選手1・所属3だけ回収**（残存0）。一時HTTP書き込みCIステップも撤去して読み取り専用B0へ復帰。既存A/B・実プロフィールの値は変更なし。
+
+現在ステージング**ACTIVE_HEALTHY、Migration53件、既存所属8件＋A/Bテスト所属4件、pending加入/リンク申請0件、active merge0件**。本番DB/Cloudflare/マージ・デプロイ未変更。PR #265 Draft、Issue #264 OPEN。
+
+**次に進む作業：H12の共有トークン匿名REST可視範囲と正負例→H14の試合/戦績の非公開境界と不変性。** その後、本番とステージングのACL/RLS差、グループ別表示名・詳細3タブ等の未実装の確定仕様を別ゲートで扱う。詳細は[`STAGING_HTTP_PLAN.md`0.12節](STAGING_HTTP_PLAN.md)。
+
 ## 2026-11-19 更新：H08両承認経路の安全停止とH09/H10列ACL照合
 
 **H08：ステージングのみで2つの承認経路を対策。** リンク申請先本人が承認する`review_player_profile_link`と、公開グループ本人申請を管理者が承認する`review_profile_join_request`は、どちらもプレビューがAだけなのにA/B両所属を統合し得た（**想定外の許可・FAIL**）。旧実装を[`25`](25_h08_scoped_consent_cross_club_rollback_probe.sql)/[`31`](31_h08_join_approval_cross_club_rollback_probe.sql)でROLLBACK再現し、[`28`](28_h08_staging_consent_scope_guard_apply.sql)/[`34`](34_h08_join_manager_stage_guard_apply.sql)をステージングだけに適用。A/Bを隠したままの承認は**仕様どおり拒否・PASS（42501）**、所属Aのみなら本人承認・管理者承認とも正常許可・PASS（ROLLBACK正例[`27`](27_h08_single_group_approval_rollback_probe.sql)/[`33`](33_h08_join_single_club_positive_rollback_probe.sql)）。

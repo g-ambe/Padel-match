@@ -454,7 +454,9 @@ async function main() {
       const minimal = Array.isArray(listing.data) && listing.data.every(row =>
         Object.keys(row).every(k => ['reference','display_name','is_unlinked'].includes(k)));
       const expected = actor === 'anonymous' ? !!listing.error
-        : !listing.error && listing.data.length === 2 && minimal;
+        : !listing.error && listing.data.length === 1 && minimal &&
+          listing.data[0].is_unlinked === true &&
+          listing.data[0].display_name === 'TASK08-P0 provisional U';
       mark('H07', actor, expected ? 'PASS' : 'FAIL', {
         ...safeResult(listing), only_minimal_fields: minimal,
       });

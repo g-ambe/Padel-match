@@ -26,7 +26,7 @@
    - `TASK08_STAGING_RECIPIENT_PASSWORD`
    - `TASK08_STAGING_OUTSIDER_PASSWORD`
 3. UserがSecrets登録完了を知らせてから、ChatGPT/GitHub連携で既存ブランチ`supabase/maintenance/group-foundation/.task08-b0-trigger`の**非秘密テキストだけを更新**。これにより1回の `push` イベントでB0ジョブが起動する。**未登録のうちにトリガーは更新しない**。
-4. WorkflowはGitHub提供ランナー上でSHAピン留めの`actions/checkout`・`actions/setup-node`を使い、`permissions.contents=read`、元リポジトリ/対象ブランチ限定、既存`08_staging_auth_http_smoke.mjs`の構文を`node --check`で確認し、必要な`@supabase/supabase-js@2.49.8`のみ隔離ディレクトリに`--ignore-scripts`でインストールする。**Secrets環境変数は秘密値事前検査ステップ・実際のスモーク試験ステップにだけ注入し、checkout/依存インストールへは渡さない**。
+4. WorkflowはGitHub提供ランナー上でSHAピン留めの`actions/checkout`・`actions/setup-node`を使い、`permissions.contents=read`、元リポジトリ/対象ブランチ限定、既存`08_staging_auth_http_smoke.mjs`の構文を`node --check`で確認し、必要な`@supabase/supabase-js@2.112.1`のみ隔離ディレクトリに`--ignore-scripts`でインストールする。**Secrets環境変数は秘密値事前検査ステップ・実際のスモーク試験ステップにだけ注入し、checkout/依存インストールへは渡さない**。
 5. スモーク側はステージングURL`https://zzjwpresqkefnyjyisgd.supabase.co`に固定。Publishable Keyが`sb_publishable_`形式でなければ最初に停止。ログインによりSupabase Authの最終サインイン時刻等は更新され得るが、アプリDBへのINSERT/UPDATE/DELETE、連携申請/レビュー/統合、RLS/GRANT変更、デプロイは実行しない。SQLログ/JSON応答/内部ID/ユーザーパスワード/JWTの実値は公開しない。結果はH01/H02/H03/H06/H07/H11の**一部B0観測**であり、H01〜H14全件完了とはしない。ステージングの旧preview/匿名Viewを`OBSERVED_NOT_ACCEPTED`などに分類し、P0合格に含めない。
 6. 完了後にGitHub Actionsの成否/検証数・匿名View/旧previewの**真偽・件数・HTTP statusのみ**をIssue #264に追記する。テストが動作しても旧`03`/`06`候補の永続適用、ステージングRLS変更、本番DB適用やPRマージへ自動進行しない。秘密値は試験不要になったらGitHub Actions Repository Secretsから削除/ローテーションを検討する。
 

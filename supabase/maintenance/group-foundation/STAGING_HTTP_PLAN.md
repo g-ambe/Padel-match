@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.28 2026-11-20：H21 `efb8d81`レビューとH22公開所属人数RPCのStage DB/実Auth受入
+
+- Codex `efb8d8130486ab7b47f8bb475d9ef4497e8de9f6` をGitHub実ソースで確認。**H21の「概要・メンバー・戦績」3タブ、右上「…」と共通POP、元画面・スクロール復帰、未所属者の内部DTO取得抑止**を実装。22ファイル変更、DB Migration/Cloudflare設定/既存集計計算は不変更。Codex報告：関連80件、375px明暗H21/H15〜H19、チュートリアル、TypeScript/OpenNext build PASS（GPTはこの合成ブラウザを直接再実行したわけではない）。[コミット `efb8d81`](https://github.com/g-ambe/Padel-match/commit/efb8d8130486ab7b47f8bb475d9ef4497e8de9f6) のCloudflare staging Workers Buildとprivate-media checkはGitHubでSUCCESS確認。
+- `lib/group-detail.ts`と`app/groups/[id]/page.tsx`の現物確認。未所属時は`readMyMemberships`→`get_public_club_directory`に限定し、内部`get_club_roster`、`events/official_events`、戦績`loadStats`を実行しない。未所属のUIは`公開メンバー N人`（公開許諾済み表示人数）を「実所属人数と異なる場合あり」と注記。**公開の真の有効在籍人数と開催メタデータが安全に取得できない**ことをCodexがIssue #264で報告。
+- **正式Migration `supabase/migrations/0065_public_club_member_count.sql`** を既存Draft PR #265へ追加し、Stage `BEGIN/ROLLBACK` DDL事前確認後に**Stageだけへ適用**（`task08_stage_0065_public_club_member_count`）。**Prod未適用**。新`get_public_club_member_count(p_club_id uuid)`→bigintは、認証済みかつactive/非削除/visibility='public'のクラブのみ許可し、`club_members.is_active AND status='active' AND player_profiles.is_active`を**本人の公開同意とは独立して件数のみ返す**。既存の名簿最小3列RPC/本人公開同意に変更なし。非公開/不明/NULL/anonは拒否。secure definer `SET search_path=''`、`PUBLIC/anon` EXECUTE REVOKE、`authenticated`のみ明示GRANT。Stage Advisorでは意図した`authenticated_security_definer_function_executable` WARNが1件増える。匿名に実行権限を付けない。
+- `99_h22_public_member_count_rollback_probe.sql`は**BEGIN/ROLLBACKで10/10 TRUE**。Stageの既存3クラブ/12所属を保持しつつ、合成クラブだけでlinked2人のうち1人は名前の公開同意なし→有効在籍数は2、公開ディレクトリは2未満、公開0名/非公開/不明/NULL/匿名を検証して全ROLLBACK。
+- `100_h22_public_count_real_auth_readonly.mjs`と`tests/h22-public-member-count.test.cjs`を追加。`.github/workflows/task08-staging-b0-auth-http.yml`へ**読み取り専用の恒常CI**として追加。最初の [Actions #44674111440](https://github.com/g-ambe/Padel-match/actions/runs/44674111440) は、元のtest scriptで停止理由未出力。続く [#44674260568](https://github.com/g-ambe/Padel-match/actions/runs/44674260568) で「main-Aにprivateクラブも閲覧可能」というテストデータの**誤仮定**を特定。Stageの既存ACLは正常（このtest Authは2公開グループのみ閲覧可）。テスト側だけを修正し、**最終 [Actions #44674625844](https://github.com/g-ambe/Padel-match/actions/runs/44674625844) real Stage JWT/PostgREST 7/7 PASS**、通常B0・静的回帰・TypeScriptも同時SUCCESS。実アカウントを使うがSELECTとRPC読取のみでDBへの書込・fixture追加なし。Stage baseline clubs3/members12/profiles12/events0/official_events0/transfers0/notifications0・H22 fixture0、匿名RPC EXECUTE=false。Prod変更なし。
+- Codexへ渡す最小UI作業：`101_h22_codex_public_member_count_handoff.md`。`lib/group-read.ts`で専用rpcを型付きラップ、`app/groups/[id]/page.tsx`で未所属・ログイン済・公開クラブの真の`所属人数 N人`表示へ変更。エラー時は不明表示/再取得、公開directory.lengthを人数へ代用しない。H15〜H21の既存機能・合成ブラウザ/履歴/戦績は維持。**Codexアプリ側のH22表示修正は未実装**。
+- **公開概要「直近開催」のDB/RPCは未実装**。`events.share_enabled` / `official_events.share_enabled` はbearer token型の**リンク共有**の設定であって、公開グループの検索訪問者へイベント名/開催日時を一覧掲載する承諾とは同義ではない。`events`には独立した開催日列がなく`created_at`のみ（`official_events.event_date`はあり）。掲載は別の明示設定・既存データの非遡及・最小DTO/公開遷移の仕様承認を待ち、勝手にトークンや参加者/試合情報を公表しない。現H21の「開催情報は所属後に確認できます」を維持。
+- **本番移行停止条件は継続**：H20で確認したProd anon base SELECT/P0権限問題、Stage/Prod9表非対称、新RPC/Migration未適用、旧プロフィールテスト既知12失敗、本人同意/共有token/R2画像の受入。**Draft PR #265/同ブランチで記録、mainマージ・Prod SQL・Cloudflare本番デプロイなし**。
+
+
 ## 0.27 2026-11-20：Codex H19 `93f4de1`レビューとStage実認証アプリヘルパー／2接続競合受入
 
 **既存Draft PR #265・`codex/task-08-group-foundation`のみ**。GPT＝DB/Stage/統合レビュー、Codex＝UI。**本番DB・Cloudflare本番公開・mainマージなし**。

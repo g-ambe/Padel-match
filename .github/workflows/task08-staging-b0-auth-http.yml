@@ -109,3 +109,15 @@ jobs:
           set -euo pipefail
           NODE_PATH="$RUNNER_TEMP/task08-b0/node_modules" node supabase/maintenance/group-foundation/102_h22_app_helper_real_auth_readonly.cjs
 
+
+      - name: H29 real Auth anonymous clubs and public group access (read-only)
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node --check supabase/maintenance/group-foundation/116_h29_stage_real_auth_clubs_readonly.mjs
+          cp supabase/maintenance/group-foundation/116_h29_stage_real_auth_clubs_readonly.mjs "$RUNNER_TEMP/task08-b0/h29.mjs"
+          node "$RUNNER_TEMP/task08-b0/h29.mjs"

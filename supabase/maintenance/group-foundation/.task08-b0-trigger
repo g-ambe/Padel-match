@@ -3,4 +3,4 @@
 # FOUR dedicated staging GitHub Actions repository secrets.
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
-# Status: H18_APP_HELPER_STAGE_REAL_AUTH_DEPENDENCY_PATH_FIX_2026_11_20
+# Status: H18_6C4E632_FINAL_READONLY_STAGE_B0_AFTER_APP_HELPER_AUTH_CLEANUP_2026_11_20

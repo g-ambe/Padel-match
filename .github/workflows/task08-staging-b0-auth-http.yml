@@ -86,3 +86,19 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
+
+      # H19 one-shot Stage write fixture SQL 88. Remove immediately after
+      # guarded SQL 89 cleanup; no production change or deployment.
+      - name: H19 real Stage JWT owner handover invitation (one shot)
+        shell: bash
+        env:
+          TASK08_H19_HTTP_WRITE_ONCE: '1'
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cp supabase/maintenance/group-foundation/90_h19_real_auth_owner_transfer_once.mjs "$RUNNER_TEMP/task08-b0/h19.mjs"
+          node "$RUNNER_TEMP/task08-b0/h19.mjs"
+

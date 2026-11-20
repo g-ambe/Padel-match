@@ -99,5 +99,5 @@ jobs:
           TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
         run: |
           set -euo pipefail
-          node supabase/maintenance/group-foundation/84_h18_app_helper_real_auth_once.cjs
+          NODE_PATH="$RUNNER_TEMP/task08-b0/node_modules" node supabase/maintenance/group-foundation/84_h18_app_helper_real_auth_once.cjs
 

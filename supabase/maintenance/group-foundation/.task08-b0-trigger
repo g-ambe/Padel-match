@@ -3,4 +3,4 @@
 # FOUR dedicated staging GitHub Actions repository secrets.
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
-# Status: H22_READONLY_REAL_AUTH_DIAGNOSTIC_2026_11_20
+# Status: H22_STAGE_READONLY_AUTH_RESPECT_PRIVATE_RLS_2026_11_20

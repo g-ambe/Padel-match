@@ -52,7 +52,7 @@ jobs:
         run: node --check supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs
 
       - name: H12 token-only UI and minimal DTO regression checks
-        run: node --test tests/shared-event-page-rpc.test.cjs tests/shared-event-rpc-release.test.cjs tests/h14-history-audit.test.cjs tests/h15-self-withdraw.test.cjs tests/h17-join-alias-db.test.cjs tests/h18-receiver-profile-link.test.cjs
+        run: node --test tests/shared-event-page-rpc.test.cjs tests/shared-event-rpc-release.test.cjs tests/h14-history-audit.test.cjs tests/h15-self-withdraw.test.cjs tests/h17-join-alias-db.test.cjs tests/h18-receiver-profile-link.test.cjs tests/h19-owner-transfer-db.test.cjs
 
       - name: H18 actual application helper unit regression (no DB writes)
         run: node --test tests/recipient-profile-link.test.cjs

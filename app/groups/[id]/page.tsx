@@ -1,5 +1,6 @@
 "use client";
 import { readMyMemberships, readClubRoster, readPublicDirectory, readJoinRequestNames, type RosterMember } from "@/lib/group-read";
+import { ClubOwnerTransfer, type OwnerState } from "@/components/club-owner-transfer";
 import { PublicClubJoinDialog } from "@/components/public-club-join-dialog";
 import { ClubDisplayNameDialog } from "@/components/club-display-name-dialog";
 import { ClubDisplayNameError, canEditClubDisplayName, groupMemberLabel, saveClubDisplayName, type ClubNameMember } from "@/lib/club-display-name";
@@ -58,6 +59,7 @@ export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const groupDeleteInFlight = useRef(false);
+  const [ownerState, setOwnerState] = useState<OwnerState>("unknown");
   const [tab, setTab] = useState<MainTab>("グループ管理");
   const [statTab, setStatTab] = useState<StatTab>("個人ランキング");
   const [groupName, setGroupName] = useState("グループ");
@@ -323,6 +325,9 @@ export default function GroupDetailPage() {
     console.error(label, { message: detail?.message, code: detail?.code, details: detail?.details, hint: detail?.hint });
   };
   const changeMemberRole = async (member: Member, role: Role) => {
+    if (member.linked_auth_user_id === myAuthUserId && role !== "main_admin" && ownerState !== "other") {
+      setError("オーナーの引継ぎ完了を確認してから役職を変更してください"); return false;
+    }
     const s = getSupabaseClient(); if (!s || loading) return false;
     if (!canManageTargetMember(roleCtx, member.role) || !canManageTargetMember(roleCtx, role)) { deny(); return false; }
     setLoading(true); setError(""); setMessage("");
@@ -346,6 +351,7 @@ export default function GroupDetailPage() {
   };
   const doDeactivate = async () => {
     if (!confirmLeave || !confirmChecked || loading) return;
+    if (confirmLeave.linked_auth_user_id === myAuthUserId && ownerState !== "other") return setError("オーナーの引継ぎ完了を確認してから退会してください");
     if (!canManageTargetMember(roleCtx, confirmLeave.role)) return deny();
     if (confirmLeave.role === "main_admin" && activeMainAdmins <= 1) return setError("メイン管理者は最低1人必要です");
     const s = getSupabaseClient(); if (!s) return;
@@ -359,6 +365,7 @@ export default function GroupDetailPage() {
   };
   const leaveMyClub = async () => {
     if (!id || !myMemberId || !isMemberOfGroup || !selfLeaveConfirmed || selfLeaveBusy || loading) return;
+    if (ownerState !== "other") { setSelfLeaveError("オーナーの引継ぎ完了を確認してから退会してください"); return; }
     const s = getSupabaseClient();
     if (!s) { setSelfLeaveError("退会の準備ができませんでした"); return; }
     setSelfLeaveBusy(true); setSelfLeaveError("");
@@ -461,15 +468,17 @@ export default function GroupDetailPage() {
 
       {tab === "グループ管理" && <Card title="グループ管理"><div className="space-y-3">{/* TODO: グループ画像機能は将来再公開予定。現時点ではUIのみ非表示。 */}<div><p className="mb-1 text-xs text-zinc-400">グループ名</p>{editingGroupName ? <div className="space-y-2"><input className="w-full rounded-xl bg-zinc-800 p-3" value={groupNameInput} onChange={(e) => setGroupNameInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupName()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingGroupName(false); setGroupNameInput(groupName); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p>{groupName}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingGroupName(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">グループ説明</p>{editingDescription ? <div className="space-y-2"><textarea className="w-full rounded-xl bg-zinc-800 p-3" value={groupDescriptionInput} onChange={(e) => setGroupDescriptionInput(e.target.value)} /><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void saveGroupDescription()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingDescription(false); setGroupDescriptionInput(groupDescription); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{groupDescription || "説明なし"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingDescription(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">メインの活動場所</p>{editingFacility ? <div className="space-y-2"><FacilitySelector facilities={facilities} value={facilityId} onChange={setFacilityId} disabled={loading}/><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black" onClick={() => void saveFacility()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => setEditingFacility(false)}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">{facilities.find((f) => f.id === facilityId)?.name ?? "未選択"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingFacility(true)}>編集</button>}</div>}</div><div><p className="mb-1 text-xs text-zinc-400">公開設定</p>{editingVisibility ? <div className="space-y-2"><select className="w-full rounded-xl bg-zinc-800 p-3" value={visibilityInput} onChange={(e) => setVisibilityInput(e.target.value as "private" | "public")}><option value="private">非公開</option><option value="public">公開</option></select><div className="flex gap-2"><button disabled={loading} className="w-1/2 rounded-xl bg-accent py-2 text-black" onClick={() => void saveVisibility()}>保存</button><button className="w-1/2 rounded-xl border border-zinc-600 py-2" onClick={() => { setEditingVisibility(false); setVisibilityInput(visibility); }}>キャンセル</button></div></div> : <div className="flex items-center justify-between"><p className="text-sm text-zinc-300">現在: {visibility === "public" ? "公開" : "非公開"}</p>{canDeleteGroupAction && <button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditingVisibility(true)}>編集</button>}</div>}</div>{canDeleteGroupAction && <button className="w-full rounded-xl border border-red-500 py-3 text-red-300" onClick={() => { setConfirmGroupDelete(true); setConfirmChecked(false); }}>グループ削除</button>}</div></Card>}
 
+      {isMemberOfGroup && myMemberId && <ClubOwnerTransfer key={`${id}:${myAuthUserId}`} clubId={id} visible={tab === "グループ管理"} onOwnerState={setOwnerState} onGroupRefresh={async () => { try { await load(); } catch { setError("グループ情報を取得できません。再読み込みしてください"); setLoading(false); } }} />}
+      {tab === "グループ管理" && isMemberOfGroup && ownerState !== "other" && <p className="text-xs text-zinc-400">{ownerState === "owner" ? "オーナーは引継ぎの完了後に、別の操作で退会できます。" : "退会する前に引継ぎ状況を確認してください。"}</p>}
       {isMemberOfGroup && myMemberId && tab === "グループ管理" && (
-        <button type="button" disabled={loading || selfLeaveBusy}
+        <button type="button" disabled={loading || selfLeaveBusy || ownerState !== "other"}
           className="w-full rounded-xl border border-red-500/70 p-3 text-sm text-red-300 disabled:opacity-50"
           onClick={() => { setConfirmSelfLeave(true); setSelfLeaveConfirmed(false); setSelfLeaveError(""); }}>
           このグループを退会する
         </button>
       )}
 
-      {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} nameEditable={canEditClubDisplayName(m, nameContext)} onEditName={setNameEditMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManageTargetMember(roleCtx, x.role)) return deny(); setError(""); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManageTargetMember(roleCtx, m.role) && <button disabled={loading} className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
+      {tab === "メンバー管理" && <Card title="メンバー管理"><div className="space-y-2">{canManage && <><input className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={(e) => setName(e.target.value)} /><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="w-full rounded-xl bg-accent py-3 font-semibold text-black disabled:bg-zinc-600" onClick={addMember}>メンバー追加</button></>}<div className="space-y-2">{members.map((m) => <MemberRow ownerProtected={m.linked_auth_user_id === myAuthUserId && ownerState !== "other"} key={m.id} member={m} editable={canManage} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isSuperUser || isMemberOfGroup} nameEditable={canEditClubDisplayName(m, nameContext)} onEditName={setNameEditMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r => r.source_player_profile_id === m.player_profile_id && r.status === "pending")} onDeactivate={(x) => { if (!canManageTargetMember(roleCtx, x.role)) return deny(); setError(""); setConfirmLeave(x); setConfirmChecked(false); }} />)}</div><div className="mt-4"><p className="mb-2 text-sm font-semibold">退会済みメンバー</p>{inactiveMembers.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : <div className="space-y-2">{inactiveMembers.map((m) => <div key={m.id} className="rounded-xl bg-zinc-800 p-3"><div className="flex items-center justify-between"><p className="font-semibold">{m.display_name}</p>{canManageTargetMember(roleCtx, m.role) && <button disabled={loading} className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => void restoreMember(m)}>復帰</button>}</div></div>)}</div>}</div></div></Card>}
 
       {tab === "グループ戦績" && (isMemberOfGroup||isSuperUser) && (
         <Card title="グループ戦績">
@@ -629,7 +638,7 @@ export default function GroupDetailPage() {
   );
 }
 
-function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, nameEditable, onEditName, onRole, onLink, clubId, pending, onDeactivate }: { member: Member; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; nameEditable: boolean; onEditName: (m: Member) => void; onRole: (m: Member, role: Role) => Promise<boolean>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
+function MemberRow({ member, ownerProtected, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, nameEditable, onEditName, onRole, onLink, clubId, pending, onDeactivate }: { member: Member; ownerProtected: boolean; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; nameEditable: boolean; onEditName: (m: Member) => void; onRole: (m: Member, role: Role) => Promise<boolean>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
   const [editing, setEditing] = useState(false);
   const [r, setR] = useState<Role>(member.role);
   const [search, setSearch] = useState("");
@@ -661,7 +670,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
       {editing ? (
         <div className="space-y-2">
           <p className="break-words font-semibold">{groupMemberLabel(member)}</p>
-          {!hideRoleAndOps && <div className="space-y-2"><label className="block text-xs" htmlFor={`member-role-${member.id}`}>役職</label><select id={`member-role-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={e => setR(e.target.value as Role)}><option value="main_admin" disabled={!canManageTargetMember({isSuperUser,myRole:currentRole},"main_admin")}>メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option></select><button disabled={loading} className="w-full rounded-lg border border-zinc-500 py-2" onClick={() => void onRole(member,r)}>役職を保存</button></div>}
+          {ownerProtected && <p className="text-xs text-zinc-400">オーナーの引継ぎ完了を確認するまで降格・退会はできません。</p>}{!hideRoleAndOps && <div className="space-y-2"><label className="block text-xs" htmlFor={`member-role-${member.id}`}>役職</label><select disabled={ownerProtected} id={`member-role-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={e => setR(e.target.value as Role)}><option value="main_admin" disabled={!canManageTargetMember({isSuperUser,myRole:currentRole},"main_admin")}>メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option></select><button disabled={loading || ownerProtected} className="w-full rounded-lg border border-zinc-500 py-2 disabled:opacity-50" onClick={() => void onRole(member,r)}>役職を保存</button></div>}
           <button disabled={loading} className="w-full rounded-lg border border-zinc-500 py-2" onClick={() => setEditing(false)}>閉じる</button>
           {!member.linked_auth_user_id && !pending && !hideRoleAndOps && <div className="mt-2 rounded-lg border border-zinc-600 p-2">
             <p className="mb-1 text-xs text-zinc-300">本人から確認したメールアドレス</p>
@@ -681,7 +690,7 @@ function MemberRow({ member, editable, currentRole, isSuperUser, loading, myAuth
       ) : (
         <div className="space-y-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2"><p className="min-w-0 break-words font-semibold">{member.public_unlinked !== undefined ? member.display_name : groupMemberLabel(member)}</p>{isLinkedSelf && <span className="app-badge badge-self">あなた</span>}{canViewRole && <span className="app-badge badge-role">{roleLabel[member.role]}</span>}</div>
-          {!cannotEdit && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!cannotEdit && <button className="rounded border border-red-500 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示／退会</button>}</div>}
+          {!cannotEdit && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!cannotEdit && <button disabled={ownerProtected} className="rounded border border-red-500 disabled:opacity-50 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示／退会</button>}</div>}
         </div>
       )}
       {nameEditable && !hideRoleAndOps && <button type="button" disabled={loading} className="mt-2 min-h-11 rounded-xl border border-zinc-500 px-3 text-sm" onClick={() => onEditName(member)}>{member.club_display_name === null ? "グループ内表示名を設定" : "表示名を編集"}</button>}

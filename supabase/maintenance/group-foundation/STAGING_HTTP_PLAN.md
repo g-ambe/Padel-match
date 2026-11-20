@@ -1,5 +1,24 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.24 2026-11-20：H18管理者発の連携名・受信者公開同意のDB実装と実JWT受入
+
+**承認済分担を遵守**：GPT＝DB設計・正式Migration・Stage SQL/Auth HTTP検証・レビュー、Codex＝Next.js/UI/アプリ側テスト、ユーザー＝リリース判断。既存作業ブランチとDraft PR #265のみ。**本番DB・Cloudflare・mainマージなし**。
+
+- H18設計正本 `77_h18_manager_profile_link_alias_design.md` とStageの既存`request_player_profile_link`、`get_player_profile_link_request`、`review_player_profile_link`、`profile_link_private.merge_profiles`の現物を再照合。旧コードの権限、受信者専用`scoped_preview/review_token`、グループ外履歴拒否、通知、merge監査を維持。
+- 正式Migration **`supabase/migrations/0061_receiver_named_profile_link.sql`** を同PRに追加。**Stageのみ適用**（名称 `task08_stage_0061_receiver_named_profile_link`）、Prod未適用。適用前の全DDLを`BEGIN/ROLLBACK`で検証PASS。既存profile名/所属/イベント/戦績の一括変更なし。
+- 新列`player_profile_link_requests.club_display_name_selected`と`club_display_name_public_confirmed_at`はnullableで、既存申請を補完・公開しない。受信者本人だけの`get_player_profile_link_request` pending DTOに`group_display_name_suggestion`（所属別名→未設定時は当該仮プロフィール名）、生の`group_display_name_current`（CAS用NULL許容）、`group_visibility`を追加。manager側DTOは非開示を保持。
+- 新承認RPC`review_player_profile_link_named(p_request_id,p_review_token,p_club_display_name,p_expected_club_display_name,p_public_confirmation)`は**受信者本人・pending期限内のみ**。管理者/第三者/匿名は拒否。公開グループでは本人公開確認trueが必須、非公開はpublic確認trueを拒否。表示名は1～120文字・制御文字なし、変更前のraw所属別名不一致は`PT409/HTTP409`。旧`review_player_profile_link`を**同じDBトランザクション内から呼び**、既存preview token・履歴スコープ・権限・canonical/merge確認を維持。元の所属行へ名/公開確認、申請本人選択名/日時、`merge_changes.after_row`の最終スナップショットを原子的に保存。旧拒否/取消APIや旧承認は残し、未確認linked名は名簿に公開しない。RPCのanon EXECUTE不可/authenticatedのみ可、新列にブラウザから直接UPDATE不可。
+- `78_h18_receiver_named_link_rollback_probe.sql`：既存Stage3 Authと**合成公開/非公開2クラブ＋仮選手3**を1トランザクション内だけ追加。管理者から本人連携を作成、本人/他人/権限分離/公開同意なし/古いtoken/CAS/非公開のpublicフラグ拒否、本人の新方式2件承認、従来方式1件承認、本人プロフィール名を変えずに表示名反映、旧承認の名前非公開、preview管理者の秘密非開示、merge監査before/after、sourceのactive解除、公開名簿の本人承認分だけ出力を確認。**判定18/18 TRUE、全行ROLLBACK**。
+- `tests/h18-receiver-profile-link.test.cjs`を通常Stage CIの静的回帰へ追加。認可・新DTO・CAS/確認/merge監査の回帰ガード。Stage Security Advisor：意図したauthenticated SECURITY DEFINER新RPCの警告あり、匿名実行は拒否。既存のその他の警告も別途監査対象。
+- ステージングの**実Auth JWT/PostgREST受入**：`79_h18_real_http_fixture_setup.sql`で一時合成公開/非公開2クラブ・在籍4・仮プロフィール2を作成。`81_h18_real_auth_http_once.mjs`で管理者本人ログインから2つの申請を送信し、受信者だけのalias初期提案・preview/token、管理者のDTO秘密非開示、匿名/第三者の承認拒否、公開未同意、CASのHTTP409/PT409、不正token、非公開の公開フラグ拒否、拒否後pendingの保持、未連携元名簿の継続表示を検証。
+- 最初の [Actions #44650866501](https://github.com/g-ambe/Padel-match/actions/runs/44650866501)／再試験 [#44651331548](https://github.com/g-ambe/Padel-match/actions/runs/44651331548) は**検証スクリプトのUUID形式の誤記**（8-4-4-12としてしまい、正しい8-4-4-4-12を不正判定）で停止。申請本体の実HTTPはHTTP200で保存され、DB pending/通知も2件あると確認。後続テストは未実行。型/CI本体はPASS。検証スクリプト修正→fixtureの厳密SQL cleanup/再セットアップを毎回実施。
+- 最終 [**Actions #44651613765**](https://github.com/g-ambe/Padel-match/actions/runs/44651613765) **Stage実JWT 16/16 PASS**。通常B0・TypeScript・既存静的回帰もPASS。JWT・パスワード・実ユーザーID・全レスポンスはログに出さず、ステータスとコード・件数のみ。
+- 実JWT申請で残ったpending2件をStageの`82_h18_real_http_pending_approval_rollback.sql`で**受信者本人としてロール切替し、新named RPCでpublic/private承認**。選択名・公開同意、本人profile ID統合、所属の変更、`merge_changes.before/after`、公開名簿の確認済み名のみを**7/7 TRUE、全体ROLLBACK**で確認。これは永続的な実HTTP承認ではなく、JWT作成済み行を使った本物のDB承認手順をSQL上でロール切替実行した試験。
+- `80_h18_real_http_fixture_cleanup.sql`は事前ROLLBACK検証・厳密件数/申請先/関連通知のガード後にStage COMMIT。各失敗/最終試験後に使用し、**最終clubs3/members12/player_profiles12/events0/link_requests0/merges0/notifications0、fixture0に復帰**。CIから一時writeテストを除去し通常read-only B0へ戻す。[**Actions #44651869941**](https://github.com/g-ambe/Padel-match/actions/runs/44651869941) **SUCCESS**（H12/H14/H15/H17/H18 static、TypeScript、Stage Auth B0）。ProdをREAD ONLYで確認：H18 named RPC未導入・基底表`club_members` anon SELECTリスク継続。**Prodへ単独デプロイ/移行禁止**。
+- Codexアプリ側引継ぎ `83_h18_codex_recipient_named_link_handoff.md` を作成。**CodexのH18 UIは未実装**。主対象は`app/profile/links/[id]/page.tsx`＋`lib/profile-links.ts`と関連ヘルプ/テスト。受信者の現行「同一人物の所属・戦績引継ぎ同意」と、公開グループの本人表示名の公開確認を区別し、個別CASのraw初期値と入力を失敗後も保持。Codex完了後にGPTがUI/DB統合をレビュー。
+- 既存のプロフィール回帰テスト12失敗（ベースライン）は今回修正していない。旧スコア不一致6件はユーザー指示により調査・修正保留。未完了のオーナー承諾引継ぎ・公開/RLS本番移行・3タブUI・R2・旧名同意の受入も別タスク。
+
+
 ## 0.23 2026-11-20：Codex 95834b8の実差分監査／H17実JWT HTTPと実申請の承認ROLLBACK／H18管理者発信ルート調査
 
 **分担**：GPT＝DB・Stage・権限と品質レビュー、Codex＝アプリとテスト。**Prod DB・Cloudflareデプロイ・マージなし／既存Draft PR #265継続**。

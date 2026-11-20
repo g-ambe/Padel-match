@@ -1,5 +1,19 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.27 2026-11-20：Codex H19 `93f4de1`レビューとStage実認証アプリヘルパー／2接続競合受入
+
+**既存Draft PR #265・`codex/task-08-group-foundation`のみ**。GPT＝DB/Stage/統合レビュー、Codex＝UI。**本番DB・Cloudflare本番公開・mainマージなし**。
+
+- Codex `93f4de1dd6396f97f475a7df00dcfd09b404a138` の実コミット8ファイルをGitHubで照合：`app/groups/[id]/page.tsx`、`app/groups/owner-transfers/[id]/page.tsx`、`components/club-owner-transfer.tsx`、`components/notifications-content.tsx`、`lib/club-owner-transfer.ts`、`lib/tutorial-content.ts`、`tests/club-owner-transfer.test.cjs`、`tests/browser/club-owner-transfer.cjs`。Migration 0062〜0064はCodex不変更。本人ownerだけの候補・申請/取消、受信本人の引受/辞退、既存通知でのリンク、二重送信/409の入力保持・明示再取得、旧ownerの独立退会を実装。3タブ/戦績をCodexが変更していないことを確認。Codex申告：単体関連35件、375px明暗H19/H16/H18合成ブラウザ、TypeScript、Cloudflare互換ビルドPASS。**GPTが実ブラウザ実機E2Eを直接行ったわけではない**。
+- commit `93f4de1`のGitHub check-runs：Workers Builds `padel-match-staging` と `private-media` が**SUCCESS**。プレビューの実アクセス動作や本番デプロイの確認ではない。
+- Stage `BEGIN READ ONLY/ROLLBACK`でH19の5つのRPCの引数名/返却型/認証GRANT、owner保護trigger、移譲テーブルのraw SELECT拒否を実DBとアプリの`lib/club-owner-transfer.ts`で照合。Stage clubs3/members12/transfers0/notifications0で開始、既存のAuth test account以外は改変しない。
+- `93_h19_app_helper_real_auth_once.cjs` を追加し、Stageの合成専用クラブを`88_h19_real_http_fixture_setup.sql`で作成。Node22・`@supabase/supabase-js`の隔離実依存で**Codex実装の`readOwnerCandidates/readMyOwnerTransfers/requestOwnerTransfer/decideOwnerTransfer`および既存`readMyMemberships`をそのまま実行**。本物のStage Auth JWT・PostgRESTで申請者/受取人/第三者を分離。本人ownerだけの候補取得、非owner拒否、送信者・受信者だけのpending一覧、第三者非開示、重複PT409、本人同意必須、第三者受諾拒否、受信者による辞退・辞退済再承認不可、rawテーブルSELECT不可、入力保持契約を検証。**Actions [#44664888030](https://github.com/g-ambe/Padel-match/actions/runs/44664888030) 18/18 PASS**。このシナリオでは実HTTPの所有者承諾は行わない。fixtureは既存厳密`89_h19_real_http_fixture_cleanup.sql`で全削除。
+- 続いて新しい**2独立接続同時競合**`94_h19_two_connection_stage_race_once.cjs`を同じ合成fixtureで一時実施。owner本人の**別々の認証済み2クライアントから同時に申請**→成功1件、片方PT409。受信者による`accepted`と現ownerによる`cancelled`を**別々の実JWTクライアントから同時に送信**→どちらか一方だけ成功、他方はPT409または42501。両者の申請状態一致、成功したownerの候補取得権限のみ維持、通知が申請と確定結果の2件のみになることを検証。**Actions [#44665313519](https://github.com/g-ambe/Padel-match/actions/runs/44665313519) 7/7 PASS**。これは**2接続競合の一部**であり、並列退会/候補者降格・他の連携とのすべての競合を網羅したものではない。
+- 承諾が成功した場合のみ**合成クラブのowner_idが一時的に移る**。そのため、両方の勝敗を完全に検証する厳密な`95_h19_real_race_fixture_cleanup.sql`を追加。初回DRYで`status`変数が列名と衝突するSQL検査エラーを検出（削除は実行されず）。`v_status`に修正し、**BEGIN/ROLLBACKで検証PASS後、Stageの対象合成クラブ・在籍3・申請1・通知2だけをCOMMIT削除**。最終のStageは**clubs3/members12/profiles12/events0/transfer_requests0/notifications0/fixture0**に復旧。既存グループ・Authプロフィール・戦績を変更しない。
+- CIに一時設置したStage WRITE実認証ステップは**完全削除**。恒常的なread-only CIには`node --test tests/club-owner-transfer.test.cjs`のみ追加。`93`・`94`のワンショットスクリプトは再現用に保持し、通常CIで自動実行しない。後片付け後の [**Actions #44665591782**](https://github.com/g-ambe/Padel-match/actions/runs/44665591782) **SUCCESS**（H19 app unit、既存H12/H14/H15/H17/H18/H19静的、TypeScript、Stage実Auth B0）。
+- **未完了：Stageプレビューでの本人ブラウザE2E／実機、候補者降格・同時退会とacceptの複合ストレス、Prod P0のanon基底表権限切替・Migration適用・本番公開/マージ判断。** 既知プロフィール回帰12失敗は変更していない。旧スコア例外6件はユーザー指示で保留。Issue #264を作業記録の正本として継続。
+
+
 ## 0.26 2026-11-20：H19本人承諾付きオーナー引継ぎ（DB Stage実装・Auth受入）
 
 **正本**：[Issue #264](https://github.com/g-ambe/Padel-match/issues/264) の「オーナー引継ぎ（本人承諾必須・ユーザー確定）」A案。**役割分担維持**：GPT＝DB/Migration/Stage検証、Codex＝アプリUIとテスト。既存Draft PR #265のみ更新、本番DB・Cloudflare本番・mainマージなし。

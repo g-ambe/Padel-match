@@ -1,5 +1,20 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.23 2026-11-20：Codex 95834b8の実差分監査／H17実JWT HTTPと実申請の承認ROLLBACK／H18管理者発信ルート調査
+
+**分担**：GPT＝DB・Stage・権限と品質レビュー、Codex＝アプリとテスト。**Prod DB・Cloudflareデプロイ・マージなし／既存Draft PR #265継続**。
+
+- Codex H17更新 `95834b8919aba20fb8e50e6518590398812d7f30` をGitHub実差分で確認。変更は**6ファイル**（`app/groups/[id]/page.tsx`、`components/public-club-join-dialog.tsx`、`lib/public-club-join.ts`、`lib/tutorial-content.ts`、`tests/public-club-join.test.cjs`、`tests/browser/public-club-join.cjs`）。`0058`〜`0060`は不変更。公開用参照`reference`と`review_token`、仮登録名の初期値、本人の引継ぎ同意・公開チェック、失敗時POP/入力保持、新RPC`submit_public_club_claim_named`の使用を確認。Codex報告の8件新規単体、375px明暗、TypeScript・Cloudflare互換ビルド成功を受領。**GPTはCodexの手動ブラウザ試験を再実行していない**。既存プロフィールテスト12失敗は別件で今回未再実行。
+- `73_h17_real_http_fixture_setup.sql`でStageにだけ合成公開グループ1件・在籍2名（既存Authのowner+別の未連携合成選手）を一時作成。Stage baseline groups3/members12/profiles12/events0/joins0から厳密にguardし、事前ROLLBACK成功後に適用。既存Auth/profile名/他所属・過去試合不変更。
+- `75_h17_real_auth_http_once.mjs`で既存Stageの3テストAuthの**本物のJWT/PostgREST**を使い、通常新規加入1件と仮登録の本人申請1件を送信。公開名簿の3列最小DTO、匿名・公開未同意・無効参照・生所属IDの内部RPC拒否、本人preview/token、管理者の申請閲覧、申請中は名簿に公開せず所属も増えないことを検証。
+- 初回 [Actions #44644684504](https://github.com/g-ambe/Padel-match/actions/runs/44644684504) は**テスト想定誤り1件**：`join_requests`基底表の機密列を直接SELECTして403（正常なACL境界）、テスト側がデータ取得を期待。2回目 [#44645125366](https://github.com/g-ambe/Padel-match/actions/runs/44645125366) はID列がSELECT可能という既存列単位ACLを「全列拒否」と誤判定。DB本体・Codexアプリの不具合ではなく、テストを**管理者向け`get_club_join_requests`でpendingを取得し、本人希望別名・同意/プレビューの機密列だけ直接SELECTを拒否**する正確な仕様に変更した。
+- それぞれのStage一時fixture/申請・通知を`74_h17_real_http_fixture_cleanup.sql`で全件削除し、クリーン再作成して再試験。[**Actions #44645381119**](https://github.com/g-ambe/Padel-match/actions/runs/44645381119) **実JWT HTTP 13/13 PASS**、B0/TypeScript PASS。ログにJWT/本人情報/申請ID/実名・返却本文なし。
+- 実HTTPから作られたpending申請2件について、`76_h17_real_http_requests_approval_rollback.sql`をStage実行。本人が選んだ名前と公開同意のSnapshotが2件保存、仮登録は既存review_tokenとconsent_snapshot保存。管理者の`review_profile_join_request`承認で2件とも本人別名が`club_members`へ同トランザクションで反映、仮登録sourceの正規プロフィールへの統合・本人名不変・`merge_changes`before/after監査整合、公開名簿は本人同意済み2名だけになることを**すべてtrueで確認後ROLLBACK**。実HTTPによる承認ではなく、DBロール切替SQLによる承認試験である点を区別する。
+- 最終の`74` cleanupは**Stage基準値 groups3/members12/profiles12/events0/joins0/notifications0・合成fixture残存0に復帰**。書込の一時CIステップを**削除**し、通常READ ONLY B0へ復元。[**Actions #44645615173**](https://github.com/g-ambe/Padel-match/actions/runs/44645615173) **SUCCESS**（H12/H14/H15/H17 static、TypeScript、既存Stage JWT Auth/PostgREST B0）。GitHubには一時テスト用ファイル73〜76のみ記録、恒常的なCI書き込みなし。
+- 次のDB課題 H18＝**管理者発信の`player_profile_link_requests`の受信者本人公開確認と別名選択**。現物の`request_player_profile_link`、`get_player_profile_link_request`、`review_player_profile_link`と`profile_link_private.merge_profiles`をStage READ ONLYで照合。現行には本人選択名/公開同意保存先がなく、受信者表示名提案もグループ別名と未同期。既存旧承認はH16名簿の確認済み判定がない限り新linked名を公開しない安全側の挙動。**設計は`77_h18_manager_profile_link_alias_design.md`で記録済み、H18新Migration未作成・未適用。** 旧検索加入RPC/統合監査と混ぜず、受信者だけの新承認RPC/追加DTOで進める計画。
+- Prodは匿名基底表SELECTと新RPC/移行未適用が残る。旧スコア不一致6件はユーザー指示により保留。本番リリースの許可は出ていない。
+
+
 ## 0.22 2026-11-20：H16 Codex PT409追従確認＋H17 検索加入時の別名/本人同意と原子的承認
 
 **分担**：GPTはDB設計・Stage適用・ロール切替/ROLLBACK試験・品質管理。Codexはアプリ/POP/入力/関連テスト。**PR #265 Draft維持。本番DB変更・mainマージ・Cloudflareデプロイなし**。

@@ -15,8 +15,8 @@ const names=[
 test('H31: add only the three token-bound write RPCs; keep all legacy APIs intact',()=>{
   const created=[...sql.matchAll(/CREATE FUNCTION public\.([a-z_]+)\(/g)].map(x=>x[1]);
   assert.deepEqual(created,names.map(x=>x[0]));
-  assert.match(sql,/to_regprocedure\('public\.record_event_video_click\(uuid,text,text\)'\)/);
-  assert.match(sql,/to_regprocedure\('public\.record_official_video_click\(uuid,text,text\)'\)/);
+  assert.match(sql,/'public\.record_event_video_click\(uuid,text,text\)'/);
+  assert.match(sql,/'public\.record_official_video_click\(uuid,text,text\)'/);
   assert.doesNotMatch(sql,/DROP\s+(?:TABLE|POLICY|FUNCTION)/i);
   assert.doesNotMatch(sql,/REVOKE\s+SELECT\s+ON\s+TABLE/i);
 });

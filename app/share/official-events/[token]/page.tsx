@@ -6,7 +6,6 @@ import { OfficialStatsCard } from "@/components/official-stats-card";
 import { Card } from "@/components/ui";
 import { SharedPageHeader } from "@/components/shared-page-header";
 import { buildOfficialStats, officialStatusLabel } from "@/lib/official-matches";
-import { getSupabaseClient } from "@/lib/supabase";
 import { getSharedEventClient } from "@/lib/shared-event-client";
 
 type OfficialEvent = { title: string; event_date: string | null; description: string | null; memo: string | null; status: string; clubs?: { name: string } | null };
@@ -65,23 +64,20 @@ export default function SharedOfficialEventPage() {
     .sort((a, b) => a.match_order - b.match_order || (a.created_at ?? "").localeCompare(b.created_at ?? "") || a.id.localeCompare(b.id));
 
   const logClickError = (error: any) => {
-    console.warn("オフィシャルチームマッチ動画クリックの記録に失敗しました", {
-      message: error?.message,
-      code: error?.code,
-      details: error?.details,
-      hint: error?.hint
-    });
+    // Avoid logging any request context that might include the shared token.
+    console.warn("オフィシャルチームマッチ動画クリックの記録に失敗しました", { code: error?.code ?? null });
   };
 
   const recordVideoClick = (matchId: string) => {
-    const supabase = getSupabaseClient();
+    const supabase = getSharedEventClient(token);
     if (!supabase) return;
     void (async () => {
       try {
-        const { error } = await supabase.rpc("record_official_video_click", {
-          match_id: matchId,
-          user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
-          referrer: typeof document === "undefined" ? null : document.referrer
+        const { error } = await supabase.rpc("record_official_video_click_by_token", {
+          p_match_id: matchId,
+          p_share_token: token,
+          p_user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
+          p_referrer: typeof document === "undefined" ? null : document.referrer
         });
         if (error) logClickError(error);
       } catch (err) {

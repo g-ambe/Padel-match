@@ -170,7 +170,7 @@ function fixture() {
 }
 async function groupStats(s, legacy = false, initial = {}) {
   const state = { ...initial };
-  const bindings = { console:{error() {}}, getSupabaseClient:() => s, id:'club-a', setError:v=>state.error=v, setIndividualRows:v=>state.individual=v, setPairRows:v=>state.pairs=v, setEventHistoryRows:v=>state.events=v };
+  const bindings = { console:{error() {}}, getSupabaseClient:() => s, id:'club-a', alive:{current:true}, setStatsError:v=>{if(v)state.error=v;}, setError:v=>state.error=v, setIndividualRows:v=>state.individual=v, setPairRows:v=>state.pairs=v, setEventHistoryRows:v=>state.events=v };
   await (legacy ? evaluate(legacySource(),'loadStats',bindings) : handler('app/groups/[id]/page.tsx','loadStats',bindings))();
   return state;
 }

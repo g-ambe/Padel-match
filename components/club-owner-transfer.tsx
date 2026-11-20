@@ -8,8 +8,8 @@ import { canAcceptOwnerTransfer, decideOwnerTransfer, ownerTransferLabel, readMy
   type OwnerCandidate, type OwnerMembership, type OwnerTransfer } from "@/lib/club-owner-transfer";
 
 export type OwnerState = "owner" | "other" | "unknown";
-export function ClubOwnerTransfer({ clubId, requestId, visible = true, linksOnly = false, onOwnerState, onGroupRefresh }: {
-  clubId?: string; requestId?: string; visible?: boolean; linksOnly?: boolean; onOwnerState?: (state: OwnerState) => void; onGroupRefresh?: () => Promise<void>;
+export function ClubOwnerTransfer({ clubId, requestId, visible = true, linksOnly = false, panelOpen, onPanelClose, onDetailOpenChange, detailDismiss, onOwnerState, onGroupRefresh }: {
+  clubId?: string; requestId?: string; visible?: boolean; linksOnly?: boolean; panelOpen?:boolean; onPanelClose?:()=>void; onDetailOpenChange?:(open:boolean)=>void; detailDismiss?:number; onOwnerState?: (state: OwnerState) => void; onGroupRefresh?: () => Promise<void>;
 }) {
   const fieldId = useId(), inFlight = useRef(false), mounted = useRef(true), generation = useRef(0);
   const [rows, setRows] = useState<OwnerTransfer[]>([]), [memberships, setMemberships] = useState<OwnerMembership[]>([]);
@@ -19,6 +19,8 @@ export function ClubOwnerTransfer({ clubId, requestId, visible = true, linksOnly
   const [selected, setSelected] = useState(""), [selectedLabel, setSelectedLabel] = useState("");
   const [decision, setDecision] = useState<"accepted" | "declined" | "cancelled" | null>(null), [confirmed, setConfirmed] = useState(false);
   const [success, setSuccess] = useState("");
+  useEffect(()=>{onDetailOpenChange?.(open);},[open]);
+  useEffect(()=>{if(detailDismiss!==undefined)setOpen(false);},[detailDismiss]);
   const refresh = async (focusId = activeId) => {
     const s = getSupabaseClient(); if (!s) { setError("接続を確認できません。再読み込みしてください"); setVerified(false); return; }
     const version = generation.current;
@@ -86,7 +88,7 @@ export function ClubOwnerTransfer({ clubId, requestId, visible = true, linksOnly
     {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     <button type="button" disabled={busy} className="min-h-11 text-xs underline" onClick={() => void refresh()}>引継ぎ状況を再読み込み</button>
   </section>;
-  return <section aria-label="オーナー引継ぎ" className="space-y-3 text-sm">
+  const controls = <section aria-label="オーナー引継ぎ" className="space-y-3 text-sm">
     {clubId && isOwner && <button type="button" disabled={busy || !verified || pending} className="min-h-11 w-full rounded-xl border border-zinc-500 p-3 disabled:opacity-50"
       onClick={() => { setActiveId(null); setDecision(null); setConfirmed(false); setSuccess(""); setOpen(true); }}>オーナーを引き継ぐ</button>}
     {shown.map(r => <button key={r.id} type="button" disabled={busy} className="min-h-11 w-full rounded-xl bg-zinc-800 p-3 text-left" onClick={() => openDetail(r)}>
@@ -94,6 +96,8 @@ export function ClubOwnerTransfer({ clubId, requestId, visible = true, linksOnly
     {!clubId && shown.length === 0 && verified && <p className="text-xs text-zinc-400">{requestId ? "本人の確認可能な申請がありません。再読み込みして確認してください。" : "引継ぎ申請はありません"}</p>}
     {!open && error && <p role="alert" className="text-sm text-red-400">{error}</p>}
     <button type="button" disabled={busy} className="min-h-11 text-xs underline disabled:opacity-50" onClick={async () => { await refresh(); await onGroupRefresh?.(); }}>引継ぎ状況を再読み込み</button>
+  </section>;
+  return <>{panelOpen!==undefined?<AppDialog open={panelOpen&&!open} title="オーナー引継ぎ" busy={busy} onClose={()=>onPanelClose?.()}><div className="overflow-y-auto p-4">{controls}</div></AppDialog>:controls}
     <AppDialog open={open} title="オーナー引継ぎを確認" busy={busy} onClose={close}>
       <div className="space-y-4 overflow-y-auto p-4">
         {success ? <p role="status" className="break-words text-sm">{success}</p> : activeId ? request ? <>
@@ -130,5 +134,5 @@ export function ClubOwnerTransfer({ clubId, requestId, visible = true, linksOnly
         {request && <Link className="block min-h-11 py-3 text-center text-sm underline" href={`/groups/${request.club_id}`}>グループを確認する</Link>}
       </div>
     </AppDialog>
-  </section>;
+  </>;
 }

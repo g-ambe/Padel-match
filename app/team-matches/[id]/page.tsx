@@ -1,4 +1,5 @@
 "use client";
+import { GroupEventReturn } from "@/components/group-event-return";
 
 import { TeamMatchShortcut } from "@/components/team-match-shortcut";
 import { TeamRoundGenerator } from "@/components/team-round-generator";
@@ -318,6 +319,7 @@ export default function FriendlyTeamMatchDetailPage() {
     <Card title="開催操作"><div className="space-y-3 text-sm">{unsavedScoreCount>0&&<p role="status" className="text-xs text-amber-300">保存中・保存失敗のスコアが{unsavedScoreCount}件あります。保存完了・再試行後に終了できます。</p>}{event.status==="active"&&canManage&&<><select className="w-full rounded-xl bg-zinc-800 p-3" value={closeMode} onChange={(e)=>setCloseMode(e.target.value as any)}><option value="official">戦績に反映する</option><option value="record_only">記録用にする</option></select><button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" disabled={generationBusy||isClosingEvent||unsavedScoreCount>0} onClick={()=>void closeOrReopen("closed")}>フレンドリーチームマッチ終了</button></>}{event.status==="closed"&&<><p>フレンドリーチームマッチ終了済み（{event.stats_mode==="record_only"?"記録用":"戦績に反映する"}）</p>{canManage&&<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void closeOrReopen("active")}>フレンドリーチームマッチ再開</button>}{canManage&&(showDelete?<div className="space-y-2 rounded-xl border border-red-500/60 p-3"><label className="flex gap-2 text-xs"><input type="checkbox" checked={deleteOk} onChange={(e)=>setDeleteOk(e.target.checked)}/>削除すると元に戻せません</label><button className="w-full rounded bg-red-600 py-2 font-bold" onClick={()=>void deleteEvent()}>フレンドリーチームマッチ削除</button></div>:<button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>setShowDelete(true)}>フレンドリーチームマッチ削除</button>)}</>}</div></Card>
 </div></details>;
   return <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20 text-zinc-100">
+      <GroupEventReturn />
     <TeamMatchShortcut enabled={tab==="matches"&&canManage&&event.status!=="closed"} buttons={[manualButton,randomButton]} onClick={()=>addArea.current?.scrollIntoView({block:"center",behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?"auto":"smooth"})}/>
     <EditableEventTitle label="開催" name={event.name} canEdit={canManage} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={()=>void saveEventName()} onCancel={cancelEventNameEdit} />
     <p className="text-xs text-zinc-400">{officialStatusLabel(event.status)} · フレンドリーチーム戦</p>

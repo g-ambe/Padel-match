@@ -1,4 +1,5 @@
 "use client";
+import { GroupEventReturn } from "@/components/group-event-return";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -1519,6 +1520,7 @@ export default function EventDetailPage() {
 
   return (
     <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-1.5 p-3 pb-20">
+      <GroupEventReturn />
       <EditableEventTitle statusLabel={tabReady ? `${eventStatus === "closed" ? "終了済み" : "開催中"} · ${eventMode === "manual" ? "手動" : "乱数"}${guestMode ? " · ゲストの一時保存" : ""}` : ""} label="イベント詳細" name={eventName} canEdit={guestMode || canManageEventName} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={() => void saveEventName()} onCancel={cancelEventNameEdit} />
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
       {message && <p role="status" className="text-sm text-emerald-400">{message}</p>}

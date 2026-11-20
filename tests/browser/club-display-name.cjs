@@ -15,7 +15,7 @@ const base=process.env.CLUB_NAME_TEST_URL||'http://127.0.0.1:3070',remote='http:
   const c=await browser.newContext({viewport:{width:375,height:812},hasTouch:true,colorScheme:theme});
   const actor={...user};let outsider=false,fail=false,hold=false,release;
   const calls=[],outside=[],errors=[];
-  await c.addInitScript(({base,user})=>{if(location.origin!==base)return;const enc=x=>btoa(JSON.stringify(x)).replaceAll('=','').replaceAll('+','-').replaceAll('/','_');localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:`${enc({alg:'HS256'})}.${enc({sub:user.id,exp:Math.floor(Date.now()/1000)+7200,role:'authenticated'})}.synthetic`,refresh_token:'synthetic',expires_at:Math.floor(Date.now()/1000)+7200,user}));},{base,user:actor});
+  await c.addInitScript(({base,user})=>{if(location.origin!==base)return;user=JSON.parse(sessionStorage.getItem('club_test_actor')||'null')||user;const enc=x=>btoa(JSON.stringify(x)).replaceAll('=','').replaceAll('+','-').replaceAll('/','_');localStorage.setItem('sb-127-auth-token',JSON.stringify({access_token:`${enc({alg:'HS256'})}.${enc({sub:user.id,exp:Math.floor(Date.now()/1000)+7200,role:'authenticated'})}.synthetic`,refresh_token:'synthetic',expires_at:Math.floor(Date.now()/1000)+7200,user}));},{base,user:actor});
   const headers={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*','content-type':'application/json'};
   await c.route('**/*',async route=>{
    const req=route.request(),u=new URL(req.url()),method=req.method(),b=req.postData()?JSON.parse(req.postData()):null;
@@ -42,10 +42,11 @@ const base=process.env.CLUB_NAME_TEST_URL||'http://127.0.0.1:3070',remote='http:
    return route.fulfill({status:response.status,headers:{...headers,...Object.fromEntries(response.headers)},body:await response.text()});
   });
   const p=await c.newPage();p.setDefaultTimeout(18000);p.on('pageerror',e=>errors.push(e.message));
+  const membersTab=async()=>{await p.getByRole('tab',{name:'メンバー',exact:true}).waitFor();await p.waitForFunction(()=>!Array.from(document.querySelectorAll('[role=status]')).some(e=>e.textContent==='処理中...'));for(let i=0;i<6&&await p.locator('dialog[open]').count();i++){await p.keyboard.press('Escape');await p.waitForTimeout(80);}await p.getByRole('tab',{name:'メンバー',exact:true}).click();};
   const rows=()=>p.locator(`[data-member-id="${own.id}"]`),dialog=()=>p.getByRole('dialog',{name:'グループ内表示名を編集'});
-  const open=async()=>{await rows().getByRole('button',{name:/グループ内表示名を設定|表示名を編集/}).click();await dialog().waitFor();};
+  const open=async()=>{const member=p.getByRole('dialog',{name:'メンバー詳細',exact:true});if(!await member.isVisible())await rows().click();await member.getByRole('button',{name:/グループ内表示名を設定|表示名を編集/}).click();await dialog().waitFor();};
   const count=()=>calls.filter(c=>c.name==='save_club_member_display_name').length;
-  await p.goto(base+'/groups/'+clubA);await p.getByRole('button',{name:'メンバー管理',exact:true}).click();
+  await p.goto(base+'/groups/'+clubA);await membersTab();
   await rows().getByText('グループ内表示名 未設定（本人）',{exact:true}).waitFor();
   assert.equal(await p.locator(`[data-member-id="${id(94)}"]`).getByRole('button',{name:/表示名/}).count(),0);
   assert.equal(await p.locator(`[data-member-id="${id(95)}"]`).getByRole('button',{name:/表示名/}).count(),0);
@@ -62,15 +63,15 @@ const base=process.env.CLUB_NAME_TEST_URL||'http://127.0.0.1:3070',remote='http:
   assert.equal(calls.filter(c=>c.name==='get_club_roster').length,beforeReload+1);
   assert.equal(await dialog().getByLabel('グループ内表示名',{exact:true}).inputValue(),'競合でも保持');assert(!(await dialog().getByRole('checkbox').isChecked()));
   await dialog().getByRole('checkbox').check();await dialog().getByRole('button',{name:'保存',exact:true}).click();await dialog().waitFor({state:'hidden'});
-  f.tables.clubs.find(g=>g.id===clubA).visibility='private';await p.reload();await p.getByRole('button',{name:'メンバー管理',exact:true}).click();await open();
+  f.tables.clubs.find(g=>g.id===clubA).visibility='private';await p.reload();await membersTab();await open();
   assert.equal(await dialog().getByRole('checkbox').count(),0);await dialog().getByLabel('グループ内表示名',{exact:true}).fill('非公開の名前');await dialog().getByRole('button',{name:'保存',exact:true}).click();await dialog().waitFor({state:'hidden'});assert.equal(own.public_name_confirmed,false);
   // Administrative role never enables edits of another linked account; unlinked remains editable.
-  own.role='main_admin';await p.reload();await p.getByRole('button',{name:'メンバー管理',exact:true}).click();await p.locator(`[data-member-id="${id(95)}"]`).getByRole('button',{name:'グループ内表示名を設定'}).waitFor();
+  own.role='main_admin';await p.reload();await membersTab();await p.locator(`[data-member-id="${id(95)}"]`).click();await p.getByRole('dialog',{name:'メンバー詳細',exact:true}).getByRole('button',{name:'グループ内表示名を設定'}).waitFor();await p.getByRole('dialog',{name:'メンバー詳細',exact:true}).getByRole('button',{name:'閉じる',exact:true}).first().click();
   assert.equal(await p.locator(`[data-member-id="${id(94)}"]`).getByRole('button',{name:/表示名/}).count(),0);
   const rect=await rows().boundingBox();assert(rect.x>=0&&rect.x+rect.width<=375);assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   // Public result omits old/unconfirmed linked entries: no fallback roster or profile name.
-  outsider=true;actor.id=id(99);actor.email='outsider@example.invalid';f.tables.clubs.find(g=>g.id===clubA).visibility='public';own.role='member';const start=calls.length;
-  await p.reload();await p.getByRole('button',{name:'メンバー管理',exact:true}).click();await p.locator('[data-member-id]').getByText('仮登録名',{exact:true}).waitFor();
+  outsider=true;actor.id=id(99);actor.email='outsider@example.invalid';await p.evaluate(actor=>sessionStorage.setItem('club_test_actor',JSON.stringify(actor)),actor);f.tables.clubs.find(g=>g.id===clubA).visibility='public';own.role='member';const start=calls.length;
+  await p.reload();await membersTab();await p.locator('[data-member-id]').getByText('仮登録名',{exact:true}).waitFor();
   assert.equal(await p.getByText('他人の本人名',{exact:true}).count(),0);assert.equal(await p.getByText('非公開の名前（本人）',{exact:true}).count(),0);
   assert.equal(calls.slice(start).filter(c=>c.name==='get_club_roster').length,0);
   assert.deepEqual(f.tables.player_profiles,before);assert.deepEqual(errors,[]);assert.deepEqual(outside,[]);

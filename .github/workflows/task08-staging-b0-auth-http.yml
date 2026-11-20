@@ -69,7 +69,7 @@ jobs:
           "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" x tsc --noEmit
 
       - name: H31 token click migration and page source regressions
-        run: node --test tests/h31-token-video-click-gate.test.cjs tests/h32-token-click-migration-parity.test.cjs
+        run: node --test tests/h31-token-video-click-gate.test.cjs tests/h32-token-click-migration-parity.test.cjs tests/h33-video-click-referrer-privacy.test.cjs
 
       - name: Isolated test dependency install
         shell: bash
@@ -134,24 +134,3 @@ jobs:
           node --check supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs
           cp supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs "$RUNNER_TEMP/task08-b0/h31.mjs"
           node "$RUNNER_TEMP/task08-b0/h31.mjs"
-
-      - name: H33 CLI migration generation rehearsal (temporary, local only)
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/task08-supabase-cli" --no-audit --no-fund --no-package-lock supabase@2.81.3
-          cli="$RUNNER_TEMP/task08-supabase-cli/node_modules/.bin/supabase"
-          "$cli" --version
-          "$cli" migration new --help >/dev/null
-          mkdir -p "$RUNNER_TEMP/task08-h33/supabase/migrations"
-          cd "$RUNNER_TEMP/task08-h33"
-          "$cli" migration new task08_h33_stage_token_click_referrer_minimization
-          generated=$(find supabase/migrations -maxdepth 1 -type f -name '*_task08_h33_stage_token_click_referrer_minimization.sql')
-          test "$(printf '%s\n' "$generated" | wc -l)" -eq 1
-          echo "H33_CLI_GENERATED: $(basename "$generated")"
-          target="supabase/migrations/20261120094347_task08_h33_stage_token_click_referrer_minimization.sql"
-          mv "$generated" "$target"
-          cp "$GITHUB_WORKSPACE/supabase/maintenance/group-foundation/125_p0_h33_stage_click_referrer_minimization_apply.sql" "$target"
-          cmp "$target" "$GITHUB_WORKSPACE/supabase/maintenance/group-foundation/125_p0_h33_stage_click_referrer_minimization_apply.sql"
-          sha256sum "$target"
-          echo "H33_STAGE_VERSION_MATCHED_CLI_FILE: $(basename "$target")"

@@ -86,3 +86,17 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
+
+      # One-shot H19 Stage fixture 88 only; remove immediately after cleanup 89.
+      - name: H19 actual app helper using real Stage Auth (one shot)
+        shell: bash
+        env:
+          TASK08_H19_APP_ONCE: '1'
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          NODE_PATH="$RUNNER_TEMP/task08-b0/node_modules" node supabase/maintenance/group-foundation/93_h19_app_helper_real_auth_once.cjs
+

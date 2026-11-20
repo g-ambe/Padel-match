@@ -1,5 +1,14 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.29 2026-11-20：H22 Codex `7101a2c`レビューとアプリ実ヘルパーのStage認証結合
+
+- Codex実コミット [`7101a2c`](https://github.com/g-ambe/Padel-match/commit/7101a2ce1ff41760264bb79f6d96bb2104a8925f) をGitHubで照合。8ファイル：`app/groups/[id]/page.tsx`、`lib/group-read.ts`、`lib/tutorial-content.ts`、`tests/public-club-member-count.test.cjs`、`tests/browser/public-club-member-count.cjs`、既存ブラウザ3件。`get_public_club_member_count(p_club_id)`だけで正確な所属人数を取得し、非会員の公開グループ概要へ表示。人数0/取得エラー/異常レスポンスの分岐、フェイルクローズ、不明表示＋再読み込み、古いレスポンス抑止、非会員の内部名簿・戦績・開催情報・写真API非取得を維持する変更で、`0065`を含むDB/RLS/MigrationはCodex不変更。Codexが報告した関連87件と375px両テーマ/TS/OpenNext buildは**合成テストとビルド**。commit `7101a2c`のCloudflare `padel-match-staging` Workers BuildおよびGitHub `private-media` checkは共にSUCCESS。**実Stage UIブラウザ操作E2Eは未実施**。
+- **GPTが追加した読み取り専用アプリ実ヘルパー試験**：`102_h22_app_helper_real_auth_readonly.cjs`。GitHub Actionsの既存Stage専用Secretsを用い、Stage実Auth JWTでログイン。**Codexが作成した実`lib/group-read.ts`の`readPublicClubMemberCount`**と既存`readPublicDirectory`・`readMyMemberships`をNode22から読み込み、実Stage PostgRESTへ読取のみ接続。公開2クラブについて`get_public_club_member_count` scalarが実ヘルパー結果と一致し、元の公開名簿3列を維持し、名簿件数を実人数として使用しないことを検証。存在しないクラブ/匿名リクエストは拒否、アプリ側のエラーは固定文言で安全に処理。JWT・個人名・UUID・公開名簿の中身はログに出さない。**[Actions #44679196318](https://github.com/g-ambe/Padel-match/actions/runs/44679196318) 9/9 PASS**。同じ実行で以前のStage H22 DB直RPC 7/7、B0実Auth、関連unit/static、TypeScriptもSUCCESS。
+- `.github/workflows/task08-staging-b0-auth-http.yml`にH22**恒常read-only**実アプリヘルパー試験を追加。新しいStage書込 fixture・本番SQL・本番デプロイ・PRマージなし。
+- H22の公開人数連携は「DB + アプリヘルパーの実Stage JWT結合」までPASS。**プレビューURLの実ブラウザで画面全体を操作したわけではなく、実機/375px実Stage E2Eは残る**。また公開グループ概要での開催情報公開は掲載同意の仕様が未確定のため未実装。過去イベントのshare_enabledは無断で一覧公開に転用しない。
+- 本番P0（匿名基底テーブルSELECTとStage/Prod schema非対称）、本番Migration 0054〜0065未適用、全回帰の既知プロフィール12件失敗、旧スコア6例外のユーザー保留は継続。本番への一括適用はまだ不可。Issue #264、既存Draft PR #265のまま維持。
+
+
 ## 0.28 2026-11-20：H21 `efb8d81`レビューとH22公開所属人数RPCのStage DB/実Auth受入
 
 - Codex `efb8d8130486ab7b47f8bb475d9ef4497e8de9f6` をGitHub実ソースで確認。**H21の「概要・メンバー・戦績」3タブ、右上「…」と共通POP、元画面・スクロール復帰、未所属者の内部DTO取得抑止**を実装。22ファイル変更、DB Migration/Cloudflare設定/既存集計計算は不変更。Codex報告：関連80件、375px明暗H21/H15〜H19、チュートリアル、TypeScript/OpenNext build PASS（GPTはこの合成ブラウザを直接再実行したわけではない）。[コミット `efb8d81`](https://github.com/g-ambe/Padel-match/commit/efb8d8130486ab7b47f8bb475d9ef4497e8de9f6) のCloudflare staging Workers Buildとprivate-media checkはGitHubでSUCCESS確認。

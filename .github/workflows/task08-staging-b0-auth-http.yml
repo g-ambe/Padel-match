@@ -54,6 +54,9 @@ jobs:
       - name: H12 token-only UI and minimal DTO regression checks
         run: node --test tests/shared-event-page-rpc.test.cjs tests/shared-event-rpc-release.test.cjs tests/h14-history-audit.test.cjs tests/h15-self-withdraw.test.cjs tests/h17-join-alias-db.test.cjs tests/h18-receiver-profile-link.test.cjs
 
+      - name: H18 actual application helper unit regression (no DB writes)
+        run: node --test tests/recipient-profile-link.test.cjs
+
       - name: TypeScript compile validation (no deployment)
         shell: bash
         run: |
@@ -83,3 +86,18 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
+
+      # ONE SHOT ONLY: Stage SQL 79 has created a strictly isolated fixture.
+      # Remove this write test immediately after Stage SQL 80 cleanup.
+      - name: H18 actual app approval helper over Stage JWT (one shot)
+        shell: bash
+        env:
+          TASK08_H18_APP_JWT_ONCE: '1'
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node supabase/maintenance/group-foundation/84_h18_app_helper_real_auth_once.cjs
+

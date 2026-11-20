@@ -83,3 +83,19 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
+
+      # Stage-only, one-shot pending links from synthetic SQL 79.
+      # MUST remove after guarded fixture cleanup 80; never deploy.
+      - name: H18 real JWT receiver preview and named approval guard (one shot)
+        shell: bash
+        env:
+          TASK08_H18_STAGE_WRITE: '1'
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cp supabase/maintenance/group-foundation/81_h18_real_auth_http_once.mjs "$RUNNER_TEMP/task08-b0/h18.mjs"
+          node "$RUNNER_TEMP/task08-b0/h18.mjs"
+

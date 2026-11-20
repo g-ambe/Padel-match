@@ -1,5 +1,17 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.30 2026-11-20：P0本番匿名アクセス遮断の互換性移行ゲート（H23）
+
+- ユーザーの優先順に従い、**P0をGPT主導**として、ProdはREAD ONLY、Stageは安全なMigration補完だけを実施。既存Draft PR #265・同ブランチを継続。本番DB・Cloudflare本番・mainマージは未操作。
+- `103_p0_stage_prod_parity_readonly.sql`をStage/Prod双方で同じ`BEGIN READ ONLY ... ROLLBACK`で実行。**Stageは重要12表のanon SELECT列GRANTなし、公開グループRPC群あり／一方Prod固定ペア・試合操作・非公開画像のpublic 9表、関連private schema・RPCを欠く**。**Prodは9表と既存関数あり／重要12表のanon列SELECT許可が残り、新グループ公開/オーナーRPCなし**。本番の匿名行可視性（H20で所属41・プロフィール26等）は別途確認済、P0は未修正。
+- Prodのみ実在する既存利用件数（READ ONLY・行本文なし）：fixed pair state 8、fixed pair entries 2、fixed pair rounds 64、friendly match operations 89、private profiles 1、media objects/operations/attempts各1、通常events89、official events4。**これらをDROP/初期化/本番→Stage無断コピーしない**。
+- 施設マスターはStage9、Prod24。Stageは`padel_facilities`の`0051`追加5列が未存在。`user_preferences.tutorial_status`もStageで未存在だったため、原本Migration `0046_user_preferences_tutorial_status.sql`を**Stageで事前BEGIN/ROLLBACKした後、`task08_stage_0046_tutorial_status_parity`としてStageのみに適用**。事後READ ONLYでdefault unseen/CHECK、Stage clubs3/members12/profiles12/events0／user_preferences0を確認、データ改変なし。
+- `0040`・`0041`は強いテーブルロックと原本のバックアップ・復元確認を必須とするため、**今回はStageにも自動適用しない**。`0042`・`0043`はこの順序を前提。`0048`は`profile_media_private.settings.commit_secret_sha256`を通じたR2/画像秘密情報との整合確認が必要で、Stage専用の画像・キー/GCを用意するまで未適用。`0049〜0051`は`0048`後。`0052/0053`は既存9施設の名称・住所整合とmigration ledgerを確認後に適用判断。**Prodの既存行を無断更新しない**。
+- 正式な差分・順序・停止条件：`104_p0_compatible_cutover_sequence.md`。匿名アクセスの広域REVOKEだけを本番で先に実行すると既存共有画面を破壊し得るため、**Codexによる消費者のファイル/行単位棚卸し→必要な互換RPC→アプリ切替→匿名ACL閉鎖→実HTTP認証済/anon両受入**を、一つの本番承認計画にまとめる。Codexへ勝手なDB/RLS変更を依頼しない。
+- Stageの既存READ ONLY CIを再実行：[**Actions #44681120299**](https://github.com/g-ambe/Padel-match/actions/runs/44681120299) **SUCCESS**。H12/H15/H17/H18/H19/H22の静的テスト、TypeScript、Stage実Auth B0、H22のDB直RPCと実アプリヘルパーのStage実JWT確認を実行。ステージングSQL適用以外の書込CIはなし。
+- **現在の結論：StageはP0遮断の正例だが、Prod機能とのパリティゲート未通過。Prodは既存機能が稼働中だが匿名P0公開状態を維持。** 許可されるのはStageバックアップ/互換検証・ソース監査のみ。main merge／Prod SQL／Cloudflare本番デプロイはユーザー承認まで禁止。
+
+
 ## 0.29 2026-11-20：H22 Codex `7101a2c`レビューとアプリ実ヘルパーのStage認証結合
 
 - Codex実コミット [`7101a2c`](https://github.com/g-ambe/Padel-match/commit/7101a2ce1ff41760264bb79f6d96bb2104a8925f) をGitHubで照合。8ファイル：`app/groups/[id]/page.tsx`、`lib/group-read.ts`、`lib/tutorial-content.ts`、`tests/public-club-member-count.test.cjs`、`tests/browser/public-club-member-count.cjs`、既存ブラウザ3件。`get_public_club_member_count(p_club_id)`だけで正確な所属人数を取得し、非会員の公開グループ概要へ表示。人数0/取得エラー/異常レスポンスの分岐、フェイルクローズ、不明表示＋再読み込み、古いレスポンス抑止、非会員の内部名簿・戦績・開催情報・写真API非取得を維持する変更で、`0065`を含むDB/RLS/MigrationはCodex不変更。Codexが報告した関連87件と375px両テーマ/TS/OpenNext buildは**合成テストとビルド**。commit `7101a2c`のCloudflare `padel-match-staging` Workers BuildおよびGitHub `private-media` checkは共にSUCCESS。**実Stage UIブラウザ操作E2Eは未実施**。

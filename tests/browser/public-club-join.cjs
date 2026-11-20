@@ -22,6 +22,7 @@ const base=process.env.NAMED_JOIN_TEST_URL||'http://127.0.0.1:3070',remote='http
    if(method==='OPTIONS')return answer(200,{});if(u.pathname.startsWith('/auth/'))return answer(200,user);
    const name=u.pathname.split('/').at(-1);calls.push({name,method,body});
    if(name==='get_my_club_memberships')return answer(200,[]);
+   if(name==='get_public_club_member_count')return answer(200,4);
    if(name==='get_public_club_directory')return answer(200,body.p_club_id===clubA?directory:[]);
    if(name==='get_club_join_requests')return answer(200,pending);
    if(name==='get_club_join_request_names')return answer(200,[{id:user.id,display_name:'本人'}]);

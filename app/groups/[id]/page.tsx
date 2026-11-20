@@ -2,7 +2,7 @@
 import { activeGroupMembership, groupPreview, groupTabs, readGroupEvents, type GroupEvent, type GroupTab, type GroupStatTab } from "@/lib/group-detail";
 import { readGroupOrigin, safeGroupReturn, readGroupEventReturn } from "@/lib/group-detail-navigation";
 import { useSessionAccount } from "@/components/use-session-account";
-import { readMyMemberships, readClubRoster, readPublicDirectory, readJoinRequestNames, type RosterMember } from "@/lib/group-read";
+import { readMyMemberships, readClubRoster, readPublicDirectory, readPublicClubMemberCount, readJoinRequestNames, type RosterMember } from "@/lib/group-read";
 import { ClubOwnerTransfer, type OwnerState } from "@/components/club-owner-transfer";
 import { PublicClubJoinDialog } from "@/components/public-club-join-dialog";
 import { ClubDisplayNameDialog } from "@/components/club-display-name-dialog";
@@ -97,6 +97,7 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
 
 
   const [members, setMembers] = useState<Member[]>([]);
+  const [publicMemberCount,setPublicMemberCount]=useState<number|null>(null),[memberCountError,setMemberCountError]=useState("");
   const [inactiveMembers, setInactiveMembers] = useState<Member[]>([]);
   const [nameEditMember, setNameEditMember] = useState<Member | null>(null);
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
@@ -232,7 +233,7 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
 
   const load = async () => {
     const s=getSupabaseClient(),version=++loadVersion.current,valid=()=>alive.current&&loadVersion.current===version;
-    setLoading(true);setError("");
+    setLoading(true);setError("");setPublicMemberCount(null);setMemberCountError("");
     if(!s||!id){setError("グループの設定を確認できません");setLoading(false);return;}
     const {data:auth,error:authError}=await s.auth.getUser();
     if(!valid())return;
@@ -255,6 +256,10 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
     if(!valid())return;
     const sorted=sortMembers(data);setMembers(sorted.filter(m=>m.is_active&&m.player_active));setInactiveMembers(own?sorted.filter(m=>!m.is_active&&m.player_active):[]);
     setCanViewGroup(true);
+    if(!own&&group.visibility==="public"){
+      try{const count=await readPublicClubMemberCount(s,id);if(!valid())return;setPublicMemberCount(count);}
+      catch{if(!valid())return;setMemberCountError("所属人数を取得できませんでした");}
+    }
     // Management DTOs are not read for public visitors. The one exception is their own H17 request, loaded on demand.
     setJoinRequests([]);setLinkRequests([]);setMyPendingRequest(null);
     if(own&&(superUser||own.role==="main_admin"||own.role==="sub_admin")){
@@ -528,8 +533,8 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
     <div role="tablist" aria-label="グループ詳細" className={`grid gap-2 ${isMemberOfGroup?"grid-cols-3":"grid-cols-2"}`}>{groupTabs(isMemberOfGroup).map(t=><button key={t} role="tab" aria-selected={tab===t} className={`min-h-11 rounded-xl p-2 text-sm ${tab===t?"bg-accent text-black":"bg-zinc-800 text-zinc-200"}`} onClick={()=>changeTab(t)}>{t}</button>)}</div>
     {tab==="概要"&&<>
       <Card title="グループ紹介"><p className="whitespace-pre-wrap break-words text-sm text-zinc-300">{groupDescription?(descriptionExpanded?groupDescription:groupDescription.slice(0,140))+(groupDescription.length>140&&!descriptionExpanded?"…":""):"紹介文は未設定です"}</p>{groupDescription.length>140&&<button className="min-h-11 text-xs underline" onClick={()=>setDescriptionExpanded(v=>!v)}>{descriptionExpanded?"閉じる":"もっと見る"}</button>}
-        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm"><dt className="text-zinc-400">活動施設</dt><dd className="break-words">{facilities.find(f=>f.id===facilityId)?.name??"未設定"}</dd><dt className="text-zinc-400">{isMemberOfGroup?"所属人数":"公開メンバー"}</dt><dd>{members.length}人</dd><dt className="text-zinc-400">公開状態</dt><dd>{visibility==="public"?"公開":"非公開"}</dd></dl>
-        {!isMemberOfGroup&&<p className="mt-2 text-xs text-zinc-400">公開に同意した名前と未連携メンバーのみ表示します。実際の所属人数とは異なる場合があります。</p>}
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm"><dt className="text-zinc-400">活動施設</dt><dd className="break-words">{facilities.find(f=>f.id===facilityId)?.name??"未設定"}</dd><dt className="text-zinc-400">所属人数</dt><dd>{isMemberOfGroup?`${members.length}人`:publicMemberCount!==null?`${publicMemberCount}人`:loading?"確認中…":"不明"}</dd><dt className="text-zinc-400">公開状態</dt><dd>{visibility==="public"?"公開":"非公開"}</dd></dl>
+        {!isMemberOfGroup&&memberCountError&&<div className="mt-2"><p role="alert" className="text-sm text-red-400">{memberCountError}</p><button type="button" disabled={loading} className="min-h-11 text-sm underline disabled:opacity-50" onClick={()=>void refreshGroup()}>所属人数を再読み込み</button></div>}
       </Card>
       <Card title="最近の開催">{isMemberOfGroup?<>{eventsError?<p role="alert" className="text-sm text-red-400">{eventsError}</p>:overviewEvents.length?eventRows(groupPreview(overviewEvents).visible):<p className="text-sm text-zinc-400">開催はありません</p>}{groupPreview(overviewEvents).hasMore&&<button className="min-h-11 text-sm underline" onClick={()=>pushPopup({kind:"events"})}>すべて見る</button>}</>:<p className="text-sm text-zinc-400">開催情報は所属後に確認できます。</p>}</Card>
     </>}

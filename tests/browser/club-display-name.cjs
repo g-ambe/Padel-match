@@ -27,6 +27,7 @@ const base=process.env.CLUB_NAME_TEST_URL||'http://127.0.0.1:3070',remote='http:
    const name=u.pathname.split('/').at(-1);calls.push({name,method,b});
    if(name==='get_my_club_memberships')return answer(200,outsider?[]:f.tables.club_members.filter(m=>m.player_profile_id===player));
    if(name==='get_club_roster')return answer(outsider?403:200,outsider?{code:'42501',message:'denied'}:f.tables.club_members.filter(m=>m.club_id===b.p_club_id).map(m=>{const p=f.tables.player_profiles.find(p=>p.id===m.player_profile_id);return{...m,player_profiles:{...p,club_display_name:m.club_display_name,public_name_confirmed:m.public_name_confirmed}}}));
+   if(name==='get_public_club_member_count')return answer(200,f.tables.club_members.filter(m=>m.club_id===b.p_club_id&&m.is_active).length);
    if(name==='get_public_club_directory')return answer(200,f.tables.club_members.filter(m=>m.club_id===b.p_club_id&&m.is_active).flatMap(m=>{const p=f.tables.player_profiles.find(p=>p.id===m.player_profile_id);return !p.linked_auth_user_id||m.public_name_confirmed?[{reference:'opaque-'+m.id,display_name:m.club_display_name??p.display_name,is_unlinked:!p.linked_auth_user_id}]:[]}));
    if(name==='save_club_member_display_name'){
     if(hold)await new Promise(r=>release=r);

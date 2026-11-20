@@ -36,6 +36,7 @@ const base=process.env.GROUP_TABS_TEST_URL||'http://127.0.0.1:3070',remote='http
    if(name==='get_club_roster')return failRoster?answer(403,{code:'42501'}):answer(200,f.tables.club_members.filter(m=>m.club_id===body.p_club_id).map(m=>({...m,role:m.id===own.id?role:m.role,created_at:'2026-01-01',player_profiles:{...f.tables.player_profiles.find(p=>p.id===m.player_profile_id),club_display_name:'グループ別名'+m.id.slice(-2),public_name_confirmed:true}})));
    if(name==='get_club_stats_members')return answer(200,f.tables.club_members.filter(m=>m.club_id===body.p_club_id));
    if(name==='get_club_stats_player_names')return answer(200,f.tables.player_profiles.map(p=>({id:p.id,display_name:p.display_name})));
+   if(name==='get_public_club_member_count'){assert.equal(body.p_club_id,clubA);return answer(200,4);}
    if(name==='get_public_club_directory')return answer(200,[{reference:id(700),display_name:'公開確認済み名',is_unlinked:false},{reference:id(701),display_name:'仮メンバー名',is_unlinked:true}]);
    if(name==='get_club_owner_transfer_candidates')return answer(403,{code:'42501'});
    if(name==='clubs'&&method==='PATCH'&&failSetting){failSetting=false;return answer(403,{code:'42501'});}

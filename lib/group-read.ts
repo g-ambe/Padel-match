@@ -12,6 +12,15 @@ async function rows<T>(db: SupabaseClient, rpc: string, args?: Record<string, un
   }
 }
 export const readPublicDirectory = (db: SupabaseClient, club: string) => rows<DirectoryMember>(db, "get_public_club_directory", { p_club_id: club });
+// This scalar includes active members whose names are not in the public directory.
+// Never infer it from directory.length or fall back to a base-table SELECT.
+export async function readPublicClubMemberCount(db: SupabaseClient, clubId: string): Promise<number> {
+  try {
+    const { data, error } = await db.rpc("get_public_club_member_count", { p_club_id: clubId });
+    if (error || typeof data !== "number" || !Number.isSafeInteger(data) || data < 0) throw new Error("invalid count");
+    return data;
+  } catch { throw new Error("所属人数を取得できませんでした"); }
+}
 export const readMyMemberships = (db: SupabaseClient) => rows<{ id: string; club_id: string; role: string; is_active: boolean; status: string }>(db, "get_my_club_memberships");
 export const readEventCandidates = (db: SupabaseClient, event: string, club: string) => rows<{ member_id: string; player_profile_id: string; display_name: string }>(db, "get_event_club_candidates", { p_event_id: event, p_club_id: club });
 export const readEventNames = (db: SupabaseClient, event: string) => rows<ContextName>(db, "get_event_player_names", { p_event_id: event });

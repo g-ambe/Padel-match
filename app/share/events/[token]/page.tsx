@@ -127,7 +127,7 @@ export default function SharedEventPage() {
           p_match_id: matchId,
           p_share_token: token,
           p_user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
-          p_referrer: typeof document === "undefined" ? null : document.referrer
+          p_referrer: null // Never send referer URLs from token-bearing shared pages.
         });
         if (error) logClickError(error);
       } catch (err) {
@@ -150,7 +150,7 @@ export default function SharedEventPage() {
           p_video_link_id: videoLinkId,
           p_share_token: token,
           p_user_agent: typeof navigator === "undefined" ? null : navigator.userAgent,
-          p_referrer: typeof document === "undefined" ? null : document.referrer
+          p_referrer: null // Never send referer URLs from token-bearing shared pages.
         });
         if (error) logEventVideoLinkClickError(error);
       } catch (err) {

@@ -68,6 +68,9 @@ jobs:
           "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
           "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" x tsc --noEmit
 
+      - name: H31 token click migration and page source regressions
+        run: node --test tests/h31-token-video-click-gate.test.cjs
+
       - name: Isolated test dependency install
         shell: bash
         run: |
@@ -121,3 +124,13 @@ jobs:
           node --check supabase/maintenance/group-foundation/116_h29_stage_real_auth_clubs_readonly.mjs
           cp supabase/maintenance/group-foundation/116_h29_stage_real_auth_clubs_readonly.mjs "$RUNNER_TEMP/task08-b0/h29.mjs"
           node "$RUNNER_TEMP/task08-b0/h29.mjs"
+
+      - name: H31 Stage anon token click RPC Data API negatives (no-op only)
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          node --check supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs
+          cp supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs "$RUNNER_TEMP/task08-b0/h31.mjs"
+          node "$RUNNER_TEMP/task08-b0/h31.mjs"

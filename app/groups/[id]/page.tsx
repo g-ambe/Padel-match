@@ -1,5 +1,6 @@
 "use client";
-import { readMyMemberships, readClubRoster, readPublicDirectory, readJoinRequestNames, type PublicClaimPreview, type RosterMember } from "@/lib/group-read";
+import { readMyMemberships, readClubRoster, readPublicDirectory, readJoinRequestNames, type RosterMember } from "@/lib/group-read";
+import { PublicClubJoinDialog } from "@/components/public-club-join-dialog";
 import { ClubDisplayNameDialog } from "@/components/club-display-name-dialog";
 import { ClubDisplayNameError, canEditClubDisplayName, groupMemberLabel, saveClubDisplayName, type ClubNameMember } from "@/lib/club-display-name";
 
@@ -87,9 +88,6 @@ export default function GroupDetailPage() {
   const [name, setName] = useState("");
   const pendingMemberProfile = useRef<{ id: string; name: string } | null>(null);
   const [linkRequests, setLinkRequests] = useState<ProfileLinkRequest[]>([]);
-  const [joinPreview, setJoinPreview] = useState<PublicClaimPreview | null>(null);
-  const [joinConsent, setJoinConsent] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -106,11 +104,11 @@ export default function GroupDetailPage() {
   const [eventHistoryRows, setEventHistoryRows] = useState<any[]>([]);
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
   const [individualMode, setIndividualMode] = useState<IndividualMode>("総合ランキング");
-  const [targetMemberId, setTargetMemberId] = useState("");
-  const [joinMessage, setJoinMessage] = useState("");
   const [isMemberOfGroup, setIsMemberOfGroup] = useState(false);
   const [canViewGroup, setCanViewGroup] = useState(false);
   const [myPendingRequest, setMyPendingRequest] = useState<JoinRequest | null>(null);
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [joinSubmitted, setJoinSubmitted] = useState(false);
 
   const roleCtx = { isSuperUser, myRole };
   const nameContext = { ...roleCtx, clubId: id, userId: myAuthUserId, visibility };
@@ -271,6 +269,7 @@ export default function GroupDetailPage() {
       catch (cause) { setError(profileErrorMessage(cause)); }
     }
     setMyPendingRequest(normalizedReqs.find((r) => r.requester_auth_user_id === uid && r.status === "pending") ?? null);
+    if (!requestError) setJoinSubmitted(false);
 
     const { data: facilityRows, error: facilityErr } = await s.from("padel_facilities").select("id,name,prefecture,address,aliases,availability,usage_note").order("name", { ascending: true }).limit(500);
     if (facilityErr) setError("施設一覧の取得に失敗しました");
@@ -286,19 +285,7 @@ export default function GroupDetailPage() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("tab") === "stats") setTab("グループ戦績");
   }, [id]);
-  useEffect(() => {
-    let active = true;
-    setJoinPreview(null); setJoinConsent(false); setPreviewLoading(false);
-    const s = getSupabaseClient();
-    if (s && targetMemberId) {
-      setPreviewLoading(true);
-      void profileLinkRpc<PublicClaimPreview>(s, "preview_public_club_claim", { p_club_id: id, p_reference: targetMemberId })
-        .then(data => { if (active) setJoinPreview(data); })
-        .catch(cause => { if (active) setError(profileErrorMessage(cause)); })
-        .finally(() => { if (active) setPreviewLoading(false); });
-    }
-    return () => { active = false; };
-  }, [id, targetMemberId]);
+  useEffect(() => { setJoinDialogOpen(false); setJoinSubmitted(false); }, [id]);
 
   const activeMainAdmins = useMemo(() => members.filter((m) => m.role === "main_admin").length, [members]);
   const rankedIndividuals = useMemo(() => {
@@ -437,20 +424,6 @@ export default function GroupDetailPage() {
 
 
 
-  const submitJoinRequest = async () => {
-    const s = getSupabaseClient(); if (!s || !id || loading) return;
-    if (isMemberOfGroup) return setError("既にこのグループのメンバーです");
-    if (myPendingRequest) return setError("申請中です");
-    if (targetMemberId && (!joinPreview || !joinConsent || previewLoading)) return setError("引き継ぐ内容を確認して同意してください");
-    setLoading(true); setError(""); setMessage("");
-    try {
-      await profileLinkRpc<string>(s, "submit_public_club_claim", { p_club_id: id, p_reference: targetMemberId || null, p_message: joinMessage.trim() || null, p_review_token: joinPreview?.review_token ?? null });
-      setMessage("加入申請を送信しました"); setTargetMemberId(""); setJoinMessage(""); setJoinConsent(false);
-      await load();
-    } catch (cause) { setError(profileErrorMessage(cause)); }
-    finally { setLoading(false); }
-  };
-
   const reviewJoinRequest = async (req: JoinRequest, next: "approved" | "rejected" | "cancelled") => {
     const s = getSupabaseClient(); if (!s || !id || loading) return;
     if (!canManage && !(next === "cancelled" && req.requester_auth_user_id === myAuthUserId)) return deny();
@@ -577,14 +550,18 @@ export default function GroupDetailPage() {
 
 
       {!isMemberOfGroup && visibility === "public" && <Card title="加入申請"><div className="space-y-3">
-        <p className="text-xs text-zinc-300">本人の仮登録選手を選ぶ場合は、引き継ぐ内容への同意が必要です。</p>
-        <select aria-label="加入時に引き継ぐ仮登録選手" disabled={loading || !!myPendingRequest} className="w-full rounded-xl bg-zinc-800 p-3" value={targetMemberId} onChange={e => setTargetMemberId(e.target.value)}><option value="">選択しない（正規プロフィールで加入）</option>{members.filter(m => m.public_unlinked===true).map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}</select>
-        {previewLoading && <p className="text-xs text-zinc-400">引き継ぐ内容を確認中...</p>}
-        {joinPreview && <><div className="space-y-2 text-sm"><p>仮登録選手：{joinPreview.display_name}</p><p>引き継ぐ所属 {joinPreview.membership_count}件・参加 {joinPreview.participant_count}件・通常試合 {joinPreview.match_count}件・チーム戦 {joinPreview.team_match_count}件・公式戦 {joinPreview.official_match_count}件</p><p>本人プロフィール：{joinPreview.target_display_name??"未作成"}</p><p>管理者の承認後、過去の所属・参加・戦績を本人プロフィールへ引き継ぎます。</p></div><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={joinConsent} onChange={e => setJoinConsent(e.target.checked)} /><span>この仮登録選手が自分であり、管理者の承認後に表示された所属・戦績を引き継ぐことに同意します</span></label></>}
-        <textarea disabled={loading} className="w-full rounded-xl bg-zinc-800 p-3" placeholder="メッセージ" value={joinMessage} onChange={e => setJoinMessage(e.target.value)} />
-        <p className="text-xs text-zinc-400">正規プロフィールが未作成の場合は、<Link href="/profile" className="underline">プロフィール画面</Link>で作成してください。申請は7日で期限切れになります。</p>
-        {myPendingRequest ? <p className="text-sm text-zinc-300">申請中です</p> : <button disabled={loading || previewLoading || (!!targetMemberId && (!joinConsent || !joinPreview?.has_target))} className="w-full rounded-xl bg-accent py-2 text-black disabled:bg-zinc-600" onClick={() => void submitJoinRequest()}>申請する</button>}
+        <p className="text-sm text-zinc-300">このグループで使う表示名と公開内容を確認して申請します。仮登録選手を引き継ぐ場合は本人の同意が必要です。</p>
+        {myPendingRequest || joinSubmitted ? <p className="text-sm text-zinc-300">申請中です</p>
+          : <button type="button" disabled={loading} className="min-h-11 w-full rounded-xl bg-accent p-3 font-semibold text-black disabled:bg-zinc-600" onClick={() => setJoinDialogOpen(true)}>加入申請を確認</button>}
       </div></Card>}
+      {joinDialogOpen && !isMemberOfGroup && visibility === "public" && <PublicClubJoinDialog key={id}
+        context={{ clubId: id, userId: myAuthUserId, visibility, isMember: isMemberOfGroup, hasPendingRequest: !!myPendingRequest || joinSubmitted }}
+        candidates={members.filter(member => member.public_unlinked === true).map(member => ({ reference: member.id, display_name: member.display_name, is_unlinked: true }))}
+        onClose={() => setJoinDialogOpen(false)}
+        onSubmitted={() => {
+          setJoinDialogOpen(false); setJoinSubmitted(true); setMessage("加入申請を送信しました");
+          void load().catch(() => { setError("申請は送信済みですが、申請状況を取得できません。再送せずページを再読み込みしてください"); setLoading(false); });
+        }} />}
       {joinRequests.some(r => r.requester_auth_user_id === myAuthUserId) && <Card title="自分の加入申請"><div className="space-y-2">{joinRequests.filter(r => r.requester_auth_user_id === myAuthUserId).map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p>{linkStatusLabel[r.status]}</p><p className="text-xs text-zinc-400">対象：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.status === "pending" && <button disabled={loading} onClick={() => void reviewJoinRequest(r,"cancelled")} className="mt-2 rounded-lg border border-zinc-500 p-2">申請を取り消す</button>}</div>)}</div></Card>}
       {canManage && <Card title="連携申請一覧"><div className="space-y-2">{linkRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : linkRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><Link href={`/profile/links/${r.id}`} className="underline">{r.source_display_name} / {linkStatusLabel[r.status]}</Link>{r.status === "pending" && <button disabled={loading} className="mt-2 block rounded-lg border border-zinc-500 p-2" onClick={() => void cancelLinkRequest(r)}>申請を取り消す</button>}</div>)}</div></Card>}
       {canManage && <Card title="加入申請一覧"><div className="space-y-2">{joinRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : joinRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3"><p className="font-semibold">{r.requester_display_name}</p><p className="text-xs text-zinc-300">{linkStatusLabel[r.status]} / 希望メンバー：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.target_club_member_id && <p className="text-xs text-amber-200">{r.consent_at ? "本人の統合同意を記録済み" : "旧申請：本人の同意を再確認して再申請が必要です"}</p>}<p className="text-xs text-zinc-300">メッセージ：{r.message ?? "なし"}</p>{r.status === "pending" && <div className="mt-2 flex gap-2"><button disabled={loading} className="w-1/2 rounded-lg bg-accent py-2 text-black" onClick={() => void reviewJoinRequest(r,"approved")}>承認</button><button disabled={loading} className="w-1/2 rounded-lg border border-zinc-500 py-2" onClick={() => void reviewJoinRequest(r,"rejected")}>拒否</button></div>}</div>)}</div></Card>}

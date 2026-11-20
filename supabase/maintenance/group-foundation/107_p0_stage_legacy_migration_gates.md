@@ -23,6 +23,8 @@
 
 **結論：Stageへ原本0040をそのまま適用できない（原本の事前ガードが拒否）**。`0041`は0040関数が前提、`0042`は0041関数と編集停止が前提、`0043`は0042と結果重複解消が前提。今回はStageでもいずれも適用していない。
 
+**追加の注意（Stage RLSの合成挙動）**：Stageの現行イベント更新は `security_minimal_events_update`（`PERMISSIVE`、`USING/WITH CHECK security_private.can_operate_event(id,false)`）。この関数は、activeの制約を緩めても非削除・event_modeごとの権限を検証する。Prodの`rls10_events_update_members`は**別のPERMISSIVE UPDATEポリシー**であり、権限を比較しないままStageに追加すると PostgreSQL の同種PERMISSIVEポリシーが**ORで合成**され、既存より広い操作を許可し得る。固定ペア原本0040の「必要なポリシー名が存在する」チェックを通すためだけの追加は禁止。さらに原本の7トリガーのうち一部はStageの`security_minimal_event/security_minimal_parentage`と機能が重なるため、二重登録による正常操作への影響を分離して試験すること。
+
 Stageが無保護という意味ではない。Stageは別実装の `security_minimal_events_update`、`security_minimal_event`、`security_minimal_parentage`、`profile_link_participant_reference` 等で保護されている。ただし**本番の原本トリガー7件・ポリシーと実装が異なる**。原本のガード値だけを合わせるために同名の空トリガー/広いRLSを追加したり、Stageの匿名SELECTを復活させることは禁止。既存H12～H22を壊さず、ProdのID保護・role/関係性制御を再現する**Stage専用互換パッチ案**と回帰を先に作る必要がある。
 
 ## 検証結果：チーム動画0047、本人画像0048～0051

@@ -1,4 +1,7 @@
 -- TASK-08 H31: Installed token-bound RPC integration probe; Stage-only transaction.
+-- HISTORICAL H31 EXPECTATION: stores synthetic referrer. After H33 referrer minimization
+-- this historical probe is intentionally superseded by 126_p0_h33_token_click_referrer_rollback_probe.sql.
+-- Do not rerun 121 against H33+ Stage; the original referrer assertion will fail.
 -- Existing function definitions remain in place; only synthetic event and click
 -- rows are created inside a transaction and fully rolled back. Never use Prod.
 BEGIN;

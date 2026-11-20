@@ -3,4 +3,4 @@
 # FOUR dedicated staging GitHub Actions repository secrets.
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
-# Status: H17_STAGE_REAL_HTTP_MANAGER_RPC_RETRY_CLEAN_FIXTURE_2026_11_20_20
+# Status: H17_STAGE_HTTP_CONSENT_COLUMNS_THIRD_CLEAN_RUN_2026_11_20_21

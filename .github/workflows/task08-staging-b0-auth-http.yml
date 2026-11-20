@@ -100,3 +100,12 @@ jobs:
           cp supabase/maintenance/group-foundation/100_h22_public_count_real_auth_readonly.mjs "$RUNNER_TEMP/task08-b0/h22.mjs"
           node "$RUNNER_TEMP/task08-b0/h22.mjs"
 
+      - name: H22 actual application count helper with Stage Auth (read-only)
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+        run: |
+          set -euo pipefail
+          NODE_PATH="$RUNNER_TEMP/task08-b0/node_modules" node supabase/maintenance/group-foundation/102_h22_app_helper_real_auth_readonly.cjs
+

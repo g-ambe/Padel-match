@@ -1,5 +1,21 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.26 2026-11-20：H19本人承諾付きオーナー引継ぎ（DB Stage実装・Auth受入）
+
+**正本**：[Issue #264](https://github.com/g-ambe/Padel-match/issues/264) の「オーナー引継ぎ（本人承諾必須・ユーザー確定）」A案。**役割分担維持**：GPT＝DB/Migration/Stage検証、Codex＝アプリUIとテスト。既存Draft PR #265のみ更新、本番DB・Cloudflare本番・mainマージなし。
+
+- 既存StageスキーマをREAD ONLY検証。`clubs.owner_id`は`profiles(id)`へのFK、`club_members.role`に`main_admin`、`player_profiles.linked_auth_user_id`が本人連携の正本。現行`leave_my_club`はowner_idが本人の間は自発退会を拒否。既存`task08_guard_last_main_member`は最後のメイン管理者の退会/降格を拒否。ただし**別のメイン管理者がいる場合の現オーナーの直接降格は既存ガードだけでは防げない**ためH19で補強。
+- 正式前進Migration **`0062_owner_transfer_recipient_approval.sql` → `0063_owner_transfer_uuid_aggregate_fix.sql` → `0064_owner_transfer_decline_after_demotion.sql`** を既存PRへ追加・各SQLの`BEGIN/ROLLBACK`確認後、**Stageのみに順次適用**。Prod未適用。既存migrationの上書きは行わず、履歴を残す。
+- 0062は`club_owner_transfer_requests`（公開schemaでも**RLS有効、raw anon/auth GRANTなし**、pending unique per club）、本人通知の`related_owner_transfer_request_id`、現オーナーのrole/active/status/所属変更・DELETEを防ぐtrigger、五つの認証必須のSECURITY DEFINER RPCを追加。`get_club_owner_transfer_candidates(club)`（現owner限定・linked active main管理者のみ）、`request_club_owner_transfer(club,member)`（現owner本人のみ）、`list_my_club_owner_transfers()`（送信本人/受信本人のみ）、`respond_club_owner_transfer(request,accepted|declined)`（受信本人のみ）、`cancel_club_owner_transfer(request)`（現owner本人だけ）。**依頼送信では`owner_id`を変更しない**。本人accepted時だけ現在の所有権/在籍/linked/役職/申請状態を再検証し、club行ロック下でownerを原子的に変更。辞退・取消では所有権不変。**期限・自動承諾なし**（仕様未確定のため推測追加しない）。
+- Stage初回のロールバック統合検証で`min(uuid)`未対応が判明し、0063で`array_agg(uuid ORDER BY uuid)[1]`へ前進修正。再試験時、`authenticated`の直接`clubs.owner_id`列SELECTが既存列ACLで拒否されたため、検証のowner_id確認を`RESET ROLE`後に分離（DB ACLは正常）。また複数の安定/更新関数を1式で評価したスナップショットタイミングを避け、退会RPC後の権限チェックを独立文へ分離。いずれも修正履歴を残している。
+- 0064は候補者が待機中にmain_adminから降格した場合、**承諾は拒否するが本人による辞退は可能**に変更。拒否・取消でowner_idを変更しない。
+- `85_h19_owner_handover_rollback_probe.sql`：15/15判定TRUE（候補スコープ、別役職/第三者拒否、重複409、本人辞退→再申請→本人承諾→所有権変更、新ownerの退会防止、旧ownerの本人退会・権限消失、通知）、すべてROLLBACK。`86_h19_owner_handover_negative_rollback_probe.sql`：11/11判定TRUE（anon/非owner拒否、候補降格中のaccept拒否、取消/replay拒否、owner不変）。`87_h19_demoted_recipient_decline_rollback_probe.sql`：5/5 TRUE。既存のグループ・戦績を変更しない。
+- 実Auth JWT/PostgRESTワンショットは`88_h19_real_http_fixture_setup.sql`（合成1クラブ、在籍owner/main候補/一般3名）と`90_h19_real_auth_owner_transfer_once.mjs`（実StageテストAuth owner/recipient/outsider）を用い、[**Actions #44658663205**](https://github.com/g-ambe/Padel-match/actions/runs/44658663205) **18/18 PASS**。匿名・一般・第三者からの候補取得/送信/承諾/取消、linkedメイン管理者候補限定、request送信のみで未承諾、重複PT409/HTTP409、本人による辞退、辞退済申請再利用拒否、再申請、通知/リストの受信者限定とrawテーブル拒否を確認。
+- 実Authが作った待機中申請を`91_h19_real_http_pending_acceptance_rollback.sql`で本人権限に切替して承諾→所有権更新→旧ownerの本人退会→権限消失まで**9/9 TRUE、全体ROLLBACK**（**受信者の実HTTPでowner移譲を永続化したわけではない**）。合成データ/申請/通知は厳密ガード付き`89_h19_real_http_fixture_cleanup.sql`でCOMMIT削除。Stage baseline clubs3/members12/profiles12/events0/transfers0/notifications0／fixture0へ復帰。
+- `tests/h19-owner-transfer-db.test.cjs`を通常read-only CIの静的回帰に追加。Stage Security AdvisorはRLS有効/直接policyなし（意図的にraw不可）と authenticatedの明示的Definer RPCを報告（public APIは認証+厳密チェック、匿名EXECUTEなし）。既存Prodでは`respond_club_owner_transfer` RPCが存在せず、`club_members`へのanon基底SELECTリスクが残る。**本番移行禁止**。
+- Codexアプリ引継ぎ：`92_h19_codex_owner_handover_handoff.md`。グループ詳細/通知のUI追加は**Codex未着手**。オーナー側申請/取消、受信者の引き受ける/辞退、既存通知columnへのリンク、本人退会、共通POPとヘルプ同期が中心。**並列2接続の実競合ストレス**・実アプリブラウザでの本人引継ぎE2Eは未実施として残す。旧スコア不一致6件はユーザー依頼により保留。既知プロフィールテスト12件も別件。
+
+
 ## 0.25 2026-11-20：Codex H18 `6c4e632`実差分レビュー＋Stage実認証アプリヘルパー受入
 
 **担当を維持**：GPT＝DB/Stage/統合レビュー、Codex＝アプリ・テスト、ユーザー＝本番リリース承認。既存Draft PR #265／`codex/task-08-group-foundation`だけ更新。mainマージ、本番DB・Cloudflare本番デプロイなし。

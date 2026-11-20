@@ -99,9 +99,10 @@ async function run(){
  }
  // Stage's join_requests raw table is deliberately not SELECT-granted.
  // The normal UI accesses the manager-scoped read RPC, not the base table.
- const rawRequests=await clients.mainA.from('join_requests').select('id')
+ const rawRequests=await clients.mainA.from('join_requests')
+   .select('club_display_name_requested,club_display_name_confirmed_at,consent_snapshot')
    .eq('club_id',club.id);
- mark('H17_RAW_JOIN_TABLE_CLOSED',!!denied(rawRequests),errorMeta(rawRequests));
+ mark('H17_SENSITIVE_JOIN_COLUMNS_RESTRICTED',!!denied(rawRequests),errorMeta(rawRequests));
  const requests=await clients.mainA.rpc('get_club_join_requests',{p_club_id:club.id});
  const submitted=Array.isArray(requests.data)?requests.data:[];
  const savedExact=!requests.error&&requests.status===200&&submitted.length===2

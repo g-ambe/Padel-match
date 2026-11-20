@@ -116,9 +116,13 @@ DECLARE mid uuid;
 BEGIN
  SELECT id INTO mid FROM public.get_my_club_memberships()
  WHERE club_id=current_setting('h19.club')::uuid;
- IF mid IS NULL OR public.leave_my_club(current_setting('h19.club')::uuid,mid)<>mid
- OR public.can_manage_player_profile_club(current_setting('h19.club')::uuid)
- THEN RAISE EXCEPTION 'former owner failed to exit cleanly'; END IF;
+ IF mid IS NULL THEN RAISE EXCEPTION 'former owner membership missing'; END IF;
+ IF public.leave_my_club(current_setting('h19.club')::uuid,mid)<>mid THEN
+  RAISE EXCEPTION 'former owner leave RPC failed'; END IF;
+ -- Separate statement after the VOLATILE UPDATE: can_manage is STABLE and
+ -- can otherwise be evaluated using the pre-departure statement snapshot.
+ IF public.can_manage_player_profile_club(current_setting('h19.club')::uuid) THEN
+  RAISE EXCEPTION 'former owner retained authorization after exit'; END IF;
  PERFORM set_config('h19.old_exited','true',true);
 END $exit$;
 RESET ROLE;

@@ -86,18 +86,3 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
-
-      # ONE SHOT ONLY: Stage SQL 79 has created a strictly isolated fixture.
-      # Remove this write test immediately after Stage SQL 80 cleanup.
-      - name: H18 actual app approval helper over Stage JWT (one shot)
-        shell: bash
-        env:
-          TASK08_H18_APP_JWT_ONCE: '1'
-          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
-          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
-          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
-          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
-        run: |
-          set -euo pipefail
-          NODE_PATH="$RUNNER_TEMP/task08-b0/node_modules" node supabase/maintenance/group-foundation/84_h18_app_helper_real_auth_once.cjs
-

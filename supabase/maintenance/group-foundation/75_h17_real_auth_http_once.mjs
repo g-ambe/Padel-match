@@ -97,22 +97,24 @@ async function run(){
   mark('H17_PROVISIONAL_CLAIM_SUBMITTED',claimed.status===200&&!claimed.error&&validUUID(claimed.data),
    {status:claimed.status??null,error_code:claimed.error?.code??null});
  }
- const requests=await clients.mainA.from('join_requests').select(
-  'id,club_id,target_club_member_id,requester_auth_user_id,status,club_display_name_requested,club_display_name_confirmed_at,consent_snapshot')
-  .eq('club_id',club.id);
+ // Stage's join_requests raw table is deliberately not SELECT-granted.
+ // The normal UI accesses the manager-scoped read RPC, not the base table.
+ const rawRequests=await clients.mainA.from('join_requests').select('id')
+   .eq('club_id',club.id);
+ mark('H17_RAW_JOIN_TABLE_CLOSED',!!denied(rawRequests),errorMeta(rawRequests));
+ const requests=await clients.mainA.rpc('get_club_join_requests',{p_club_id:club.id});
  const submitted=Array.isArray(requests.data)?requests.data:[];
  const savedExact=!requests.error&&requests.status===200&&submitted.length===2
-   &&submitted.every(r=>r.status==='pending'&&r.club_display_name_confirmed_at
-     &&r.club_id===club.id)
+   &&submitted.every(r=>r.status==='pending'&&r.club_id===club.id)
    &&submitted.some(r=>r.requester_auth_user_id===authUsers.recipient
-     &&r.target_club_member_id===null
-     &&r.club_display_name_requested==='H17 HTTP Recipient Alias')
+     &&r.target_club_member_id===null)
    &&submitted.some(r=>r.requester_auth_user_id===authUsers.outsider
      &&rows.some(m=>m.id===r.target_club_member_id&&m.role==='member')
-     &&r.club_display_name_requested==='H17 HTTP Outsider Alias'
-     &&r.consent_snapshot!==null);
- mark('H17_CONSENT_SNAPSHOTS_PENDING',savedExact,
+     &&r.consent_at!==null);
+ mark('H17_MANAGER_JOIN_REQUESTS_PENDING',savedExact,
   {status:requests.status??null,pending_count:submitted.length});
+ // Alias/public-confirmation snapshots are purposely NOT in this limited DTO.
+ // SQL read-only postflight separately confirms their saved values.
  const publicAfter=await clients.recipient.rpc('get_public_club_directory',{p_club_id:club.id});
  mark('H17_PENDING_NOT_PUBLISHED',!publicAfter.error&&publicAfter.status===200
   &&Array.isArray(publicAfter.data)&&publicAfter.data.length===1&&

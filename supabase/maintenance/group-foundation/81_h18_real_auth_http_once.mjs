@@ -15,7 +15,7 @@ const clients={},results=[];
 function make(key){return createClient(endpoint,key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{headers:{'x-task08-test':'h18-stage-only-once'}}});}
 function mark(id,ok,meta={}){results.push({id,outcome:ok?'PASS':'FAIL',...meta});}
 function meta(r){return{http_status:r?.status??null,code:r?.error?.code??null};}
-function uuid(s){return typeof s==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);}
+function uuid(s){return typeof s==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);}
 function denied(r){return !!r.error&&r.data===null&&[400,401,403,404,409].includes(r.status);}
 try{
  if(process.env.TASK08_H18_STAGE_WRITE!=='1')throw Error('h18_stage_opt_in_required');

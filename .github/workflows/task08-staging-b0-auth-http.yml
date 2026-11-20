@@ -134,3 +134,26 @@ jobs:
           node --check supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs
           cp supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs "$RUNNER_TEMP/task08-b0/h31.mjs"
           node "$RUNNER_TEMP/task08-b0/h31.mjs"
+
+      - name: H32 CLI migration generation rehearsal (temporary, local only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/task08-supabase-cli" --no-audit --no-fund --no-package-lock supabase@2.81.3
+          cli="$RUNNER_TEMP/task08-supabase-cli/node_modules/.bin/supabase"
+          "$cli" --version
+          "$cli" migration new --help >/dev/null
+          mkdir -p "$RUNNER_TEMP/task08-h32/supabase/migrations"
+          cd "$RUNNER_TEMP/task08-h32"
+          "$cli" migration new task08_h31_stage_token_scoped_video_click_rpc
+          count=$(find supabase/migrations -maxdepth 1 -type f -name '*_task08_h31_stage_token_scoped_video_click_rpc.sql' | wc -l)
+          test "$count" -eq 1
+          generated=$(find supabase/migrations -maxdepth 1 -type f -name '*_task08_h31_stage_token_scoped_video_click_rpc.sql')
+          echo "H32_CLI_GENERATED: $(basename "$generated")"
+          recorded_version=20261120091138
+          target="supabase/migrations/${recorded_version}_task08_h31_stage_token_scoped_video_click_rpc.sql"
+          mv "$generated" "$target"
+          cp "$GITHUB_WORKSPACE/supabase/maintenance/group-foundation/120_p0_h31_stage_token_click_additive_apply.sql" "$target"
+          cmp "$target" "$GITHUB_WORKSPACE/supabase/maintenance/group-foundation/120_p0_h31_stage_token_click_additive_apply.sql"
+          sha256sum "$target"
+          echo "H32_STAGE_VERSION_MATCHED_CLI_FILE: $(basename "$target")"

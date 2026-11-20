@@ -3,4 +3,4 @@
 # FOUR dedicated staging GitHub Actions repository secrets.
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
-# Status: P0_H29_STAGE_ANON_CLUBS_READONLY_REAL_AUTH_HTTP_2026_11_20
+# Status: P0_H31_STAGE_TOKEN_CLICK_RPC_NOOP_AND_PAGE_CI_2026_11_20

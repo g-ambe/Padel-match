@@ -1,5 +1,21 @@
 # TASK-08-03 / P0：既存ステージングの実Auth・HTTP試験準備
 
+## 0.25 2026-11-20：Codex H18 `6c4e632`実差分レビュー＋Stage実認証アプリヘルパー受入
+
+**担当を維持**：GPT＝DB/Stage/統合レビュー、Codex＝アプリ・テスト、ユーザー＝本番リリース承認。既存Draft PR #265／`codex/task-08-group-foundation`だけ更新。mainマージ、本番DB・Cloudflare本番デプロイなし。
+
+- Codexコミット **`6c4e632374f916032d7a6f775ea7480ba7b5dedc`** のGitHub実差分を確認。変更6ファイル：`app/profile/links/[id]/page.tsx`、`lib/profile-links.ts`、`components/profile-merge-summary.tsx`、`lib/tutorial-content.ts`、`tests/recipient-profile-link.test.cjs`、`tests/browser/recipient-profile-link.cjs`。Migration 0061含むDBファイル不変更。
+- 実装レビュー：受信者pendingの`group_display_name_suggestion`を初期表示、`group_display_name_current`をrawのままCASとして送信、公開グループは受信者による**戦績引継ぎと表示名公開の別々の2同意**、非公開グループは公開同意なし。成功時のみstatus更新、失敗時は入力・同意を保持して手動再読み込み（古いpreview/tokenが変わった際の再同意あり）、不明な返却結果を成功扱いしない。reject/cancelは旧RPCに維持し、manager DTO・本人プロフィール名・戦績/他グループ不変更。Codex報告の関連テスト28件・375px明暗合成ブラウザ・TypeScript・Cloudflare互換ビルド成功を受領（**GPT側で375px実ブラウザ試験を直接再実行したわけではない**）。
+- GitHub check-runs 取得時：commit `6c4e632`の **Workers Builds: padel-match-staging = SUCCESS**（ステージングプレビュービルド）、`private-media`=SUCCESS。GitHubステータスの集計に未報告コンテキストもあり、「全GitHubチェック成功」とは断言しない。
+- GPTにて**実装済みアプリの本物のヘルパー** `lib/profile-links.ts`をNode22のTSロード経由で読み込み、Stageに本物のAuth JWTで直接接続する新script **`84_h18_app_helper_real_auth_once.cjs`**を作成。新規Migrationなし。試験用の公開/非公開2クラブ・仮選手2・既存テストAuthのみを旧`79`fixtureで一時作成。成功承認/統合は実行せず、管理者の実JWTによる**申請2件送信**、受信者のアプリヘルパーによる詳細取得、同意なし・入力異常・PT409・古いtoken・他人/匿名否認、privateの公開フラグfalse、試験失敗後pending維持、manager DTO限定、アプリ入力不変を検証。
+- 初回 [Actions #44655254755](https://github.com/g-ambe/Padel-match/actions/runs/44655254755) はB0・TS・アプリ単体PASSながら、試験スクリプトがCIの隔離node_modulesでなくrepoから`@supabase/supabase-js`を解決しようとしたため`MODULE_NOT_FOUND`で停止（本物のDB/app機能のFAILではない）。既存隔離インストール先を`NODE_PATH`で参照するよう一時CI修正して再実施。
+- [**Actions #44655441184**](https://github.com/g-ambe/Padel-match/actions/runs/44655441184) **実Stage JWT × 実アプリヘルパー 14/14 PASS**。同一run内の`tests/recipient-profile-link.test.cjs`・TypeScript・従来Stage実Auth B0もPASS。試験ログはテストラベル・HTTP/codeのみでAuthの生ID/トークン/実名/DTO本文を出さない。
+- DBの正常承認時の原子的所属更新・通知・プロフィール統合・監査before/after・公開同意は**H18のSQL ROLLBACK 18/18と実JWT申請→ロール切替承認ROLLBACK 7/7**で既に証明済みであり、今回の新14件は**リアルJWTの否認・DTOと実アプリヘルパーの通信契約**に特化。UI実ブラウザ/E2Eではなく、Codexの合成ブラウザと合わせた統合受入であることを区別。
+- 再利用した厳密SQL `80_h18_real_http_fixture_cleanup.sql`で一時クラブ2・所属4・仮プロフィール2・pending申請2・通知を削除。Stage baseline groups3/members12/profiles12/events0/link_requests0/merges0/notifications0／fixture0を確認。一時Stage WRITE CI stepを**削除**。恒常的なread-only Stage CIに`node --test tests/recipient-profile-link.test.cjs`を追加し、`84`は再現用オプトインスクリプトとして保存（通常CIから自動実行されない）。
+- 後片付け後の通常READ ONLY CI： [Actions #446556???](https://github.com/g-ambe/Padel-match/actions) にて確認予定。**本番Migration 0061/その他は未適用**、旧anonymous base SELECTのP0リスクとオーナー引継ぎ等の残件あり。本番切替・マージ不可。
+- Projects #2の更新はCodexから権限不足と報告あり。本件のGitHub Issue #264には別途記録し、Projectsカスタムフィールド同期済みとは言わない。既存プロフィールテスト12件のベースライン失敗は今回未修正、旧スコア不一致6件はユーザー判断で保留。
+
+
 ## 0.24 2026-11-20：H18管理者発の連携名・受信者公開同意のDB実装と実JWT受入
 
 **承認済分担を遵守**：GPT＝DB設計・正式Migration・Stage SQL/Auth HTTP検証・レビュー、Codex＝Next.js/UI/アプリ側テスト、ユーザー＝リリース判断。既存作業ブランチとDraft PR #265のみ。**本番DB・Cloudflare・mainマージなし**。

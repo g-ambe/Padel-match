@@ -57,6 +57,9 @@ jobs:
       - name: H18 actual application helper unit regression (no DB writes)
         run: node --test tests/recipient-profile-link.test.cjs
 
+      - name: H19 actual owner transfer application helper unit regression (no DB writes)
+        run: node --test tests/club-owner-transfer.test.cjs
+
       - name: TypeScript compile validation (no deployment)
         shell: bash
         run: |
@@ -86,16 +89,3 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
-
-      # One-shot Stage fixture 88. May move SYNTHETIC owner; mandatory cleanup 95.
-      - name: H19 two independent Stage Auth connections race (one shot)
-        shell: bash
-        env:
-          TASK08_H19_RACE_ONCE: '1'
-          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
-          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
-          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
-        run: |
-          set -euo pipefail
-          NODE_PATH="$RUNNER_TEMP/task08-b0/node_modules" node supabase/maintenance/group-foundation/94_h19_two_connection_stage_race_once.cjs
-

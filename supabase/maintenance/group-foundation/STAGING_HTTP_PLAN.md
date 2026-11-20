@@ -12,7 +12,7 @@
 - [**Actions #44655441184**](https://github.com/g-ambe/Padel-match/actions/runs/44655441184) **実Stage JWT × 実アプリヘルパー 14/14 PASS**。同一run内の`tests/recipient-profile-link.test.cjs`・TypeScript・従来Stage実Auth B0もPASS。試験ログはテストラベル・HTTP/codeのみでAuthの生ID/トークン/実名/DTO本文を出さない。
 - DBの正常承認時の原子的所属更新・通知・プロフィール統合・監査before/after・公開同意は**H18のSQL ROLLBACK 18/18と実JWT申請→ロール切替承認ROLLBACK 7/7**で既に証明済みであり、今回の新14件は**リアルJWTの否認・DTOと実アプリヘルパーの通信契約**に特化。UI実ブラウザ/E2Eではなく、Codexの合成ブラウザと合わせた統合受入であることを区別。
 - 再利用した厳密SQL `80_h18_real_http_fixture_cleanup.sql`で一時クラブ2・所属4・仮プロフィール2・pending申請2・通知を削除。Stage baseline groups3/members12/profiles12/events0/link_requests0/merges0/notifications0／fixture0を確認。一時Stage WRITE CI stepを**削除**。恒常的なread-only Stage CIに`node --test tests/recipient-profile-link.test.cjs`を追加し、`84`は再現用オプトインスクリプトとして保存（通常CIから自動実行されない）。
-- 後片付け後の通常READ ONLY CI： [Actions #446556???](https://github.com/g-ambe/Padel-match/actions) にて確認予定。**本番Migration 0061/その他は未適用**、旧anonymous base SELECTのP0リスクとオーナー引継ぎ等の残件あり。本番切替・マージ不可。
+- 後片付け後の通常READ ONLY CI： [Actions #44655611892](https://github.com/g-ambe/Padel-match/actions/runs/44655611892) **SUCCESS** にて確認予定。**本番Migration 0061/その他は未適用**、旧anonymous base SELECTのP0リスクとオーナー引継ぎ等の残件あり。本番切替・マージ不可。
 - Projects #2の更新はCodexから権限不足と報告あり。本件のGitHub Issue #264には別途記録し、Projectsカスタムフィールド同期済みとは言わない。既存プロフィールテスト12件のベースライン失敗は今回未修正、旧スコア不一致6件はユーザー判断で保留。
 
 

@@ -122,7 +122,7 @@ BEGIN
   SELECT to_regprocedure(name)::oid INTO p;
   IF p IS NULL OR NOT has_function_privilege('anon',p,'EXECUTE')
     OR NOT has_function_privilege('authenticated',p,'EXECUTE')
-    OR NOT (SELECT prosecdef AND proconfig@>ARRAY['search_path=']::text[] FROM pg_proc WHERE oid=p)
+    OR NOT (SELECT prosecdef AND proconfig@>ARRAY['search_path=""']::text[] FROM pg_proc WHERE oid=p)
   THEN RAISE EXCEPTION 'H31 token RPC definer/ACL drift: %', name; END IF;
  END LOOP;
 END

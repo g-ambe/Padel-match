@@ -39,7 +39,12 @@ try{
  check('H22_UNKNOWN_GROUP_COUNT_DENIED',!!missing.error&&missing.error.code==='42501',
   {status:missing.status??null,code:missing.error?.code??null});
  if(output.some(x=>x.outcome!=='PASS'))process.exitCode=1;
-}catch{output.push({id:'H22_RUNTIME_OR_BASELINE',outcome:'BLOCKED'});process.exitCode=1;}
+}catch(e){
+ const safe=['credentials_unavailable','test_auth_unavailable','club_discovery_failed','Stage_public_private_fixture_drift'];
+ const reason=(e instanceof Error&&safe.includes(e.message))?e.message:'UNCLASSIFIED_RUNTIME_ERROR';
+ output.push({id:'H22_RUNTIME_OR_BASELINE',outcome:'BLOCKED',reason});
+ process.exitCode=1;
+}
 finally{
  if(authed)await authed.auth.signOut({scope:'local'}).catch(()=>{});
  console.log(JSON.stringify({project:'stage',mode:'REAL_JWT_READ_ONLY',checks:output},null,2));

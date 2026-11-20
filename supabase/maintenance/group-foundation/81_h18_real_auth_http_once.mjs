@@ -43,11 +43,26 @@ try{
   p_club_id:pub.id,p_member_id:pubMember.id,p_target_auth_user_id:(await clients.recipient.auth.getUser()).data.user?.id});
  const privInvite=await clients.mainA.rpc('request_player_profile_link',{
   p_club_id:priv.id,p_member_id:privMember.id,p_target_auth_user_id:(await clients.recipient.auth.getUser()).data.user?.id});
- mark('H18_ADMIN_SENT_PUBLIC_INVITATION',!pubInvite.error&&pubInvite.status===200&&uuid(pubInvite.data),meta(pubInvite));
- mark('H18_ADMIN_SENT_PRIVATE_INVITATION',!privInvite.error&&privInvite.status===200&&uuid(privInvite.data),meta(privInvite));
- if(pubInvite.error||privInvite.error||!uuid(pubInvite.data)||!uuid(privInvite.data))throw Error('fixture_invitations_invalid');
+ // The existing submission RPC may report a successful write without a
+ // scalar data payload through PostgREST. Confirm exact pending request via
+ // the manager-scoped RPC rather than relying on its optional response shape.
+ const [pubSent,privSent]=await Promise.all([
+   clients.mainA.rpc('list_player_profile_link_requests',{p_club_id:pub.id}),
+   clients.mainA.rpc('list_player_profile_link_requests',{p_club_id:priv.id})
+ ]);
+ const pubPending=Array.isArray(pubSent.data)?pubSent.data.filter(r=>r.status==='pending'&&r.club_id===pub.id):[];
+ const privPending=Array.isArray(privSent.data)?privSent.data.filter(r=>r.status==='pending'&&r.club_id===priv.id):[];
+ const pubRequestId=pubPending.length===1&&uuid(pubPending[0].id)?pubPending[0].id:null;
+ const privRequestId=privPending.length===1&&uuid(privPending[0].id)?privPending[0].id:null;
+ mark('H18_ADMIN_SENT_PUBLIC_INVITATION',!pubInvite.error&&pubInvite.status===200
+   &&!pubSent.error&&pubRequestId!==null,
+   {...meta(pubInvite),manager_pending_count:pubPending.length,response_type:typeof pubInvite.data});
+ mark('H18_ADMIN_SENT_PRIVATE_INVITATION',!privInvite.error&&privInvite.status===200
+   &&!privSent.error&&privRequestId!==null,
+   {...meta(privInvite),manager_pending_count:privPending.length,response_type:typeof privInvite.data});
+ if(pubInvite.error||privInvite.error||!pubRequestId||!privRequestId)throw Error('fixture_invitations_invalid');
 
- const adminRead=await clients.mainA.rpc('get_player_profile_link_request',{p_request_id:pubInvite.data});
+ const adminRead=await clients.mainA.rpc('get_player_profile_link_request',{p_request_id:pubRequestId});
  const adminSafe=!adminRead.error&&adminRead.status===200
   &&adminRead.data?.detail_scope==='manager'
   &&!('review_token' in adminRead.data)
@@ -56,10 +71,10 @@ try{
   &&!('group_visibility' in adminRead.data);
  mark('H18_MANAGER_DETAILS_SCOPED',adminSafe,meta(adminRead));
 
- const alienRead=await clients.outsider.rpc('get_player_profile_link_request',{p_request_id:pubInvite.data});
+ const alienRead=await clients.outsider.rpc('get_player_profile_link_request',{p_request_id:pubRequestId});
  mark('H18_OTHER_USER_CANNOT_PREVIEW',denied(alienRead),meta(alienRead));
- const publicPreview=await clients.recipient.rpc('get_player_profile_link_request',{p_request_id:pubInvite.data});
- const privatePreview=await clients.recipient.rpc('get_player_profile_link_request',{p_request_id:privInvite.data});
+ const publicPreview=await clients.recipient.rpc('get_player_profile_link_request',{p_request_id:pubRequestId});
+ const privatePreview=await clients.recipient.rpc('get_player_profile_link_request',{p_request_id:privRequestId});
  const publicOk=!publicPreview.error&&publicPreview.status===200
   &&publicPreview.data?.detail_scope==='recipient'
   &&publicPreview.data.group_display_name_suggestion==='H18-HTTP-PUBLIC-ALIAS'
@@ -77,7 +92,7 @@ try{
  if(!publicOk||!privateOk)throw Error('scoped_preview_invalid');
 
  const args={
- p_request_id:pubInvite.data,p_review_token:publicPreview.data.review_token,
+ p_request_id:pubRequestId,p_review_token:publicPreview.data.review_token,
  p_club_display_name:'H18-HTTP-PUBLIC-CHOSEN',p_expected_club_display_name:'H18-HTTP-PUBLIC-ALIAS',
  p_public_confirmation:true};
  const unauthed=await anon.rpc('review_player_profile_link_named',args);
@@ -91,7 +106,7 @@ try{
  const wrongToken=await clients.recipient.rpc('review_player_profile_link_named',{...args,p_review_token:'invalid-preview-token'});
  mark('H18_INVALID_REVIEW_TOKEN_BLOCKED',denied(wrongToken),meta(wrongToken));
  const privatePublic=await clients.recipient.rpc('review_player_profile_link_named',{
-  ...args,p_request_id:privInvite.data,p_review_token:privatePreview.data.review_token,
+  ...args,p_request_id:privRequestId,p_review_token:privatePreview.data.review_token,
   p_club_display_name:'H18-HTTP-PRIVATE-CHOSEN',p_expected_club_display_name:null,p_public_confirmation:true});
  mark('H18_PRIVATE_CANNOT_SET_PUBLIC_CONSENT',denied(privatePublic),meta(privatePublic));
 
@@ -103,7 +118,7 @@ try{
   &&!('club_display_name_public_confirmed_at' in x.data[0]));
  mark('H18_MANAGER_PENDING_NO_CONSENT_LEAK',listOK,{public_count:pending.data?.length??null,private_count:pendingP.data?.length??null});
 
- const after=await clients.recipient.rpc('get_player_profile_link_request',{p_request_id:pubInvite.data});
+ const after=await clients.recipient.rpc('get_player_profile_link_request',{p_request_id:pubRequestId});
  mark('H18_DENIALS_DID_NOT_APPROVE',!after.error&&after.data?.status==='pending'&&
    after.data?.detail_scope==='recipient',{status:after.status??null});
  const publicList=await clients.recipient.rpc('get_public_club_directory',{p_club_id:pub.id});

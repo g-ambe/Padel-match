@@ -83,19 +83,3 @@ jobs:
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/task08-b0/smoke.mjs"
-
-      # One-shot write test for the SQL 73 STAGING fixture ONLY.
-      # Remove this step after SQL 74 cleanup; not a permanent CI write.
-      - name: H17 real Stage Auth named join one-shot (fixture 73)
-        shell: bash
-        env:
-          TASK08_H17_REAL_WRITE_ONCE: '1'
-          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
-          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
-          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
-          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cp supabase/maintenance/group-foundation/75_h17_real_auth_http_once.mjs "$RUNNER_TEMP/task08-b0/h17-once.mjs"
-          node "$RUNNER_TEMP/task08-b0/h17-once.mjs"
-

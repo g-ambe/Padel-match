@@ -147,11 +147,14 @@ jobs:
           "$RUNNER_TEMP/task08-browser/node_modules/.bin/playwright" install --with-deps chromium
           cp supabase/maintenance/group-foundation/128_h34_real_share_browser.mjs "$RUNNER_TEMP/task08-browser/test.mjs"
           node --check "$RUNNER_TEMP/task08-browser/test.mjs"
-          ./node_modules/.bin/next dev --hostname 127.0.0.1 --port 3174 > "$RUNNER_TEMP/task08-next.log" 2>&1 &
+          node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3174 > "$RUNNER_TEMP/task08-next.log" 2>&1 &
           server=$!
-          trap 'kill "$server" 2>/dev/null || true' EXIT
-          for i in $(seq 1 50); do
-            if curl --max-time 3 -s -o /dev/null http://127.0.0.1:3174/; then break; fi
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then tail -n 60 "$RUNNER_TEMP/task08-next.log"; fi; kill "$server" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            kill -0 "$server" 2>/dev/null || { echo "Next server exited"; exit 1; }
+            if curl --noproxy '*' --max-time 5 -fsS -o /dev/null http://127.0.0.1:3174/share/events/TASK08H12HTTPFRIENDLYONLY; then ready=1; break; fi
             sleep 2
           done
-          node "$RUNNER_TEMP/task08-browser/test.mjs"
+          test "$ready" = 1 || { echo "Next server did not become ready"; exit 1; }
+          H34_BROWSER_ONLY=1 node "$RUNNER_TEMP/task08-browser/test.mjs"

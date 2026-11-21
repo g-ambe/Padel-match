@@ -50,9 +50,10 @@ def query(target: b.LocalRestore, sql: str):
 
 def gate(target: b.LocalRestore) -> dict:
     r = query(target, GATE.read_text().replace("BEGIN READ ONLY;", "").replace("ROLLBACK;", "").replace(";", ";"))
-    # Gate SQL is a SELECT with JSONB report. When wrapped in BEGIN/ROLLBACK,
-    # its DO/CTE statements can be read through the existing psql helper.
-    return r["report"]
+    # psql -qAt outputs the JSONB field itself, not a column-name envelope.
+    require(isinstance(r, dict) and "phase1_eligible" in r,
+            "H44_migration_gate_json_invalid")
+    return r
 
 def restore_schema(target: b.LocalRestore, root: Path, expected_roles: list, function_schemas: list[str]):
     require(isinstance(target, b.LocalRestore), "H44_restore_not_isolated")

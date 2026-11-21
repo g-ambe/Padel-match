@@ -88,3 +88,12 @@
 - **H40は追加開発ではなく本番リリース準備。** DBはREAD ONLYのみ、GitHub既存PR #265に候補を保存。各ソースの部分的Stage ROLLBACKテストが通ったことと、**本番スキーマでの11連続DDLが通ったことは別**。本番適用・PRマージ・Cloudflare公開なし。
 
 **Cloudflare実トリガーの追記**：本番`padel-match`はGitHub `main`を自動デプロイ（`npm run cf:build` → `npx wrangler deploy`）、Stage `padel-match-staging`は`codex/minimal-security-replacement`を自動ビルド対象としており、**PR #265の`codex/task-08-group-foundation`ではない**。確認はCloudflare API GETのみ。詳細と復旧上の注意は`146_h40_release_order_restore_and_decision.md`。公開前にStageプレビューとProd DB切替の整合が必要。
+## 8. H41追記：本番Owner NULLグループとMigration履歴整合（2026-11-21）
+
+新しい`148_h41_owner_null_and_migration_history_plan.md`に実測・調査結果を集約し、`147_h41_prod_phase1_additive_candidate.sql`を新規作成。**Prod/StageはREAD ONLY、PR #265はDraft・未マージ。**
+
+- 問題のグループ名は**「Wytel Bule Owls」**（DB記載の綴り）。有効9所属・有効main_admin2名、`clubs.owner_id=NULL`、ownerに紐づく有効main_admin0。**管理者ゼロではなく、正式Owner未設定**。NULL列は既存スキーマ上許容。main_adminから誰かを自動選択しない。
+- Phase1（H12→H37 click→0054→0055→136→137）を原本GitHub SHA固定で6工程・**単一BEGIN/COMMIT**へ統合。`147`は構造チェックまで、Prod等価環境の連続DDL実行はまだ。
+- Phase2既存`145`は138→0057→0058→0059→0060→139→0061→0062→0063→0064→0065の11工程。Stage74/Prod22履歴。**正式migration-versionと旧0054〜0065の重複適用防止**が実際のリリース前STOP条件。
+- Phase1は`directory_refs`への所属行生成・追加triggerを含み、完全な無副作用ではない。既存アプリのグループ操作を本番等価な環境で確認し、`main`のCloudflare自動デプロイと適用順を揃える。
+- H41でも本番変更なし。写真・メール招待の未実装、残余anon基底SELECTの扱いは引き続き個別課題。

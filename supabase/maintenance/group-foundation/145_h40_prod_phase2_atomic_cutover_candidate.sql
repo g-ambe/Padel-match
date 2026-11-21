@@ -10,6 +10,19 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '120s';
 
+-- H42 migration-history guard: refuse duplicate or out-of-order application.
+DO $h42_phase2_history_gate$
+BEGIN
+ IF (SELECT count(*) FROM supabase_migrations.schema_migrations
+     WHERE name='task08_prod_phase1_additive')<>1
+ OR EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations
+     WHERE name='task08_prod_phase2_atomic')
+ OR EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations
+    WHERE name ~ '^task08_(stage|staging)_005[4-9]' OR name ~ '^task08_(stage|staging)_006[0-5]')
+ THEN RAISE EXCEPTION 'H42: Phase2 requires unique committed Phase1 and no prior Phase2/Stage cutover';
+ END IF;
+END $h42_phase2_history_gate$;
+
 
 DO $h40_prod_cutover_guard$
 DECLARE detail text;

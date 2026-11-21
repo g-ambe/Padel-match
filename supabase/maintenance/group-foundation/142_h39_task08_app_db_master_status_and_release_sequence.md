@@ -105,3 +105,11 @@
 - `149_h42_prod_migration_replay_gate_readonly.sql`をStage/Prodで実行。Prodは`phase1_eligible=true`、Stageは`false`（旧Stage用0054〜0065履歴あり）。将来は`apply_migration`で2本のみ登録・監査し、ディレクトリ全体の`db push`は禁止。
 - `150_h42_one_time_production_migration_protocol.md`に確定手順と費用条件を保存。Prod相当branchの料金はSupabase見積**$0.01344/時間から**、作成には明示費用承認が必要。現時点branchは**未作成**であり17工程の連続実行はまだ未検証。
 - 本番追加DDL・PRマージ・Workerデプロイは行っていない。TASK-08子タスク#262のメール招待と#264の同クラブ画像は引き続き未実装。
+
+## 10. H43追記：有料Preview Branchを使わない本番相当の連続検証
+
+- ユーザー意向によりSupabase Branch課金（$0.01344/h〜）を**回避**。既存StageへProd実データを恒久コピーしない。StageはすでにPhase1/2相当が適用済みで移行前テストに使えないため、公開GitHub Repoの**無料標準GitHub-hosted runner**上で一時的なPostgresを用いる。
+- 既存 `cloud_backup.py` の信頼済みread-only Prod Snapshot・暗号化・厳密復元/外部ネットワーク遮断機構を再利用。Production実データは一時的にランナーに読み込み、公開リポジトリ/Stage/永続Artifactに保存しない。Workflowのfinally/always cleanupで削除。
+- `151_h43_cost_free_isolated_rehearsal.py` と既存登録済み `.github/workflows/task08-staging-b0-auth-http.yml` の専用H43 jobを追加。Trigger File `.task08-free-rehearsal-trigger` による一回起動のみ。既存のStage Auth/HTTP jobはH43起動時に実行しない。
+- 実行 [Actions #44915274585](https://github.com/g-ambe/Padel-match/actions/runs/44915274585)。Python構文、Secrets存在、Pinned Supabase CLIと公式CAはPASS。続く隔離復元・Phase1→Phase2実SQLは**ジョブ完了後に判定**し、未完了時点ではGOとしない。
+- 既存の本番DDL/Worker/Stage DBは変更していない。Phase1/2成功の有無とMigration履歴・既存データ行ハッシュはジョブ結果で別途報告。

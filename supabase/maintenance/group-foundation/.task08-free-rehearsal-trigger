@@ -1,4 +1,4 @@
 H43_NO_COST_ISOLATED=1
 H45_REAL_GROUP_DATA=1
 H46_REAL_ROLE_TEST=1
-# H46 transaction-only role checks using current real group memberships; no hosted DB writes.
+# H46 retry with sanitized per-stage diagnosis; no hosted DB writes.

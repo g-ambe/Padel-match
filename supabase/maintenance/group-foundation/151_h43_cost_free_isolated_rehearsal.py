@@ -153,7 +153,7 @@ def run() -> None:
                 after["owner_transfer_exists"] and
                 after["member_count_exists"],
                 "H44_Phase2_replay_or_postflight_failed")
-        require(query(target, "SELECT count(*) AS n FROM public.events")["n"] == 0,
+        require(query(target, "SELECT json_build_object('n', count(*)) FROM public.events")["n"] == 0,
                 "H44_synthetic_baseline_contaminated")
         print("H44 ALL PASS: Phase1+Phase2 SQL on isolated Prod schema, replay guarded", flush=True)
     finally:

@@ -175,3 +175,16 @@
 - [初回run #44958331284](https://github.com/g-ambe/Padel-match/actions/runs/44958331284)はテストコードのPython局所`importlib`衝突でSQL未到達のFAIL。検証コードのみ修正後の[#44958408725](https://github.com/g-ambe/Padel-match/actions/runs/44958408725)は全PASS。
 - **データ取扱注意**：実データ全列にはゲスト名・共有リンクtoken・R2オブジェクトキー・media attempt ticket等を含む。GitHub標準runnerのプロセスメモリとネットワーク隔離DBでのみ利用し、ログ・Artifacts・Stageへ出力せず、実画像バイナリは未コピー。ユーザーは実データ利用を許可済み。
 - **限界**：R2の実画像本体/Cloudflare本番配信/全ページ実ブラウザ/本番同時更新と障害時復旧は別判定。**TASK-08本番リリースはまだNO-GO**。次の最優先はPhase2権限切替とCloudflare main自動デプロイ・旧UI互換・COMMIT後の安全な復旧順序の最終整合。
+
+## 17. H49：GitHub PR全差分・本番切替/復旧可否の独立審査＝**NO-GO**（2026-11-22）
+
+詳細：[H49全量審査 `161_h49_full_github_go_nogo_and_rollback_audit.md`](161_h49_full_github_go_nogo_and_rollback_audit.md)。
+
+- 既存Draft PR #265の**全258変更ファイルの差分パッチ**を一覧化・リスク構文を横断確認、旧`main`側の重要アプリ画面/DB参照、Phase1(6)/Phase2(11)の原本SQL、Migration運用、GitHub Backup/Release/Actions、Cloudflareの実Worker部署状況、Prod READ ONLY権限/Supabase Advisorsも照合。
+- **DBのCOMMIT前**のロールバックはトランザクション内で可能。しかし**Phase2 COMMIT後には確立・検証済みの限定逆Migration/互換SQLがない**。特に`club_members`匿名SELECTのREVOKEと新たな公開別名列、本人連携申請詳細RPCのDTO変更、H35の旧動画click匿名停止。古いWorkerへ戻すだけではDB権限・RPCが戻らず、単純にanonに全表SELECTを再付与すると個人公開別名漏えいリスク。
+- **最新全件バックアップ不足**。GitHub Draft Releaseには2026-11-18 UTCの暗号化バックアップがあり、その時点のbackup/restore Actions #44203293217は両方SUCCESS。だが11/21の役職変更等より前。11/21-22の全件Snapshot/隔離復元H43 #44915274585は失敗。H44～H48の部分的実データ隔離Migration試験PASSは**全件災害復旧の証明ではない**。
+- Cloudflare Prod `padel-match`には現行Worker version **#389**（2026-11-20 UTC）と旧版#388等のDeployment Historyあり。**Workerのアプリコード版のみのrollback経路はあるが新DBの互換性は保証されない**。H40資料では`main`自動deploy設定を記録、一方最新APIのBuild Trigger一覧GETは空であったため現有効設定の追加確認要。
+- 本番現行匿名`club_members`テーブルSELECT=true、`clubs`/選手プロフィール/公式基底テーブル等の別のanon公開面も残り、H35後もTASK-08 P0全部は終わらない。Supabase Advisorのanon SECURITY DEFINER警告9件等を認可ガード別に確認する必要あり。
+- PR branchは`main`より**469コミットahead/1 behind**、main側の1コミットは`AGENTS.md`のタスク管理/本番承認/検証ルール拡充。現在のPR branchのAGENTS.mdは旧版。これを取り込み、最新PR HEADのCI/Cloudflare互換性を再検証する。
+- Issue #262メール招待、#241同一グループメンバーだけの写真表示、#264公開直近開催の一部要件が未実装。Phase1/2限界とTASK-08全体未完了を区別する。
+- **本番Migration/Worker/main/PR mergeは未実施**。GO条件：最新本番全件外部バックアップ＋隔離復元成功、Phase2 COMMIT**後**の逆/forward-fixテストPASS、旧/新Worker×旧/新DBの互換テスト、Migration履歴正式採番・再実行防止、Cloudflare自動deploy制御、最新mainルール/PR HEAD CI、安全な手順とユーザーの本番GO。

@@ -86,3 +86,5 @@
 - 145候補：前提となるRPC追加後に、138→0057→0058→0059→0060→139→0061→0062→0063→0064→0065の**11原本（sha固定）をBEGIN/COMMIT一組に集約**。コミット前の失敗は全てROLLBACKされる。**COMMIT後に旧アプリを戻すだけでは修復できない可能性を明記**。
 - Prod migration履歴22件 vs Stage74件。**ソースMigrationの登録/二重適用防止方法未確定のため本番NO-GO**。自動`db push`不可。Cloudflare配信手順も現物で確定してから公開する。
 - **H40は追加開発ではなく本番リリース準備。** DBはREAD ONLYのみ、GitHub既存PR #265に候補を保存。各ソースの部分的Stage ROLLBACKテストが通ったことと、**本番スキーマでの11連続DDLが通ったことは別**。本番適用・PRマージ・Cloudflare公開なし。
+
+**Cloudflare実トリガーの追記**：本番`padel-match`はGitHub `main`を自動デプロイ（`npm run cf:build` → `npx wrangler deploy`）、Stage `padel-match-staging`は`codex/minimal-security-replacement`を自動ビルド対象としており、**PR #265の`codex/task-08-group-foundation`ではない**。確認はCloudflare API GETのみ。詳細と復旧上の注意は`146_h40_release_order_restore_and_decision.md`。公開前にStageプレビューとProd DB切替の整合が必要。

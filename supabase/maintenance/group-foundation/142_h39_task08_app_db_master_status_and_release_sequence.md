@@ -164,3 +164,14 @@
 - 再実行[#44957088606](https://github.com/g-ambe/Padel-match/actions/runs/44957088606) **SUCCESS**：試合生成**35**、固定ペア**101**、スコア/GP/ランキング/動画**87**、画像/施設**54**、グループ/イベント**27**＝**304テスト実行PASS・0 FAIL**（重複実行1件を含む）。TypeScript `tsc --noEmit` PASS。
 - H47は**既存機能のコード回帰＋本番現状のREAD ONLY整合**。本番の全イベント/画像を隔離DBに移してPhase1/2適用後の全行保持まで検証したわけではない。Stageは固定ペア/画像テーブルを欠き、Prod完全互換ではないため混同しない。
 - **本番GOはまだ保留**。次はレガシー実データの隔離DB移行前後比較、Cloudflare`main`自動配信と本番Migration cutover/復旧整合、PR現HEADの実UI回帰、TASK-08別残件（同クラブ写真・招待等）。
+
+## 16. H48：実イベント・固定ペア・戦績・画像管理4,279行のPhase1/2前後保持PASS（2026-11-22）
+
+詳細：[`160_h48_real_legacy_preservation_result.md`](160_h48_real_legacy_preservation_result.md) ／ [成功Actions #44958408725](https://github.com/g-ambe/Padel-match/actions/runs/44958408725)。
+
+- 無料GitHub Actions上のネットワーク切断済みPostgreSQL17へ、本番READ ONLY snapshotから**旧試合・公式・チーム戦・固定ペア・画像管理・施設の18表4,279行**を全列で一時復元。H45のクラブ/所属/選手/申請等**6表151行**も同一検証DBに復元。計24表4,430行の元データを検証した。
+- **`before_phase1`→Phase1(6工程)後→Phase2(11工程)後の全18表の元列JSONB/SHA-256一致PASS**。本番データの得点異常（同点2-2勝者B×5件、削除イベント負得点×1件）を勝手に修復せず、RLS/匿名固定ペア・非公開画像の直接SELECT禁止、孤立試合結果・固定ペア参照・本人画像所有者整合を維持。
+- H45の名簿参照backfill41行、本人同意を要する公開名簿、Migration履歴の前後確認も連続PASS。CI終了時一時DB/ファイル削除PASS。**本番/StageへのDDL/DML・Worker deploy・PRマージなし**。
+- [初回run #44958331284](https://github.com/g-ambe/Padel-match/actions/runs/44958331284)はテストコードのPython局所`importlib`衝突でSQL未到達のFAIL。検証コードのみ修正後の[#44958408725](https://github.com/g-ambe/Padel-match/actions/runs/44958408725)は全PASS。
+- **データ取扱注意**：実データ全列にはゲスト名・共有リンクtoken・R2オブジェクトキー・media attempt ticket等を含む。GitHub標準runnerのプロセスメモリとネットワーク隔離DBでのみ利用し、ログ・Artifacts・Stageへ出力せず、実画像バイナリは未コピー。ユーザーは実データ利用を許可済み。
+- **限界**：R2の実画像本体/Cloudflare本番配信/全ページ実ブラウザ/本番同時更新と障害時復旧は別判定。**TASK-08本番リリースはまだNO-GO**。次の最優先はPhase2権限切替とCloudflare main自動デプロイ・旧UI互換・COMMIT後の安全な復旧順序の最終整合。

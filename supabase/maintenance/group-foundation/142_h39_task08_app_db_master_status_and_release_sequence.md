@@ -97,3 +97,11 @@
 - Phase2既存`145`は138→0057→0058→0059→0060→139→0061→0062→0063→0064→0065の11工程。Stage74/Prod22履歴。**正式migration-versionと旧0054〜0065の重複適用防止**が実際のリリース前STOP条件。
 - Phase1は`directory_refs`への所属行生成・追加triggerを含み、完全な無副作用ではない。既存アプリのグループ操作を本番等価な環境で確認し、`main`のCloudflare自動デプロイと適用順を揃える。
 - H41でも本番変更なし。写真・メール招待の未実装、残余anon基底SELECTの扱いは引き続き個別課題。
+
+## 9. H42追記：管理者変更完了・Migration二重適用防止（2026-11-21）
+
+- 本番の「**Wytel Bule Owls**」は**owner＝あんべ（設定済み）／あんべ＝main_admin／瀧田＝sub_admin**に確定変更。対象2レコードのみ、事前ROLLBACK・本番COMMIT・独立READ ONLY検証済み。active所属9名、試合/戦績/他メンバーに変更なし。H40/H41のowner ID NULLは**変更前**情報に訂正。
+- 本番向けSQL `147_h41_prod_phase1_additive_candidate.sql` と `145_h40_prod_phase2_atomic_cutover_candidate.sql` に**履歴での二重適用・順序違反拒否ガード**を追加。名前は`task08_prod_phase1_additive`→`task08_prod_phase2_atomic`に固定。
+- `149_h42_prod_migration_replay_gate_readonly.sql`をStage/Prodで実行。Prodは`phase1_eligible=true`、Stageは`false`（旧Stage用0054〜0065履歴あり）。将来は`apply_migration`で2本のみ登録・監査し、ディレクトリ全体の`db push`は禁止。
+- `150_h42_one_time_production_migration_protocol.md`に確定手順と費用条件を保存。Prod相当branchの料金はSupabase見積**$0.01344/時間から**、作成には明示費用承認が必要。現時点branchは**未作成**であり17工程の連続実行はまだ未検証。
+- 本番追加DDL・PRマージ・Workerデプロイは行っていない。TASK-08子タスク#262のメール招待と#264の同クラブ画像は引き続き未実装。

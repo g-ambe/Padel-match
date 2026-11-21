@@ -113,3 +113,13 @@
 - `151_h43_cost_free_isolated_rehearsal.py` と既存登録済み `.github/workflows/task08-staging-b0-auth-http.yml` の専用H43 jobを追加。Trigger File `.task08-free-rehearsal-trigger` による一回起動のみ。既存のStage Auth/HTTP jobはH43起動時に実行しない。
 - 実行 [Actions #44915274585](https://github.com/g-ambe/Padel-match/actions/runs/44915274585)。Python構文、Secrets存在、Pinned Supabase CLIと公式CAはPASS。続く隔離復元・Phase1→Phase2実SQLは**ジョブ完了後に判定**し、未完了時点ではGOとしない。
 - 既存の本番DDL/Worker/Stage DBは変更していない。Phase1/2成功の有無とMigration履歴・既存データ行ハッシュはジョブ結果で別途報告。
+
+## 11. H44最終結果（2026-11-22 JST）— Phase1/Phase2のschema-only実SQL検証PASS
+
+正本：[H44詳細報告 `152_h44_free_schema_only_prod_migration_rehearsal_result.md`](152_h44_free_schema_only_prod_migration_rehearsal_result.md)。
+
+- H43の**実データ暗号化全件バックアップ方式**は初回run`#44915274585`で取得中に失敗したため廃止。**現在の採用方式は利用者データ行を一切コピーしないschema-only**。前節「H43」は過去の試行記録であり、現在の方式を示すものではない。
+- `#44952103384`：schema取得PASS／ローカル復元でSQLSTATE 2BP01→既存の安全な復元手順を適用。`#44952370833`：schema取得・隔離復元・スキーマ構造一致PASS／JSON出力処理のKeyErrorを修正。
+- **[#44952613293](https://github.com/g-ambe/Padel-match/actions/runs/44952613293) 成功**。本番のスキーマ・RLS/ACL・ロール・関数・trigger・Migration名/versionをREAD ONLYで取得し、ネットワーク隔離PostgreSQL17へ復元。元のPhase1 6工程→合成履歴→Phase2 11工程→合成履歴→二重適用不可判定のすべてPASS、最後に一時コンテナ/ファイル削除PASS。
+- **Prod/Stageは無変更**：Prod migration22/通常event91/公式event4/club13、新共有RPCなし。Stage migration74/event0/club3、新共有RPCあり。Wytel Bule Owlsのowner=あんべを再確認。PR #265はDraft/未マージ、Cloudflare未変更。
+- **残件**：実データ（もしくは合成fixture）での移行時バックフィル/ACL/Owner分岐はH44の検証対象外。Stageのreal Auth/HTTP・主要画面/固定ペア/画像の回帰、正式Migration履歴とCloudflare公開順序、COMMIT後の復旧手順が別途必要。**H44成功は本番リリースGOを意味しない**。

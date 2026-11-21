@@ -123,3 +123,10 @@
 - **[#44952613293](https://github.com/g-ambe/Padel-match/actions/runs/44952613293) 成功**。本番のスキーマ・RLS/ACL・ロール・関数・trigger・Migration名/versionをREAD ONLYで取得し、ネットワーク隔離PostgreSQL17へ復元。元のPhase1 6工程→合成履歴→Phase2 11工程→合成履歴→二重適用不可判定のすべてPASS、最後に一時コンテナ/ファイル削除PASS。
 - **Prod/Stageは無変更**：Prod migration22/通常event91/公式event4/club13、新共有RPCなし。Stage migration74/event0/club3、新共有RPCあり。Wytel Bule Owlsのowner=あんべを再確認。PR #265はDraft/未マージ、Cloudflare未変更。
 - **残件**：実データ（もしくは合成fixture）での移行時バックフィル/ACL/Owner分岐はH44の検証対象外。Stageのreal Auth/HTTP・主要画面/固定ペア/画像の回帰、正式Migration履歴とCloudflare公開順序、COMMIT後の復旧手順が別途必要。**H44成功は本番リリースGOを意味しない**。
+
+## 12. H44 Stage Auth/HTTP追加回帰成功（2026-11-22）
+
+- [GitHub Actions #44952963586](https://github.com/g-ambe/Padel-match/actions/runs/44952963586)：`staging-b0-http` **SUCCESS**。TypeScript、単体回帰（28+8+10+12＝**58 PASS／0 FAIL**）、Stage実Auth/PostgREST、公開人数（JWTとhelper）、匿名/未所属者閲覧、無効動画tokenの拒否はすべてPASS。
+- `H34_RUN_SHARE_FIXTURE=0`で実Chromiumステップは**今回スキップ相当**（ジョブstepは正常終了）。実Chromiumでの通常/チーム/公式共有は過去の[#44873920056](https://github.com/g-ambe/Padel-match/actions/runs/44873920056) PASSに依拠。
+- 先のH44[#44952613293](https://github.com/g-ambe/Padel-match/actions/runs/44952613293)で**Prodスキーマ相当のネットワーク隔離DBへPhase1(6)→Phase2(11)を連続適用PASS**。**合成前データ→後データのbefore/after移行検証は未完了**。初期0行のDBでのSQL実行成功と、実利用者データに対する移行の影響は区別する。
+- Stage/ProdへのDDL反映・PRマージ・Cloudflare deployは今回していない。TASK-08の未実装写真と招待も引き続き残件。

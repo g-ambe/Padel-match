@@ -64,9 +64,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --prefix "$RUNNER_TEMP/task08-bun" --no-package-lock --no-audit --no-fund --ignore-scripts bun@1.2.15
+          npm install --prefix "$RUNNER_TEMP/task08-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
+          test "$("$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" --version)" = 1.2.15
           "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
-          "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" x tsc --noEmit
+          test -f node_modules/next/dist/bin/next
+          node node_modules/typescript/bin/tsc --noEmit
 
       - name: H31 token click migration and page source regressions
         run: node --test tests/h31-token-video-click-gate.test.cjs tests/h32-token-click-migration-parity.test.cjs tests/h33-video-click-referrer-privacy.test.cjs

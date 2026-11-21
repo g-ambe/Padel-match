@@ -130,3 +130,13 @@
 - `H34_RUN_SHARE_FIXTURE=0`で実Chromiumステップは**今回スキップ相当**（ジョブstepは正常終了）。実Chromiumでの通常/チーム/公式共有は過去の[#44873920056](https://github.com/g-ambe/Padel-match/actions/runs/44873920056) PASSに依拠。
 - 先のH44[#44952613293](https://github.com/g-ambe/Padel-match/actions/runs/44952613293)で**Prodスキーマ相当のネットワーク隔離DBへPhase1(6)→Phase2(11)を連続適用PASS**。**合成前データ→後データのbefore/after移行検証は未完了**。初期0行のDBでのSQL実行成功と、実利用者データに対する移行の影響は区別する。
 - Stage/ProdへのDDL反映・PRマージ・Cloudflare deployは今回していない。TASK-08の未実装写真と招待も引き続き残件。
+
+## 13. H45 本番の実グループデータを使った移行試験PASS（2026-11-22）
+
+詳細：[H45結果 `154_h45_real_data_migration_rehearsal_result.md`](154_h45_real_data_migration_rehearsal_result.md) ／ [GitHub Actions #44953743963](https://github.com/g-ambe/Padel-match/actions/runs/44953743963) **SUCCESS**。
+
+- 本番READ ONLY・GitHub Actionsの**無料・ネットワーク隔離PostgreSQL**で検証。取得データはグループ13・所属41・選手プロフィール84・アカウントプロフィール7・加入申請3・本人連携申請3の**6表の限定列**。認証ユーザー/メール/パスワード/トークン/イベント得点/画像/通知本文などはコピーせず、行内容のログ出力/保存は行わない。
+- **Phase1 6工程→Phase2 11工程の連続SQL実行PASS**。元の6表の限定列JSONハッシュが移行前後で一致。Phase1の名簿参照は**所属41件すべて生成**。
+- Phase2で既存41所属の新表示名・本人公開同意は**NULLのまま**。公開グループ2件／有効所属14人のうち**連携済4人は本人同意前で公開名簿から省略、未連携10人は掲載**。公開人数RPCは14人を返し、各実公開クラブ別の照合PASS。認証なし直接`club_members`SELECTは禁止。owner NULLの稼働グループ0件。
+- Migration履歴シミュレーションPhase1 1件・Phase2 1件・再実行不許可PASS。一時ファイル/隔離DB削除PASS。
+- **限界**：`auth.users`を含む完全な実データ復元ではなく、実在メンバーのOwner引継ぎ/退会、固定ペア・戦績・画像/施設、旧UIから新UIへの切替確認は未完了。**本番GOではない**。Prod/Stage/Cloudflare/main無変更、PR Draft継続。

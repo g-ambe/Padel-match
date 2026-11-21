@@ -13,6 +13,7 @@ import importlib.util
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -264,6 +265,15 @@ def main() -> None:
                 "H45_repeat_application_prevention_failed")
         print("H45 ALL PASS: real club/membership subset survived Phase1 + Phase2;"
               " no Prod/Stage writes", flush=True)
+        if os.environ.get("TASK08_H46_REAL_ROLE_TEST") == "1":
+            import importlib.util
+            spec_role = importlib.util.spec_from_file_location(
+                "task08_h46", HERE / "155_h46_real_membership_role_rollback.py")
+            require(spec_role is not None and spec_role.loader is not None,
+                    "H46_test_module_missing")
+            h46 = importlib.util.module_from_spec(spec_role)
+            spec_role.loader.exec_module(h46)
+            h46.run(target, data, require, b, h44, sys.modules[__name__])
     finally:
         # Personal data remains ephemeral; never upload logs, dumps or artifacts.
         shutil.rmtree(root, ignore_errors=True)

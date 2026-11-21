@@ -1,3 +1,4 @@
+import { readStatsMembers } from "./group-read";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchCountedFriendlyEvents, readStatsRows, readStatsRowsByIds } from "./stats-history";
 import { matchResultRows, firstMatchResult, getHistoricalGroupMatchTeams, hasEnteredFriendlyMatchScore, type EmbeddedMatchResults } from "./friendly-match-results";
@@ -29,7 +30,7 @@ export async function fetchBalancePastStats(s: SupabaseClient, current: CurrentE
     if (!events.length) return new Map();
     const eventIds = events.map(e => e.id);
     // 戦績画面と同じく退会済みを含む所属履歴で、当時のメンバー4人の試合を判定する。
-    const members = await readStatsRows<{ player_profile_id: string | null }>((start, end) => s.from("club_members").select("player_profile_id").eq("club_id", current.club_id!).order("id").range(start, end));
+    const members = await readStatsMembers(s,current.club_id);
     const pastParticipants = await readStatsRowsByIds<PastParticipant>(eventIds, (ids, start, end) => s.from("event_participants").select("id,event_id,player_profile_id,participant_type").in("event_id", ids).order("id").range(start, end));
     const matches = await readStatsRowsByIds<PastMatch>(eventIds, (ids, start, end) => s.from("matches").select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b)").in("event_id", ids).lt("created_at", current.created_at).order("id").range(start, end));
     return collectBalancePastStats(participants, members, pastParticipants, matches);

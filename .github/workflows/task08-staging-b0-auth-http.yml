@@ -1,0 +1,221 @@
+# TASK-08 P0 staging Auth HTTP, plus explicit H43 encrypted READ-ONLY prod snapshot -> isolated Docker.
+# Secrets are NEVER exposed to a forked PR or an arbitrary push path.
+# No deployment, hosted database writes or PR merge; H43 has read-only Prod backup access.
+name: TASK-08 Stage Auth / free isolated Prod rehearsal
+on:
+  push:
+    branches:
+      - codex/task-08-group-foundation
+    paths:
+      - supabase/maintenance/group-foundation/.task08-b0-trigger
+      - supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger
+
+permissions:
+  contents: read
+
+concurrency:
+  group: task08-staging-auth-http
+  cancel-in-progress: false
+
+jobs:
+  staging-b0-http:
+    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation' && !contains(github.event.head_commit.message, '[task08-h43-free]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout the existing task branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Check staging secret availability without printing values
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for var in TASK08_STAGING_PUBLISHABLE_KEY TASK08_STAGING_MAIN_A_PASSWORD TASK08_STAGING_RECIPIENT_PASSWORD TASK08_STAGING_OUTSIDER_PASSWORD; do
+            if [[ -z "${!var:-}" ]]; then
+              echo "::error title=Missing test secret::Missing ${var} in repository Actions secrets"
+              exit 2
+            fi
+          done
+
+      - name: Check B0 script syntax
+        run: node --check supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs
+
+      - name: H12 token-only UI and minimal DTO regression checks
+        run: node --test tests/shared-event-page-rpc.test.cjs tests/shared-event-rpc-release.test.cjs tests/h14-history-audit.test.cjs tests/h15-self-withdraw.test.cjs tests/h17-join-alias-db.test.cjs tests/h18-receiver-profile-link.test.cjs tests/h19-owner-transfer-db.test.cjs tests/h22-public-member-count.test.cjs
+
+      - name: H18 actual application helper unit regression (no DB writes)
+        run: node --test tests/recipient-profile-link.test.cjs
+
+      - name: H19 actual owner transfer application helper unit regression (no DB writes)
+        run: node --test tests/club-owner-transfer.test.cjs
+
+      - name: TypeScript compile validation (no deployment)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/task08-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
+          test "$("$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" --version)" = 1.2.15
+          "$RUNNER_TEMP/task08-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
+          test -f node_modules/next/dist/bin/next
+          node node_modules/typescript/bin/tsc --noEmit
+
+      - name: H31 token click migration and page source regressions
+        run: node --test tests/h31-token-video-click-gate.test.cjs tests/h32-token-click-migration-parity.test.cjs tests/h33-video-click-referrer-privacy.test.cjs
+
+      - name: Isolated test dependency install
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/task08-b0"
+          cp supabase/maintenance/group-foundation/08_staging_auth_http_smoke.mjs "$RUNNER_TEMP/task08-b0/smoke.mjs"
+          npm install --prefix "$RUNNER_TEMP/task08-b0" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund @supabase/supabase-js@2.112.1
+
+      - name: Run B0 real Auth and PostgREST smoke (staging only)
+        shell: bash
+        env:
+          TASK08_EXPECT_H06_CLOSED: '1'
+          TASK08_EXPECT_H03_CLOSED: '1'
+          TASK08_EXPECT_LEGACY_SUBMIT_CLOSED: '1'
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_RECIPIENT_PASSWORD: ${{ secrets.TASK08_STAGING_RECIPIENT_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node "$RUNNER_TEMP/task08-b0/smoke.mjs"
+
+      - name: H22 exact public member count real Stage JWT HTTP (read-only)
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cp supabase/maintenance/group-foundation/100_h22_public_count_real_auth_readonly.mjs "$RUNNER_TEMP/task08-b0/h22.mjs"
+          node "$RUNNER_TEMP/task08-b0/h22.mjs"
+
+      - name: H22 actual application count helper with Stage Auth (read-only)
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+        run: |
+          set -euo pipefail
+          NODE_PATH="$RUNNER_TEMP/task08-b0/node_modules" node supabase/maintenance/group-foundation/102_h22_app_helper_real_auth_readonly.cjs
+
+
+      - name: H29 real Auth anonymous clubs and public group access (read-only)
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+          TASK08_STAGING_MAIN_A_PASSWORD: ${{ secrets.TASK08_STAGING_MAIN_A_PASSWORD }}
+          TASK08_STAGING_OUTSIDER_PASSWORD: ${{ secrets.TASK08_STAGING_OUTSIDER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node --check supabase/maintenance/group-foundation/116_h29_stage_real_auth_clubs_readonly.mjs
+          cp supabase/maintenance/group-foundation/116_h29_stage_real_auth_clubs_readonly.mjs "$RUNNER_TEMP/task08-b0/h29.mjs"
+          node "$RUNNER_TEMP/task08-b0/h29.mjs"
+
+      - name: H31 Stage anon token click RPC Data API negatives (no-op only)
+        shell: bash
+        env:
+          TASK08_STAGING_PUBLISHABLE_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          node --check supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs
+          cp supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs "$RUNNER_TEMP/task08-b0/h31.mjs"
+          node "$RUNNER_TEMP/task08-b0/h31.mjs"
+
+      - name: H34 real share HTTP and Chromium (opt-in Stage fixture only)
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://zzjwpresqkefnyjyisgd.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          grep -q '^H34_RUN_SHARE_FIXTURE=1$' supabase/maintenance/group-foundation/.task08-b0-trigger || { echo "H34 opt-in not requested"; exit 0; }
+          npm install --prefix "$RUNNER_TEMP/task08-browser" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.51.1
+          "$RUNNER_TEMP/task08-browser/node_modules/.bin/playwright" install --with-deps chromium
+          cp supabase/maintenance/group-foundation/128_h34_real_share_browser.mjs "$RUNNER_TEMP/task08-browser/test.mjs"
+          node --check "$RUNNER_TEMP/task08-browser/test.mjs"
+          node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3174 > "$RUNNER_TEMP/task08-next.log" 2>&1 &
+          server=$!
+          trap 'rc=$?; if [ "$rc" -ne 0 ]; then tail -n 60 "$RUNNER_TEMP/task08-next.log"; fi; kill "$server" 2>/dev/null || true' EXIT
+          ready=0
+          for i in $(seq 1 40); do
+            kill -0 "$server" 2>/dev/null || { echo "Next server exited"; exit 1; }
+            if curl --noproxy '*' --max-time 5 -fsS -o /dev/null http://127.0.0.1:3174/share/events/TASK08H12HTTPFRIENDLYONLY; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1 || { echo "Next server did not become ready"; exit 1; }
+          H34_BROWSER_ONLY=1 node "$RUNNER_TEMP/task08-browser/test.mjs"
+
+  h43-isolated-rehearsal:
+    if: >-
+      github.repository == 'g-ambe/Padel-match' &&
+      github.ref == 'refs/heads/codex/task-08-group-foundation' &&
+      contains(github.event.head_commit.message, '[task08-h43-free]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify explicit one-off test opt-in
+        run: grep -qx 'H43_NO_COST_ISOLATED=1' supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger
+
+      - name: Verify pre-existing read-only backup secrets without printing
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "::error::Missing read-only backup DB URL"; exit 2; }
+          test -n "$PADEL_BACKUP_PASSPHRASE" || { echo "::error::Missing encrypted backup passphrase"; exit 2; }
+
+      - name: Python source compile
+        run: python3 -B -m py_compile supabase/maintenance/group-foundation/151_h43_cost_free_isolated_rehearsal.py
+
+      - name: Install existing pinned and verified Supabase CLI
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+
+      - name: Prepare official pinned read-only DB CA
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h43-prod-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+
+      - name: Restore exact Prod snapshot only to isolated local Docker and run Phase1+Phase2
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h43-prod-ca.crt
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/task08-h43-${{ github.run_id }}-${{ github.run_attempt }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: |
+          set -euo pipefail
+          python3 -B supabase/maintenance/group-foundation/151_h43_cost_free_isolated_rehearsal.py
+
+      - name: Wipe ephemeral snapshot and isolated test database
+        if: always()
+        shell: bash
+        env:
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/task08-h43-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          rm -rf -- "$PADEL_BACKUP_WORKDIR"
+          docker rm -f supabase_db_padel_backup_restore >/dev/null 2>&1 || true
+          echo "H43 isolated test cleanup: no hosted DB writes"

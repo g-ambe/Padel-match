@@ -152,3 +152,15 @@
 - 試験中に発見した`42704`は**テスト用GUC名の不備**（`h46_request`等）。名前空間付き`h46.request`等へ修正後に全工程PASS。**本番移行SQLやアプリ動作の変更なし**。
 - Prod事後READ ONLY：Migration22、club13、members41、events91、matches521、match_results351、Ownerあんべ／瀧田sub_adminのまま。Stage Migration74で変更なし。本番/Stageへの新DDL/DML・Cloudflare deploy・PR merge無し。
 - **限界**：本人の実JWT/HTTP操作、試合スコア行そのものの全件回帰、本番切替後の旧UI復旧は別検証。TASK-08全体のプロフィール画像・メール招待など未実装も引き続き残る。H46 PASSだけで本番GOとは判定しない。
+
+## 15. H47：通常試合・チーム戦・固定ペア・スコア・画像・施設の非破壊監査と回帰（2026-11-22）
+
+詳細：[`158_h47_legacy_regression_and_prod_integrity_result.md`](158_h47_legacy_regression_and_prod_integrity_result.md) ／ 本番READ ONLY検査SQL[`157_h47_prod_legacy_preservation_fingerprint_readonly.sql`](157_h47_prod_legacy_preservation_fingerprint_readonly.sql) ／ [成功Actions #44957088606](https://github.com/g-ambe/Padel-match/actions/runs/44957088606)。
+
+- 本番の**22テーブル**について全行のDBサーバー側MD5集合フィンガープリントと件数を2回取得。両スナップショットで**22/22件一致**。情報は集約して扱い、実UUID・名前・スコア行・動画トークンなどはGitHubに記録していない。
+- 本番の通常イベント**91**／ラウンド**336**／試合**521**／結果**351**／選手配置**2,084**、チーム戦**8**、公式イベント**4**／公式試合**15**、固定ペアstate**10**／pairs**2**／rounds**78**、プロフィール画像object**1**／施設**24**を確認。試合結果孤立/二重保存/完了と結果の矛盾、固定ペアの参照欠損、本人画像の参照・所有者不整合は監査した範囲では**0**。固定ペア/本人画像はRLS有効、anon直接SELECT不可。
+- **既存スコア注意**：同点2-2にB勝ちが付いた**5件**（通常の公式集計候補）、削除済イベント内の負得点**1件**。これらは既存データとして観測され、今回修正は行っていない。前後比較時に既存異常を取り違えない。
+- PR #265の現行コードでGitHub Actionsの既存機能回帰を実行。初回[#44956850136](https://github.com/g-ambe/Padel-match/actions/runs/44956850136)は**旧グループ削除テストの期待URLとref漏れ**により最終群で1件FAIL。実アプリ`/profile#profile-groups`遷移は変更せず、**`tests/group-delete.test.cjs`だけを更新**。
+- 再実行[#44957088606](https://github.com/g-ambe/Padel-match/actions/runs/44957088606) **SUCCESS**：試合生成**35**、固定ペア**101**、スコア/GP/ランキング/動画**87**、画像/施設**54**、グループ/イベント**27**＝**304テスト実行PASS・0 FAIL**（重複実行1件を含む）。TypeScript `tsc --noEmit` PASS。
+- H47は**既存機能のコード回帰＋本番現状のREAD ONLY整合**。本番の全イベント/画像を隔離DBに移してPhase1/2適用後の全行保持まで検証したわけではない。Stageは固定ペア/画像テーブルを欠き、Prod完全互換ではないため混同しない。
+- **本番GOはまだ保留**。次はレガシー実データの隔離DB移行前後比較、Cloudflare`main`自動配信と本番Migration cutover/復旧整合、PR現HEADの実UI回帰、TASK-08別残件（同クラブ写真・招待等）。

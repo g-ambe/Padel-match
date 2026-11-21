@@ -140,3 +140,15 @@
 - Phase2で既存41所属の新表示名・本人公開同意は**NULLのまま**。公開グループ2件／有効所属14人のうち**連携済4人は本人同意前で公開名簿から省略、未連携10人は掲載**。公開人数RPCは14人を返し、各実公開クラブ別の照合PASS。認証なし直接`club_members`SELECTは禁止。owner NULLの稼働グループ0件。
 - Migration履歴シミュレーションPhase1 1件・Phase2 1件・再実行不許可PASS。一時ファイル/隔離DB削除PASS。
 - **限界**：`auth.users`を含む完全な実データ復元ではなく、実在メンバーのOwner引継ぎ/退会、固定ペア・戦績・画像/施設、旧UIから新UIへの切替確認は未完了。**本番GOではない**。Prod/Stage/Cloudflare/main無変更、PR Draft継続。
+
+## 14. H46：本番実所属データによる退会・オーナー引継ぎのロール別試験PASS（2026-11-22）
+
+詳細：[`156_h46_real_role_transfer_rollback_result.md`](156_h46_real_role_transfer_rollback_result.md) ／ [GitHub Actions #44954884161](https://github.com/g-ambe/Padel-match/actions/runs/44954884161) **SUCCESS**。
+
+- 本番READ ONLYで取得したH45のグループ13／所属41／選手プロフィール84／アカウントプロフィール7／加入申請3／本人連携申請3の限定列を、隔離DBへ再投入。Phase1の6工程＋Phase2の11工程が再度PASS。
+- **実役職のまま**：Bule OwlsのあんべOwner/main_admin、瀧田sub_adminを確認。匿名・他人の退会、Owner引継ぎ前の退会、sub_admin宛のOwner移管申請は拒否、sub_admin本人退会／重複拒否／所属・選手行履歴保持までPASS。
+- **隔離DB内だけの一時昇格**：本人承諾の引継ぎ、辞退、第三者拒否、二重申請/承諾防止、承諾後の旧Owner退会可・新Owner退会不可、通知4件一致をPASS。さらに降格後承諾禁止・辞退許可・取消・取消後拒否をPASS。
+- **3つの独立したROLLBACK群**を実行。各群終了後に実データ6表の元列の全行ハッシュが一致し、試験用auth.users・通知・引継ぎ申請の残存0件。
+- 試験中に発見した`42704`は**テスト用GUC名の不備**（`h46_request`等）。名前空間付き`h46.request`等へ修正後に全工程PASS。**本番移行SQLやアプリ動作の変更なし**。
+- Prod事後READ ONLY：Migration22、club13、members41、events91、matches521、match_results351、Ownerあんべ／瀧田sub_adminのまま。Stage Migration74で変更なし。本番/Stageへの新DDL/DML・Cloudflare deploy・PR merge無し。
+- **限界**：本人の実JWT/HTTP操作、試合スコア行そのものの全件回帰、本番切替後の旧UI復旧は別検証。TASK-08全体のプロフィール画像・メール招待など未実装も引き続き残る。H46 PASSだけで本番GOとは判定しない。

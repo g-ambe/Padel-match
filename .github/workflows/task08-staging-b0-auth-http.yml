@@ -1,13 +1,14 @@
-# TASK-08 P0: staging-only, manually triggered by editing the inert trigger file.
+# TASK-08 P0 staging Auth HTTP, plus explicit H43 encrypted READ-ONLY prod snapshot -> isolated Docker.
 # Secrets are NEVER exposed to a forked PR or an arbitrary push path.
-# No deployment, production access, app database writes, or PR merge.
-name: TASK-08 staging B0 Auth HTTP
+# No deployment, hosted database writes or PR merge; H43 has read-only Prod backup access.
+name: TASK-08 Stage Auth / free isolated Prod rehearsal
 on:
   push:
     branches:
       - codex/task-08-group-foundation
     paths:
       - supabase/maintenance/group-foundation/.task08-b0-trigger
+      - supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger
 
 permissions:
   contents: read
@@ -18,7 +19,7 @@ concurrency:
 
 jobs:
   staging-b0-http:
-    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation'
+    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation' && !contains(github.event.head_commit.message, '[task08-h43-free]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -160,3 +161,61 @@ jobs:
           done
           test "$ready" = 1 || { echo "Next server did not become ready"; exit 1; }
           H34_BROWSER_ONLY=1 node "$RUNNER_TEMP/task08-browser/test.mjs"
+
+  h43-isolated-rehearsal:
+    if: >-
+      github.repository == 'g-ambe/Padel-match' &&
+      github.ref == 'refs/heads/codex/task-08-group-foundation' &&
+      contains(github.event.head_commit.message, '[task08-h43-free]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify explicit one-off test opt-in
+        run: grep -qx 'H43_NO_COST_ISOLATED=1' supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger
+
+      - name: Verify pre-existing read-only backup secrets without printing
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$SUPABASE_DB_URL" || { echo "::error::Missing read-only backup DB URL"; exit 2; }
+          test -n "$PADEL_BACKUP_PASSPHRASE" || { echo "::error::Missing encrypted backup passphrase"; exit 2; }
+
+      - name: Python source compile
+        run: python3 -B -m py_compile supabase/maintenance/group-foundation/151_h43_cost_free_isolated_rehearsal.py
+
+      - name: Install existing pinned and verified Supabase CLI
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+
+      - name: Prepare official pinned read-only DB CA
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h43-prod-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+
+      - name: Restore exact Prod snapshot only to isolated local Docker and run Phase1+Phase2
+        shell: bash
+        env:
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h43-prod-ca.crt
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/task08-h43-${{ github.run_id }}-${{ github.run_attempt }}
+          SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase
+        run: |
+          set -euo pipefail
+          python3 -B supabase/maintenance/group-foundation/151_h43_cost_free_isolated_rehearsal.py
+
+      - name: Wipe ephemeral snapshot and isolated test database
+        if: always()
+        shell: bash
+        env:
+          PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/task08-h43-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          rm -rf -- "$PADEL_BACKUP_WORKDIR"
+          docker rm -f supabase_db_padel_backup_restore >/dev/null 2>&1 || true
+          echo "H43 isolated test cleanup: no hosted DB writes"

@@ -1,2 +1,2 @@
 H43_NO_COST_ISOLATED=1
-# H44 retry: schema-only snapshot, no personal data row reads. Attempt 2.
+# H44 schema-only isolated replay: restore fixed, attempt 3.

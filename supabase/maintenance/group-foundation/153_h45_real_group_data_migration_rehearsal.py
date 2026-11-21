@@ -298,7 +298,6 @@ def main() -> None:
         print("H45 ALL PASS: real club/membership subset survived Phase1 + Phase2;"
               " no Prod/Stage writes", flush=True)
         if os.environ.get("TASK08_H46_REAL_ROLE_TEST") == "1":
-            import importlib.util
             spec_role = importlib.util.spec_from_file_location(
                 "task08_h46", HERE / "155_h46_real_membership_role_rollback.py")
             require(spec_role is not None and spec_role.loader is not None,

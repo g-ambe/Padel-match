@@ -1,2 +1,3 @@
 H43_NO_COST_ISOLATED=1
-# H44 schema-only replay: isolated schema PASS, gate JSON decoding fix, attempt 4.
+H45_REAL_GROUP_DATA=1
+# H45 limited real group rows; source Prod READ ONLY, isolated Docker target only.

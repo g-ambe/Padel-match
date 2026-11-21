@@ -1,4 +1,4 @@
-# TASK-08 P0 staging Auth HTTP, plus explicit H43 encrypted READ-ONLY prod snapshot -> isolated Docker.
+# TASK-08 P0 staging Auth HTTP, plus H44 schema-only READ-ONLY prod snapshot -> isolated Docker.
 # Secrets are NEVER exposed to a forked PR or an arbitrary push path.
 # No deployment, hosted database writes or PR merge; H43 has read-only Prod backup access.
 name: TASK-08 Stage Auth / free isolated Prod rehearsal
@@ -177,15 +177,13 @@ jobs:
       - name: Verify explicit one-off test opt-in
         run: grep -qx 'H43_NO_COST_ISOLATED=1' supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger
 
-      - name: Verify pre-existing read-only backup secrets without printing
+      - name: Verify existing read-only schema-dump secret without printing
         shell: bash
         env:
           SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
-          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
         run: |
           set -euo pipefail
           test -n "$SUPABASE_DB_URL" || { echo "::error::Missing read-only backup DB URL"; exit 2; }
-          test -n "$PADEL_BACKUP_PASSPHRASE" || { echo "::error::Missing encrypted backup passphrase"; exit 2; }
 
       - name: Python source compile
         run: python3 -B -m py_compile supabase/maintenance/group-foundation/151_h43_cost_free_isolated_rehearsal.py
@@ -198,11 +196,10 @@ jobs:
           PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h43-prod-ca.crt
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
 
-      - name: Restore exact Prod snapshot only to isolated local Docker and run Phase1+Phase2
+      - name: Dump Prod schema without user rows to isolated local Docker and run Phase1+Phase2
         shell: bash
         env:
           SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
-          PADEL_BACKUP_PASSPHRASE: ${{ secrets.PADEL_BACKUP_PASSPHRASE }}
           PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h43-prod-ca.crt
           PADEL_BACKUP_WORKDIR: ${{ runner.temp }}/task08-h43-${{ github.run_id }}-${{ github.run_attempt }}
           SUPABASE_BIN: ${{ runner.temp }}/supabase-tools/supabase

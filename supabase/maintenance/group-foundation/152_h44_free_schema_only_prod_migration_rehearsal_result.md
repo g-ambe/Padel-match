@@ -52,3 +52,19 @@ PR #265はOpen/Draft/未マージ。今回のH44では本番・StageにDDL/DML�
 4. **TASK-08全体の残件**：同グループメンバー向けプロフィール写真、未所属者への公開開催情報、子タスク#262メール招待は未完了。今回のH44成功だけでTASK-08完了とはしない。
 
 **判定：H44 schema-only 17SQL連続実行PASS、TASK-08本番GOは引き続きNO-GO。**
+
+## 追加確認：Stageの実Auth/HTTP回帰（2026-11-22）
+
+H44連続DDLのPASS後に、同じ既存ワークフローのStage側ジョブを明示起動。
+[GitHub Actions #44952963586](https://github.com/g-ambe/Padel-match/actions/runs/44952963586)の`staging-b0-http`は**SUCCESS**（失敗step 0）。別のH43隔離DBジョブは、このコミットでは意図どおりSKIPPED。
+
+実行した範囲：
+- 共有ページの最小DTO等のテスト **28 PASS / 0 FAIL**
+- 本人連携表示・管理者引継ぎのアプリhelperなど **8 PASS / 0 FAIL**
+- 対象ソースや動画クリックRPCなどの回帰 **10 PASS / 0 FAIL**
+- テストグループ・公開人数などの別回帰 **12 PASS / 0 FAIL**
+- TypeScript `tsc --noEmit`、実Stage Auth＋PostgREST、実JWTによる公開人数、未所属・匿名グループアクセス、動画token不正リクエストの拒否、すべてstep SUCCESS。
+
+**留意**：同job内のH34ブラウザstepもstep SUCCESSだが、起動フラグ `H34_RUN_SHARE_FIXTURE=0` のためログは `H34 opt-in not requested` で早期終了。**今回のH34実ChromiumはSKIP相当**。別の以前のrun [#44873920056](https://github.com/g-ambe/Padel-match/actions/runs/44873920056)が実ブラウザ/共有HTTPの最終PASS実績。今回新規fixtureやそのクリック行は作成していない。
+
+このStage検証は**既にTASK-08変更が適用済みのDB**上での利用者ロールの動作テスト。**Prodの移行前データがPhase1/2でどう変わるか**を保証するものではない。公開前には合成データでのbefore→after移行検証、Prodの実データ件数の保全確認と、Cloudflare本番アプリ互換が別途必要。

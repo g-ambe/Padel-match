@@ -165,7 +165,7 @@ BEGIN
  IF n<>1 OR target IS DISTINCT FROM __CANDIDATE_MID__
  THEN RAISE EXCEPTION 'H46_OWNER_CANDIDATE_LIST_INVALID'; END IF;
  request_id:=public.request_club_owner_transfer(__CLUB__,__CANDIDATE_MID__);
- PERFORM set_config('h46_request',request_id::text,true);
+ PERFORM set_config('h46.request',request_id::text,true);
  BEGIN
   PERFORM public.request_club_owner_transfer(__CLUB__,__CANDIDATE_MID__);
  EXCEPTION WHEN SQLSTATE 'PT409' THEN denied:=true; END;
@@ -181,7 +181,7 @@ DECLARE blocked boolean:=false;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__OUTSIDER__::text,true);
  BEGIN
-  PERFORM public.respond_club_owner_transfer(current_setting('h46_request')::uuid,'accepted');
+  PERFORM public.respond_club_owner_transfer(current_setting('h46.request')::uuid,'accepted');
  EXCEPTION WHEN SQLSTATE '42501' THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'H46_OUTSIDER_ACCEPTED_TRANSFER'; END IF;
 END $outsider$;
@@ -189,7 +189,7 @@ DO $decline$
 DECLARE got text;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__CANDIDATE__::text,true);
- got:=public.respond_club_owner_transfer(current_setting('h46_request')::uuid,'declined');
+ got:=public.respond_club_owner_transfer(current_setting('h46.request')::uuid,'declined');
  IF got<>'declined' THEN RAISE EXCEPTION 'H46_DECLINE_FAILED'; END IF;
  IF (SELECT owner_id FROM public.clubs WHERE id=__CLUB__) IS DISTINCT FROM __OWNER__
  THEN RAISE EXCEPTION 'H46_DECLINE_TRANSFERRED_OWNER'; END IF;
@@ -199,18 +199,18 @@ DECLARE request_id uuid;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__OWNER__::text,true);
  request_id:=public.request_club_owner_transfer(__CLUB__,__CANDIDATE_MID__);
- PERFORM set_config('h46_second_request',request_id::text,true);
+ PERFORM set_config('h46.second_request',request_id::text,true);
 END $second$;
 DO $accept$
 DECLARE got text; blocked boolean:=false;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__CANDIDATE__::text,true);
  got:=public.respond_club_owner_transfer(
-   current_setting('h46_second_request')::uuid,'accepted');
+   current_setting('h46.second_request')::uuid,'accepted');
  IF got<>'accepted' THEN RAISE EXCEPTION 'H46_ACCEPT_FAILED'; END IF;
  BEGIN
   PERFORM public.respond_club_owner_transfer(
-   current_setting('h46_second_request')::uuid,'accepted');
+   current_setting('h46.second_request')::uuid,'accepted');
  EXCEPTION WHEN SQLSTATE 'PT409' THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'H46_ACCEPT_REPLAY_ALLOWED'; END IF;
  IF (SELECT owner_id FROM public.clubs WHERE id=__CLUB__) IS DISTINCT FROM __CANDIDATE__
@@ -276,7 +276,7 @@ DECLARE request_id uuid;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__OWNER__::text,true);
  request_id:=public.request_club_owner_transfer(__CLUB__,__CANDIDATE_MID__);
- PERFORM set_config('h46_request',request_id::text,true);
+ PERFORM set_config('h46.request',request_id::text,true);
 END $request$;
 SET LOCAL ROLE postgres;
 UPDATE public.club_members SET role='sub_admin'
@@ -287,10 +287,10 @@ DECLARE blocked boolean:=false; got text;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__CANDIDATE__::text,true);
  BEGIN
-  PERFORM public.respond_club_owner_transfer(current_setting('h46_request')::uuid,'accepted');
+  PERFORM public.respond_club_owner_transfer(current_setting('h46.request')::uuid,'accepted');
  EXCEPTION WHEN SQLSTATE '42501' THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'H46_DEMOTED_CANDIDATE_ACCEPTED'; END IF;
- got:=public.respond_club_owner_transfer(current_setting('h46_request')::uuid,'declined');
+ got:=public.respond_club_owner_transfer(current_setting('h46.request')::uuid,'declined');
  IF got<>'declined' THEN RAISE EXCEPTION 'H46_DEMOTED_CANDIDATE_CANNOT_DECLINE'; END IF;
 END $demote_decline$;
 DO $no_new_request$
@@ -310,14 +310,14 @@ DECLARE r uuid;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__OWNER__::text,true);
  r:=public.request_club_owner_transfer(__CLUB__,__CANDIDATE_MID__);
- PERFORM set_config('h46_cancel_request',r::text,true);
+ PERFORM set_config('h46.cancel_request',r::text,true);
 END $new_request$;
 DO $third_party_cancel$
 DECLARE blocked boolean:=false;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__OUTSIDER__::text,true);
  BEGIN
-  PERFORM public.cancel_club_owner_transfer(current_setting('h46_cancel_request')::uuid);
+  PERFORM public.cancel_club_owner_transfer(current_setting('h46.cancel_request')::uuid);
  EXCEPTION WHEN SQLSTATE '42501' THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'H46_OUTSIDER_CANCELLED_OWNER_REQUEST'; END IF;
 END $third_party_cancel$;
@@ -325,10 +325,10 @@ DO $cancel$
 DECLARE blocked boolean:=false; got text;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__OWNER__::text,true);
- got:=public.cancel_club_owner_transfer(current_setting('h46_cancel_request')::uuid);
+ got:=public.cancel_club_owner_transfer(current_setting('h46.cancel_request')::uuid);
  IF got<>'cancelled' THEN RAISE EXCEPTION 'H46_OWNER_CANCEL_FAILED'; END IF;
  BEGIN
-  PERFORM public.cancel_club_owner_transfer(current_setting('h46_cancel_request')::uuid);
+  PERFORM public.cancel_club_owner_transfer(current_setting('h46.cancel_request')::uuid);
  EXCEPTION WHEN SQLSTATE 'PT409' THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'H46_CANCEL_REPLAY_ALLOWED'; END IF;
 END $cancel$;
@@ -337,7 +337,7 @@ DECLARE blocked boolean:=false;
 BEGIN
  PERFORM set_config('request.jwt.claim.sub',__CANDIDATE__::text,true);
  BEGIN
-  PERFORM public.respond_club_owner_transfer(current_setting('h46_cancel_request')::uuid,'accepted');
+  PERFORM public.respond_club_owner_transfer(current_setting('h46.cancel_request')::uuid,'accepted');
  EXCEPTION WHEN SQLSTATE 'PT409' THEN blocked:=true; END;
  IF NOT blocked THEN RAISE EXCEPTION 'H46_CANCELLED_TRANSFER_ACCEPTED'; END IF;
 END $after_cancel$;

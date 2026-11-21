@@ -210,6 +210,16 @@ def main() -> None:
     require(str(root).startswith(os.environ["RUNNER_TEMP"] + "/"),
             "H45_runner_temp_only")
     root.mkdir(mode=0o700, exist_ok=False)
+    h48 = None
+    legacy_data = None
+    legacy_cols = None
+    if os.environ.get("TASK08_H48_REAL_LEGACY_TEST") == "1":
+        module_spec = importlib.util.spec_from_file_location(
+            "task08_h48", HERE / "159_h48_real_legacy_data_preservation.py")
+        require(module_spec is not None and module_spec.loader is not None,
+                "H48_module_not_present")
+        h48 = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(h48)
     try:
         ca = b.probe.custom_ca_file()
         require(ca is not None, "H45_CA_missing")
@@ -234,6 +244,12 @@ def main() -> None:
                 " ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
             data = snapshot.query(rows_sql())
             validate(data)
+            if h48 is not None:
+                legacy_cols = snapshot.query(h48.columns_sql(b))
+                legacy_data = snapshot.query(h48.rows_sql(b))
+                h48.validate(legacy_data, legacy_cols, require)
+                print("H48: read-only Prod snapshot includes full legacy event/media"
+                      " records in ephemeral runner memory", flush=True)
             excluded = sorted(b.EXCLUDED_SCHEMA - set(b.MANAGED)) + [
                 "pg_*", "timescaledb_*", "_timescaledb_*"]
             snapshot.dump(["--schema-only", "--format=custom",
@@ -249,15 +265,31 @@ def main() -> None:
         load_rows(target, data)
         baseline_hash = digest(data)
         counts = preflight_stats(data)
+        h48_baseline = None
+        h48_integrity = None
+        if h48 is not None:
+            require(legacy_data is not None and legacy_cols is not None,
+                    "H48_missing_legacy_snapshot")
+            h48_baseline = h48.load(target,b,legacy_data,legacy_cols,require,
+                                    sys.modules[__name__])
+            h48_integrity = target.query(h48.integrity_sql())
+            h48.verify(target,b,legacy_data,legacy_cols,h48_baseline,
+                       h48_integrity,require,sys.modules[__name__],"before_phase1")
         print("H45: real subset restored; Phase1 migration begins", flush=True)
         h44.isolated(target, h44.PHASE1.read_text())
         h44.register(target, "task08_prod_phase1_additive", "20990101010001")
         check_early(target, data, baseline_hash)
+        if h48 is not None:
+            h48.verify(target,b,legacy_data,legacy_cols,h48_baseline,
+                       h48_integrity,require,sys.modules[__name__],"after_phase1")
         require(h44.gate(target)["phase2_eligible"], "H45_phase2_gate_not_ready")
         print("H45: Phase1 real rows PASS; Phase2 migration begins", flush=True)
         h44.isolated(target, h44.PHASE2.read_text())
         h44.register(target, "task08_prod_phase2_atomic", "20990101010002")
         check_late(target, data, baseline_hash, counts)
+        if h48 is not None:
+            h48.verify(target,b,legacy_data,legacy_cols,h48_baseline,
+                       h48_integrity,require,sys.modules[__name__],"after_phase2")
         final = h44.gate(target)
         require(final["phase1_history_entries"] == 1 and
                 final["phase2_history_entries"] == 1 and

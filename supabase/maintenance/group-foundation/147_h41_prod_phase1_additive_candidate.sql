@@ -9,6 +9,17 @@ BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='120s';
 
+-- H42 migration-history guard: refuse duplicate or out-of-order application.
+DO $h42_phase1_history_gate$
+BEGIN
+ IF EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations
+    WHERE name IN ('task08_prod_phase1_additive','task08_prod_phase2_atomic'))
+ OR EXISTS (SELECT 1 FROM supabase_migrations.schema_migrations
+    WHERE name ~ '^task08_(stage|staging)_005[4-9]' OR name ~ '^task08_(stage|staging)_006[0-5]')
+ THEN RAISE EXCEPTION 'H42: Phase1 migration history indicates already applied or Stage baseline; abort';
+ END IF;
+END $h42_phase1_history_gate$;
+
 DO $h41_preflight$
 BEGIN
  IF current_user<>'postgres'

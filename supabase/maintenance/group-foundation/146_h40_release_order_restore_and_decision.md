@@ -74,3 +74,12 @@
 ## 今回の変更範囲
 
 GitHubの既存PR #265に`143`、`144`、`145`、本書を追加。Prod / StageデータはREAD ONLYのみ。main/Cloudflare/PRのDraft状態変更・本番SQL適用なし。
+
+## Cloudflare Worker 自動デプロイの実設定確認（READ ONLY追記）
+
+Cloudflare WorkerのBuilds Trigger APIを**GETだけ**で実確認（対象Worker `padel-match`、`padel-match-staging`。build token等は記録しない）。
+
+- **Prod `padel-match`**：Trigger `Deploy default branch`、GitHub `branch_includes=[main]`、`build_command=npm run cf:build`、`deploy_command=npx wrangler deploy`、有効。**PR #265をmainにマージすると本番自動デプロイが起動し得る**。そのため、DB契約が整う前にマージしない。
+- **Stage `padel-match-staging`**：GitHub `branch_includes=[codex/minimal-security-replacement]`、`build_command=npm run cf:build:staging`、`deploy_command=npx opennextjs-cloudflare deploy --config wrangler.staging.jsonc`、有効。**現TASK-08ブランチ `codex/task-08-group-foundation` はStage自動ビルド対象ではない**。Stageの最新デプロイがPR #265の現HEADであると仮定しない。
+- **復旧の追加条件**：Workerのコード版を戻せても、Supabase DBの適用済みDDL/RLSは自動で戻らない。復旧前に旧Workerが現在のDB契約で動くか確認する。旧匿名 `club_members` SELECTを単純再付与すると、追加後の`club_display_name`まで直接公開されるため**単純GRANTによる復旧は禁止**。
+- 本確認はGETのみ。Cloudflare Trigger変更・ビルド起動・Worker deploy/rollbackは**一切行っていない**。Branch/Build設定の変更も本番適用のユーザー承認後に検討。

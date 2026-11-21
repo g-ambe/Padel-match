@@ -1,5 +1,8 @@
 # TASK-08 / H41：実グループ名確定・Migration履歴整合計画・Phase1/Phase2 SQL管理
 
+> **2026-11-21 H42追記：このファイルのowner_id=NULLは変更前の履歴スナップショットです。現在はユーザーの指示により「Wytel Bule Owls」のowner=あんべ、あんべmain_admin、瀧田sub_adminに本番で更新済み。今後の正本は `150_h42_one_time_production_migration_protocol.md` 第3節。**
+
+
 確認日：2026-11-21（JST） ／ [PR #265](https://github.com/g-ambe/Padel-match/pull/265) ／ [Issue #264](https://github.com/g-ambe/Padel-match/issues/264)。
 このレポートは **READ ONLY調査結果と未承認のリリース候補**。本番・StageのDDL/権限/データの確定変更、PRマージ、Cloudflare変更は行わない。
 

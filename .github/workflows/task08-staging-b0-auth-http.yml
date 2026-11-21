@@ -189,6 +189,7 @@ jobs:
         run: |
           python3 -B -m py_compile supabase/maintenance/group-foundation/151_h43_cost_free_isolated_rehearsal.py
           python3 -B -m py_compile supabase/maintenance/group-foundation/153_h45_real_group_data_migration_rehearsal.py
+          python3 -B -m py_compile supabase/maintenance/group-foundation/155_h46_real_membership_role_rollback.py
 
       - name: Install existing pinned and verified Supabase CLI
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
@@ -208,6 +209,9 @@ jobs:
         run: |
           set -euo pipefail
           if grep -qx 'H45_REAL_GROUP_DATA=1' supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger; then
+            if grep -qx 'H46_REAL_ROLE_TEST=1' supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger; then
+              export TASK08_H46_REAL_ROLE_TEST=1
+            fi
             python3 -B supabase/maintenance/group-foundation/153_h45_real_group_data_migration_rehearsal.py
           else
             python3 -B supabase/maintenance/group-foundation/151_h43_cost_free_isolated_rehearsal.py

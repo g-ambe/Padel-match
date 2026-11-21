@@ -381,7 +381,36 @@ def run(target, source: dict, require, b, h44, h45) -> None:
         for marker, value in encoded.items():
             statement = statement.replace(marker, value)
         require("__" not in statement, "H46_unexpanded_identifier_placeholder")
-        output = h44.isolated(target, statement)
+        try:
+            output = h44.isolated(target, statement)
+        except b.BackupError:
+            if label == "test_only_promoted_transfer_and_exit":
+                # Diagnose a failure with successively longer, independently
+                # rolled-back statement prefixes. Only a fixed stage name
+                # is logged; postgres stderr/SQL/identities remain masked.
+                checkpoints = (
+                    ("promote", "SET LOCAL ROLE authenticated;\nDO $owner$"),
+                    ("owner_request", "DO $outsider$"),
+                    ("outsider_reject", "DO $decline$"),
+                    ("decline", "DO $second$"),
+                    ("second_request", "DO $accept$"),
+                    ("accept", "SET LOCAL ROLE postgres;\nDO $new_owner_guard$"),
+                    ("new_owner_guard", "SET LOCAL ROLE authenticated;\nDO $former_owner$"),
+                    ("former_owner_exit", "SET LOCAL ROLE postgres;\nDO $assert$"),
+                    ("state_assertion", "SELECT json_build_object('scenario','test_only_promoted_transfer_and_exit'"),
+                )
+                for stage, next_marker in checkpoints:
+                    require(next_marker in TRANSFER_ACCEPT,
+                            "H46_diagnostic_marker_missing_" + stage)
+                    preview = PREFIX + TRANSFER_ACCEPT.split(next_marker, 1)[0] + "\nROLLBACK;\n"
+                    for marker, value in encoded.items():
+                        preview = preview.replace(marker, value)
+                    try:
+                        h44.isolated(target, preview)
+                    except b.BackupError:
+                        print("H46 diagnostic stage failed: " + stage, flush=True)
+                        raise b.BackupError("H46_transfer_check_failed_" + stage) from None
+            raise
         try:
             lines = [json.loads(line) for line in output.splitlines()
                      if line.strip().startswith("{")]

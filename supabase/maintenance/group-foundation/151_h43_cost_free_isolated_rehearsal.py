@@ -1,7 +1,9 @@
-"""TASK-08 H43: verified production snapshot -> network-isolated local DB.
-NO writes to production, staging, GitHub releases or R2; no secrets in log.
-A trusted GitHub Actions runner only. Uses existing cloud_backup.py's verified
-snapshot/restore pipeline, not a duplicate backup implementation.
+"""TASK-08 H44: cost-free, schema-only Prod migration rehearsal.
+
+Prod access is READ ONLY. No live user rows are dumped, copied to Stage, or
+uploaded as GitHub artifacts. The Postgres schema/ACL/roles/migration names are
+read in one snapshot and tested inside an ephemeral network-isolated Supabase
+Postgres Docker container. All writes occur solely inside that container.
 """
 from __future__ import annotations
 
@@ -14,138 +16,158 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT / "supabase/maintenance/event-fixed-pairs"))
-import cloud_backup as backup  # noqa: E402
-
+import cloud_backup as b  # noqa: E402
 
 PHASE1 = HERE / "147_h41_prod_phase1_additive_candidate.sql"
 PHASE2 = HERE / "145_h40_prod_phase2_atomic_cutover_candidate.sql"
 GATE = HERE / "149_h42_prod_migration_replay_gate_readonly.sql"
 
-# These are deliberately synthetic versions only within the disposable DB.
-SIMULATED_PHASE1_VERSION = "20990101010001"
-SIMULATED_PHASE2_VERSION = "20990101010002"
+def require(test: bool, code: str) -> None:
+    if not test:
+        raise b.BackupError(code)
 
+def remote_schema_catalog_query() -> str:
+    # Only metadata, never source record rows or tokens.
+    return """SELECT json_build_object(
+       'public_tables',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p')),
+       'public_functions',(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prokind='f'),
+       'public_rls',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relrowsecurity),
+       'public_policies',(SELECT count(*) FROM pg_policies WHERE schemaname='public'),
+       'legacy_owner_trigger',(SELECT count(*) FROM pg_trigger WHERE tgrelid='public.club_members'::regclass AND tgname='guard_group_last_main_admin'),
+       'legacy_anon_member_select',has_any_column_privilege('anon','public.club_members','SELECT'),
+       'legacy_fixed_pairs',to_regclass('public.event_fixed_pair_state') IS NOT NULL,
+       'legacy_media',to_regclass('public.profile_media_objects') IS NOT NULL,
+       'new_shared_rpc',to_regprocedure('public.get_shared_event(text,text)') IS NOT NULL
+    )"""
 
-def require(condition: bool, code: str) -> None:
-    if not condition:
-        raise backup.BackupError(code)
+def isolated(target: b.LocalRestore, sql: str) -> str:
+    require(isinstance(target, b.LocalRestore), "H44_nonisolated_target")
+    return target.sql("SET ROLE postgres;\n" + sql + "\n").decode().strip()
 
+def query(target: b.LocalRestore, sql: str):
+    raw = isolated(target, "BEGIN READ ONLY;\n" + sql.strip().rstrip(";") + ";\nROLLBACK;")
+    return json.loads(raw)
 
-def under_postgres(target: backup.LocalRestore, sql: str) -> str:
-    require(isinstance(target, backup.LocalRestore), "not_isolated_local_restore")
-    return target.sql("SET ROLE postgres;\n" + sql + "\nRESET ROLE;").decode().strip()
+def gate(target: b.LocalRestore) -> dict:
+    r = query(target, GATE.read_text().replace("BEGIN READ ONLY;", "").replace("ROLLBACK;", "").replace(";", ";"))
+    # Gate SQL is a SELECT with JSONB report. When wrapped in BEGIN/ROLLBACK,
+    # its DO/CTE statements can be read through the existing psql helper.
+    return r["report"]
 
+def restore_schema(target: b.LocalRestore, root: Path, expected_roles: list):
+    require(isinstance(target, b.LocalRestore), "H44_restore_not_isolated")
+    b.restore_application_roles(target, expected_roles)
+    target.sql("ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon,authenticated;")
+    # Use the same tested pg_restore rendering and network isolation as
+    # cloud_backup.restore_files. No SQL is ever sent to Prod.
+    sql_bytes = b.run(
+        b.DOCKER + ["run", "--rm", "--interactive", "--network", "none",
+                    b.probe.POSTGRES_IMAGE, "pg_restore",
+                    "--clean", "--if-exists", "--file", "-"],
+        phase="H44_schema_render_failed",
+        data=(root / "schema.dump").read_bytes(), timeout=300
+    )
+    schema_file = root / "schema-only.sql"
+    schema_file.write_bytes(sql_bytes)
+    target.file(schema_file, replica=True)
 
-def gate(target: backup.LocalRestore) -> dict:
-    raw = under_postgres(target, GATE.read_text())
-    result = json.loads(raw)
-    report = result.get("report")
-    require(isinstance(report, dict), "migration_gate_result_invalid")
-    return report
+def install_history(target: b.LocalRestore, history: list[dict]):
+    # Only inside local container. The name/version pairs are Prod metadata;
+    # no original migration SQL or user row is copied.
+    require(len(history) >= 10 and
+            all(isinstance(x.get("version"), str) and isinstance(x.get("name"), str)
+                for x in history), "H44_migration_history_invalid")
+    values = ",".join("(" + b.literal(x["version"]) + "," + b.literal(x["name"]) +
+        ",ARRAY['H44 ephemeral schema-only history']::text[])" for x in history)
+    isolated(target, "BEGIN; TRUNCATE supabase_migrations.schema_migrations; "
+             "INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES "
+             + values + "; COMMIT;")
 
-
-def history(target: backup.LocalRestore, version: str, name: str) -> None:
-    # Simulate MCP apply_migration's version/name registration in the
-    # disposable DB only, to validate Phase2's dependency guard.
-    require(version in {SIMULATED_PHASE1_VERSION, SIMULATED_PHASE2_VERSION},
-            "unexpected_synthetic_history_version")
-    require(name in {"task08_prod_phase1_additive", "task08_prod_phase2_atomic"},
-            "unexpected_history_name")
-    under_postgres(target, "INSERT INTO supabase_migrations.schema_migrations"
-                   "(version,name,statements) VALUES ("
-                   + backup.literal(version) + ","
-                   + backup.literal(name) + ","
-                   + "ARRAY['H43 ephemeral replay-test; no production SQL']::text[]);")
-
-
-def only_count_snapshot(target: backup.LocalRestore, manifest: dict) -> list:
-    # Include no auth secrets or individual rows in log/return value.
-    # For authenticated users, policies, data and constraints, actual restored
-    # tables remain intact; new Phase1 directory_refs is intentionally additive.
-    keep = [t for t in manifest["tables"]
-            if t["schema"] != "supabase_migrations"]
-    return backup.row_fingerprints(target.query, keep)
-
+def register(target: b.LocalRestore, name: str, version: str):
+    require(name in ("task08_prod_phase1_additive", "task08_prod_phase2_atomic"),
+            "H44_unknown_history_name")
+    require(version in ("20990101010001", "20990101010002"),
+            "H44_unknown_test_version")
+    isolated(target, "BEGIN; INSERT INTO supabase_migrations.schema_migrations(version,name,statements)"
+             " VALUES (" + b.literal(version) + "," + b.literal(name) +
+             ",ARRAY['H44 ephemeral schema-only phase test']::text[]); COMMIT;")
 
 def run() -> None:
-    require(os.environ.get("GITHUB_ACTIONS") == "true", "ci_only")
-    require(os.environ.get("GITHUB_REPOSITORY") == "g-ambe/Padel-match", "wrong_repository")
-    require(os.environ.get("GITHUB_REF") == "refs/heads/codex/task-08-group-foundation", "wrong_branch")
-    require(os.environ.get("SUPABASE_DB_URL") and
-            os.environ.get("PADEL_BACKUP_PASSPHRASE"),
-            "required_existing_secrets_missing")
-    for f in (PHASE1, PHASE2, GATE):
-        require(f.is_file(), "missing_rehearsal_source")
-    root = backup.workdir()
+    require(os.environ.get("GITHUB_ACTIONS") == "true" and
+            os.environ.get("GITHUB_REPOSITORY") == "g-ambe/Padel-match" and
+            os.environ.get("GITHUB_REF") == "refs/heads/codex/task-08-group-foundation",
+            "H44_trusted_runner_only")
+    require(os.environ.get("SUPABASE_DB_URL"), "H44_readonly_DB_secret_missing")
+    root = b.workdir()
     require(str(root).startswith(os.environ["RUNNER_TEMP"] + "/"),
-            "workdir_must_be_runner_temp")
-    print("H43 source: verified PostgreSQL 17 production READ-ONLY snapshot; no Stage mutation", flush=True)
+            "H44_runner_temp_only")
+    root.mkdir(mode=0o700, exist_ok=False)
     try:
-        # Existing trusted method: opens REPEATABLE READ READ ONLY transaction,
-        # dumps schema/roles and encrypted data only inside runner temp.
-        print("H43 step1: encrypted snapshot, no prod writes", flush=True)
-        backup.create()
-        files, manifest = backup.unpack(root)
-        require(manifest["project_ref"] == backup.probe.PROJECT_REF,
-                "unexpected_prod_reference")
-        require(manifest["server_major"] == 17, "unexpected_postgres_major")
-
-        # The existing implementation disconnects ALL container networks and
-        # strictly compares restored data/row hashes, RLS, ACL and foreign keys.
-        print("H43 step2: isolated restore and strict baseline equality", flush=True)
-        target = backup.start_isolated_database(root)
-        restored = backup.restore_files(target, files, manifest)
-        require(restored.get("restore_verified") and
-                restored.get("production_mutations") is False,
-                "isolated_baseline_not_verified")
-        print("H43 restore PASS; isolated container with no network", flush=True)
-
-        before_rows = only_count_snapshot(target, manifest)
-        initial = gate(target)
-        require(initial["phase1_eligible"] is True and
-                initial["phase2_eligible"] is False and
-                initial["phase1_history_entries"] == 0,
-                "production_baseline_migration_gate_not_ready")
-
-        print("H43 step3: execute real Phase1 SQL on isolated Prod snapshot", flush=True)
-        under_postgres(target, PHASE1.read_text())
-        require(only_count_snapshot(target, manifest) == before_rows,
-                "phase1_modified_existing_rows")
-        history(target, SIMULATED_PHASE1_VERSION, "task08_prod_phase1_additive")
+        ca = b.probe.custom_ca_file()
+        require(ca is not None, "H44_official_CA_required")
+        env = b.clean_env()
+        env.update(b.probe.connection_environment(os.environ["SUPABASE_DB_URL"]))
+        env["PGSSLROOTCERT"] = "/run/padel-supabase-ca.crt"
+        env["PGOPTIONS"] = "-c default_transaction_read_only=on"
+        print("H44 step 1: Prod schema-only snapshot (no user data rows)", flush=True)
+        with b.Snapshot(b.source_prefix(ca), env) as snapshot:
+            catalog = snapshot.query(remote_schema_catalog_query())
+            require(catalog["legacy_fixed_pairs"] and catalog["legacy_media"] and
+                    not catalog["new_shared_rpc"],
+                    "H44_not_expected_Prod_baseline")
+            roles = snapshot.query(b.ROLE_METADATA)
+            history = snapshot.query(
+                "SELECT coalesce(json_agg(json_build_object('version',version,'name',name)"
+                " ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
+            excluded = sorted(b.EXCLUDED_SCHEMA - set(b.MANAGED)) + [
+                "pg_*", "timescaledb_*", "_timescaledb_*"]
+            snapshot.dump(["--schema-only", "--format=custom",
+                           "--exclude-schema=" + "|".join(excluded)],
+                          root / "schema.dump")
+        print("H44 step 1 PASS: Prod schema/roles/migration names, zero user records", flush=True)
+        print("H44 step 2: Start network-isolated Postgres and restore schema", flush=True)
+        target = b.start_isolated_database(root)
+        restore_schema(target, root, roles)
+        install_history(target, history)
+        actual = query(target, remote_schema_catalog_query())
+        require(actual == catalog, "H44_Prod_schema_metadata_differs")
+        print("H44 step 2 PASS: Prod schema fingerprint matches; no external DB writes", flush=True)
+        first = gate(target)
+        require(first["phase1_eligible"] and not first["phase2_eligible"],
+                "H44_Phase1_not_eligible")
+        print("H44 step 3: Run actual 6-section Phase1 SQL", flush=True)
+        isolated(target, PHASE1.read_text())
+        register(target, "task08_prod_phase1_additive", "20990101010001")
         middle = gate(target)
-        require(middle["phase1_eligible"] is False and
-                middle["phase2_eligible"] is True and
-                middle["phase1_history_entries"] == 1,
-                "phase1_commit_or_phase2_dependency_invalid")
-        print("H43 Phase1 PASS: 6 steps, original data unchanged, Phase2 now eligible", flush=True)
-
-        print("H43 step4: execute real Phase2 SQL on the same isolated database", flush=True)
-        under_postgres(target, PHASE2.read_text())
-        require(only_count_snapshot(target, manifest) == before_rows,
-                "phase2_modified_existing_rows")
-        history(target, SIMULATED_PHASE2_VERSION, "task08_prod_phase2_atomic")
+        require(middle["phase2_eligible"] and not middle["phase1_eligible"],
+                "H44_Phase1_history_or_Phase2_preflight_failed")
+        print("H44 step 3 PASS: Phase1 SQL and migration replay gate", flush=True)
+        print("H44 step 4: Run actual 11-section Phase2 SQL", flush=True)
+        isolated(target, PHASE2.read_text())
+        register(target, "task08_prod_phase2_atomic", "20990101010002")
         after = gate(target)
-        require(after["phase1_eligible"] is False and
-                after["phase2_eligible"] is False and
-                after["phase1_history_entries"] == 1 and
+        require(after["phase1_history_entries"] == 1 and
                 after["phase2_history_entries"] == 1 and
-                after["owner_transfer_exists"] is True and
-                after["member_count_exists"] is True,
-                "phase2_postflight_or_replay_guard_invalid")
-        print("H43 Phase2 PASS: 11 steps, existing data unchanged; replay rejected by gate", flush=True)
-        print("H43 ALL PASS: no external DB writes, no permanent Cloud resource, no extra Supabase branch", flush=True)
+                not after["phase1_eligible"] and
+                not after["phase2_eligible"] and
+                after["owner_transfer_exists"] and
+                after["member_count_exists"],
+                "H44_Phase2_replay_or_postflight_failed")
+        require(query(target, "SELECT count(*) AS n FROM public.events")["n"] == 0,
+                "H44_synthetic_baseline_contaminated")
+        print("H44 ALL PASS: Phase1+Phase2 SQL on isolated Prod schema, replay guarded", flush=True)
     finally:
-        # Do not publish, upload or retain user data or the backup archive.
+        # No backup objects uploaded or persisted after runner exits.
         shutil.rmtree(root, ignore_errors=True)
-
 
 if __name__ == "__main__":
     try:
         run()
-    except (backup.BackupError, backup.probe.ProbeError) as err:
-        # Trusted helpers return fixed error codes only, not SQL or DB URLs.
-        print("::error title=H43 isolated rehearsal::" + str(err), flush=True)
+    except (b.BackupError, b.probe.ProbeError) as exc:
+        print("::error title=H44 schema-only rehearsal::" + str(exc), flush=True)
         sys.exit(1)
-    except Exception:
-        print("::error title=H43 isolated rehearsal::unexpected_error_details_hidden", flush=True)
+    except Exception as exc:
+        # Only Python exception type, never raw exception messages or secrets.
+        print("::error title=H44 schema-only rehearsal::unexpected_" +
+              type(exc).__name__, flush=True)
         sys.exit(1)

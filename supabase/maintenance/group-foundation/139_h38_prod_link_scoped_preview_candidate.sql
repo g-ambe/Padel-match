@@ -39,8 +39,7 @@ AS $function$
     'result_count',(select count(distinct r.id) from public.match_results r join public.match_players mp on mp.match_id=r.match_id join public.event_participants ep on ep.id=mp.participant_id join public.events e on e.id=ep.event_id where ep.player_profile_id=p_source and e.club_id=p_club),
     'team_match_count',(select count(*) from public.event_team_matches m where p_source in(m.team_a_player1_profile_id,m.team_a_player2_profile_id,m.team_b_player1_profile_id,m.team_b_player2_profile_id) and exists(select 1 from public.event_team_sides s where s.event_id=m.event_id and s.club_id=p_club)),
     'official_match_count',(select count(*) from public.official_matches m join public.official_events e on e.id=m.official_event_id where p_source in(m.our_player1_profile_id,m.our_player2_profile_id) and e.club_id=p_club));
-$function$
-
+$function$;
 
 REVOKE ALL ON FUNCTION profile_link_private.scoped_preview(uuid,uuid,uuid)
  FROM PUBLIC,anon,authenticated;

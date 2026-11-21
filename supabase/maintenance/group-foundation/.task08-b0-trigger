@@ -4,3 +4,6 @@
 # Changing this file triggers the staging-only workflow on this task branch.
 # NEVER put secrets, passwords, JWTs, API keys, email addresses or database data here.
 # Status: P0_H33_REFERRER_PRIVACY_CODE_AND_DB_PARITY_2026_11_20
+
+H34_RUN_SHARE_FIXTURE=1
+# P0_H34_REAL_SHARE_ACCEPTANCE_2026_11_21

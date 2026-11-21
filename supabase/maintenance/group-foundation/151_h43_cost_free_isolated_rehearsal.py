@@ -54,10 +54,21 @@ def gate(target: b.LocalRestore) -> dict:
     # its DO/CTE statements can be read through the existing psql helper.
     return r["report"]
 
-def restore_schema(target: b.LocalRestore, root: Path, expected_roles: list):
+def restore_schema(target: b.LocalRestore, root: Path, expected_roles: list, function_schemas: list[str]):
     require(isinstance(target, b.LocalRestore), "H44_restore_not_isolated")
     b.restore_application_roles(target, expected_roles)
     target.sql("ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public REVOKE ALL ON TABLES FROM anon,authenticated;")
+    # Match the already-verified cloud_backup.restore_files sequence:
+    # remove packaged Supabase initialization schemas *inside isolated Docker*
+    # before restoring their real Prod equivalents. CASCADE never runs on Prod.
+    require("public" in function_schemas and
+            all(x and not x.startswith("pg_") and
+                x not in b.EXCLUDED_SCHEMA - set(b.MANAGED)
+                for x in function_schemas),
+            "H44_unsafe_schema_inventory")
+    for schema in function_schemas:
+        target.sql("DROP SCHEMA IF EXISTS " + b.ident(schema) + " CASCADE;")
+    target.sql("CREATE SCHEMA IF NOT EXISTS public AUTHORIZATION pg_database_owner; GRANT USAGE ON SCHEMA public TO PUBLIC;")
     # Use the same tested pg_restore rendering and network isolation as
     # cloud_backup.restore_files. No SQL is ever sent to Prod.
     sql_bytes = b.run(
@@ -116,6 +127,12 @@ def run() -> None:
                     not catalog["new_shared_rpc"],
                     "H44_not_expected_Prod_baseline")
             roles = snapshot.query(b.ROLE_METADATA)
+            inventory = snapshot.query(b.INVENTORY)
+            function_schemas = sorted(
+                x for x in inventory["schemas"]
+                if x in b.MANAGED or
+                (x not in b.EXCLUDED_SCHEMA and not x.startswith(("pg_", "timescaledb_", "_timescaledb_")))
+            )
             history = snapshot.query(
                 "SELECT coalesce(json_agg(json_build_object('version',version,'name',name)"
                 " ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
@@ -127,7 +144,7 @@ def run() -> None:
         print("H44 step 1 PASS: Prod schema/roles/migration names, zero user records", flush=True)
         print("H44 step 2: Start network-isolated Postgres and restore schema", flush=True)
         target = b.start_isolated_database(root)
-        restore_schema(target, root, roles)
+        restore_schema(target, root, roles, function_schemas)
         install_history(target, history)
         actual = query(target, remote_schema_catalog_query())
         require(actual == catalog, "H44_Prod_schema_metadata_differs")

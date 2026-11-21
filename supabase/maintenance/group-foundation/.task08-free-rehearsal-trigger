@@ -1,4 +1,4 @@
 H43_NO_COST_ISOLATED=1
 H45_REAL_GROUP_DATA=1
 H48_REAL_LEGACY_TEST=1
-# H48 real 18-table legacy snapshot; no hosted DB changes, isolated Docker only.
+# H48 second attempt: corrected optional module import scope.

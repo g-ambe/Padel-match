@@ -1,0 +1,2 @@
+# H43 free isolated rehearsal: first run
+# Uses pre-existing encrypted-backup tooling; Prod read-only, no hosted DB writes.

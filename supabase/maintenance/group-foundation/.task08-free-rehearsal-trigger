@@ -1,3 +1,4 @@
 H43_NO_COST_ISOLATED=1
 H45_REAL_GROUP_DATA=1
-# H45 limited real group rows; source Prod READ ONLY, isolated Docker target only.
+H46_REAL_ROLE_TEST=1
+# H46 transaction-only role checks using current real group memberships; no hosted DB writes.

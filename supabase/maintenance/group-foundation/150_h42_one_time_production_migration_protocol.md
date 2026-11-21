@@ -1,3 +1,5 @@
+> **2026-11-22 H44更新：本文中の「Prod等価Branchは費用承認待ち」は旧計画です。有料Branchを作らず、本番schema/ACL/RLS/関数/Migration名だけをコピーする無料GitHub Actions隔離DB方式でPhase1・Phase2の実SQL連続適用が全PASSしました。[H44詳細](152_h44_free_schema_only_prod_migration_rehearsal_result.md) / [Actions #44952613293](https://github.com/g-ambe/Padel-match/actions/runs/44952613293)。利用者行データはコピーしていないため、データ依存の移行挙動・実Auth/HTTPの検証は別に残ります。本文の費用・Branch手順は過去の検討記録として残し、現在の実行方針はH44を優先します。**
+
 # TASK-08/H42：本番Migration二重適用防止・順次試験の確定手順
 
 確認日 2026-11-21／既存 Draft PR #265。**このファイルは検証計画・実行手順であり、Prod向けDDL適用を承認するものではない。**

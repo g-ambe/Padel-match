@@ -9,6 +9,7 @@
 | 順序 | SQL | 目的 | 本番適用状況 |
 | --- | --- | --- | --- |
 | 調査 | `132_h37_prod_rpc_release_readonly.sql` | Stage/Prod共通の事前条件・不一致を最小集計 | 両方READ ONLY実施 |
+| 調査 | `135_h37_group_read_prerequisites_readonly.sql` | 0054/0055に必要な既存関数・列・衝突の確認 | 両方READ ONLY実施 |
 | A候補 | **既存** `54_h12_prod_compatible_rpc_candidate.sql` | 匿名共有結果用 `get_shared_event` ＋内部helper（追加のみ） | 未適用 |
 | B候補 | **新規** `133_h37_prod_video_click_additive_candidate.sql` | 共有token付きクリックRPC3種を**H33の完成形**で直接追加（旧RPCや履歴に触れない） | 未適用 |
 | C | `0054_group_read_interfaces.sql` → `0055_group_read_consumer_support.sql` | グループ取得RPCやJOIN参照用の追加 | Prod未適用 |
@@ -34,6 +35,8 @@
 | 施設行数 | 9 | 24 |
 | イベント/公式イベント | 0 / 0 | 91 / 4 |
 
+- 0054/0055：本番の必要な既存関数・指定列の欠落 **0件**、既存 `group_read_private`/対象RPC/トリガーなし。**スキーマ/関数の前提のみPASS**、DDLを本番でコンパイル・適用した結果ではない。
+
 ### SQL試験済み
 
 - A候補：既存 `54_h12_prod_compatible_rpc_candidate.sql` の実体をStage内で**BEGIN→全DDL→確認→ROLLBACK**。共有RPC存在と匿名EXECUTEをPASS。本番は基礎16表・0045の列がすべて存在することをREAD ONLYで確認。ただし**本番実行・実token HTTPはまだ行っていない**。
@@ -51,5 +54,5 @@
 ## NO-GO/復旧
 - A/BのSQLに既存関数名衝突・テーブル/列欠損があれば適用しない。
 - 上記SQL候補は単一BEGIN/COMMITに閉じ、エラー時は自動ROLLBACK。確定反映後に誤りがあれば、**新UI未配信時に限り**新規追加したRPCのみの取り消しを判断し、既存関数や旧権限は変更しない。
-- 0070等を含む歴史Migrationを全適用・本番データ改変・mainの先行マージ・Cloudflare本番デプロイは**この作業に含めない**。
+- 歴史Migrationを全適用・本番データ改変・mainの先行マージ・Cloudflare本番デプロイは**この作業に含めない**。
 - 次工程：**0054/0055がProd現物で成立するか**、および0056/0062の具体的互換ブロッカーを限定検証し、正式本番移行パッケージを決める。

@@ -9,6 +9,7 @@ on:
     paths:
       - supabase/maintenance/group-foundation/.task08-b0-trigger
       - supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger
+      - supabase/maintenance/group-foundation/.task08-legacy-regression-trigger
 
 permissions:
   contents: read
@@ -19,7 +20,7 @@ concurrency:
 
 jobs:
   staging-b0-http:
-    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation' && !contains(github.event.head_commit.message, '[task08-h43-free]')
+    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation' && !contains(github.event.head_commit.message, '[task08-h43-free]') && !contains(github.event.head_commit.message, '[task08-h47-legacy]')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -226,3 +227,89 @@ jobs:
           rm -rf -- "$PADEL_BACKUP_WORKDIR"
           docker rm -f supabase_db_padel_backup_restore >/dev/null 2>&1 || true
           echo "H43 isolated test cleanup: no hosted DB writes"
+
+  h47-legacy-regression:
+    if: >-
+      github.repository == 'g-ambe/Padel-match' &&
+      github.ref == 'refs/heads/codex/task-08-group-foundation' &&
+      contains(github.event.head_commit.message, '[task08-h47-legacy]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact current PR branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Set up Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Confirm explicit H47-only trigger
+        run: grep -qx 'H47_LEGACY_TESTS=1' supabase/maintenance/group-foundation/.task08-legacy-regression-trigger
+      - name: Install exact locked app dependencies (no deploy)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/h47-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
+          test "$("$RUNNER_TEMP/h47-bun/node_modules/.bin/bun" --version)" = 1.2.15
+          "$RUNNER_TEMP/h47-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
+      - name: H47 normal/auto/rotating and friendly-team round generation
+        run: >-
+          node --test
+          tests/friendly-rounds.test.cjs
+          tests/friendly-balance.test.cjs
+          tests/friendly-balance-history.test.cjs
+          tests/friendly-mode-comparison.test.cjs
+          tests/friendly-team-rounds.test.cjs
+          tests/board-movement.test.cjs
+          tests/team-attendance.test.cjs
+          tests/round-lineup-client.test.cjs
+      - name: H47 fixed-pair DB and round preservation
+        run: >-
+          node --test
+          tests/event-fixed-pairs.test.cjs
+          tests/event-fixed-pairs-db.test.cjs
+          tests/friendly-fixed-pairs.test.cjs
+          tests/fixed-pair-operations.test.cjs
+          tests/round-lineup-db.test.cjs
+          tests/team-round-db.test.cjs
+      - name: H47 score, GP, official result, ranking and video sharing
+        run: >-
+          node --test
+          tests/score-input.test.cjs
+          tests/score-save-queue.test.cjs
+          tests/match-autosave.test.cjs
+          tests/match-result-shape.test.cjs
+          tests/match-results-repair.test.cjs
+          tests/result-ranking.test.cjs
+          tests/stats-history.test.cjs
+          tests/match-share.test.cjs
+          tests/shared-event-client.test.cjs
+          tests/result-video-db.test.cjs
+          tests/match-group-drafts.test.cjs
+          tests/new-card-autosave.test.cjs
+      - name: H47 profile media, avatar, facility, home-court and privacy
+        run: >-
+          node --test
+          tests/profile-media.test.cjs
+          tests/profile-media-db.test.cjs
+          tests/profile-media-api.test.cjs
+          tests/profile-media-bindings.test.cjs
+          tests/profile-avatar-position.test.cjs
+          tests/profile-avatar-position-db.test.cjs
+          tests/profile-v4.test.cjs
+          tests/profile-home-court-db.test.cjs
+          tests/padel-facilities.test.cjs
+          tests/shared-home-facility-db.test.cjs
+          tests/facility-live-guard.test.cjs
+      - name: H47 UI group/event regression suite
+        run: >-
+          node --test
+          tests/event-detail-tabs.test.cjs
+          tests/group-detail.test.cjs
+          tests/group-read-client.test.cjs
+          tests/member-groups.test.cjs
+          tests/group-delete.test.cjs
+          tests/team-round-db.test.cjs
+      - name: H47 TypeScript compile (no deployment)
+        run: node node_modules/typescript/bin/tsc --noEmit

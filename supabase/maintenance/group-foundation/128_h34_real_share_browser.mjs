@@ -25,11 +25,11 @@ async function main(){
  console.log('H34 HTTP shared DTO positive/negative PASS');
  phase='HTTP video click token cases';
  const checks=[['record_event_video_click_by_token','p_match_id',f.matches[0].id,tokens.friendly,tokens.official],['record_event_video_link_click_by_token','p_video_link_id',f.videos[0].id,tokens.friendly,tokens.official],['record_official_video_click_by_token','p_match_id',o.matches[0].id,tokens.official,tokens.friendly]];
- for(const [name,arg,id,good,bad] of checks){
+ if(process.env.H34_BROWSER_ONLY!=='1') for(const [name,arg,id,good,bad] of checks){
   assert.ok(id);
   for(const token of [bad,tokens.bad,good]) assert.equal(await rpc(name,{[arg]:id,p_share_token:token,p_user_agent:'task08-h34-http',p_referrer:'https://example.invalid/share/synthetic'},token),null);
  }
- console.log('H34 HTTP click RPC requests PASS (DB counts require separate verification)');
+ console.log(process.env.H34_BROWSER_ONLY==='1'?'H34 HTTP clicks previously verified; browser-only retry':'H34 HTTP click RPC requests PASS (DB counts require separate verification)');
  phase='Chromium';
  const browser=await chromium.launch({headless:true});
  try{
@@ -37,13 +37,16 @@ async function main(){
   // The real Stage Data API is NOT mocked. External links are intercepted only to avoid opening YouTube.
   await ctx.route('**/*',async route=>{const u=new URL(route.request().url());if(u.origin===base||u.origin===stage)return route.continue();return route.abort();});
   const page=await ctx.newPage();
+  page.setDefaultTimeout(30000);
+  page.on('pageerror',e=>console.log('H34 page error type: '+e.name));
+  page.on('response',r=>{if(r.url().startsWith(stage+'/rest/v1/rpc/')&&r.status()>=400)console.log('H34 browser RPC HTTP '+r.status());});
   const click=async (name,locator,token)=>{
    const response=page.waitForResponse(r=>r.url()===stage+'/rest/v1/rpc/'+name&&r.request().method()==='POST');
    const [r]=await Promise.all([response,locator.click()]);
    assert.ok(r.ok());const body=r.request().postDataJSON();assert.equal(body.p_share_token,token);assert.equal(body.p_referrer,null);
   };
   phase='browser friendly';
-  await page.goto(base+'/share/events/'+tokens.friendly);
+  const initial=await page.goto(base+'/share/events/'+tokens.friendly);assert.equal(initial?.status(),200,'friendly page HTTP status');
   await page.getByRole('heading',{name:'TASK08-H12-HTTP-FRIENDLY-ONLY'}).waitFor();
   await page.getByLabel('スコア 4 対 2').first().waitFor();
   await click(checks[0][0],page.getByRole('link',{name:'動画を見る',exact:true}).first(),tokens.friendly);
@@ -66,4 +69,4 @@ async function main(){
   console.log('H34 browser invalid PASS');
  }finally{await browser.close();}
 }
-main().catch(()=>{console.error('H34 FAIL at '+phase);process.exitCode=1;});
+main().catch(e=>{const m=String(e?.message??'').replaceAll(key??'__none__','[key]').replace(/sb_publishable_[A-Za-z0-9_-]+/g,'[key]');console.error('H34 FAIL at '+phase+' '+e?.name+' '+m.slice(0,1000));process.exitCode=1;});

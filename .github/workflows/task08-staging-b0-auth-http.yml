@@ -20,7 +20,7 @@ jobs:
   staging-b0-http:
     if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout the existing task branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -134,3 +134,24 @@ jobs:
           node --check supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs
           cp supabase/maintenance/group-foundation/122_h31_stage_real_http_negative.mjs "$RUNNER_TEMP/task08-b0/h31.mjs"
           node "$RUNNER_TEMP/task08-b0/h31.mjs"
+
+      - name: H34 real share HTTP and Chromium (opt-in Stage fixture only)
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://zzjwpresqkefnyjyisgd.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.TASK08_STAGING_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          grep -q '^H34_RUN_SHARE_FIXTURE=1$' supabase/maintenance/group-foundation/.task08-b0-trigger || { echo "H34 opt-in not requested"; exit 0; }
+          npm install --prefix "$RUNNER_TEMP/task08-browser" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.51.1
+          "$RUNNER_TEMP/task08-browser/node_modules/.bin/playwright" install --with-deps chromium
+          cp supabase/maintenance/group-foundation/128_h34_real_share_browser.mjs "$RUNNER_TEMP/task08-browser/test.mjs"
+          node --check "$RUNNER_TEMP/task08-browser/test.mjs"
+          ./node_modules/.bin/next dev --hostname 127.0.0.1 --port 3174 > "$RUNNER_TEMP/task08-next.log" 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          for i in $(seq 1 50); do
+            if curl --max-time 3 -s -o /dev/null http://127.0.0.1:3174/; then break; fi
+            sleep 2
+          done
+          node "$RUNNER_TEMP/task08-browser/test.mjs"

@@ -211,6 +211,8 @@ def main() -> None:
             "H45_runner_temp_only")
     root.mkdir(mode=0o700, exist_ok=False)
     h48 = None
+    h50 = None
+    h50_baseline = None
     legacy_data = None
     legacy_cols = None
     if os.environ.get("TASK08_H48_REAL_LEGACY_TEST") == "1":
@@ -220,6 +222,14 @@ def main() -> None:
                 "H48_module_not_present")
         h48 = importlib.util.module_from_spec(module_spec)
         module_spec.loader.exec_module(h48)
+    if os.environ.get("TASK08_H50_ROLLBACK_TEST") == "1":
+        require(h48 is not None, "H50_requires_H48_full_legacy")
+        module_spec = importlib.util.spec_from_file_location(
+            "task08_h50", HERE / "162_h50_post_commit_rollback_rehearsal.py")
+        require(module_spec is not None and module_spec.loader is not None,
+                "H50_module_not_present")
+        h50 = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(h50)
     try:
         ca = b.probe.custom_ca_file()
         require(ca is not None, "H45_CA_missing")
@@ -275,6 +285,8 @@ def main() -> None:
             h48_integrity = target.query(h48.integrity_sql())
             h48.verify(target,b,legacy_data,legacy_cols,h48_baseline,
                        h48_integrity,require,sys.modules[__name__],"before_phase1")
+        if h50 is not None:
+            h50_baseline = h50.capture(target,sys.modules[__name__],require)
         print("H45: real subset restored; Phase1 migration begins", flush=True)
         h44.isolated(target, h44.PHASE1.read_text())
         h44.register(target, "task08_prod_phase1_additive", "20990101010001")
@@ -297,6 +309,12 @@ def main() -> None:
                 "H45_repeat_application_prevention_failed")
         print("H45 ALL PASS: real club/membership subset survived Phase1 + Phase2;"
               " no Prod/Stage writes", flush=True)
+        if h50 is not None:
+            require(h50_baseline is not None and h48_baseline is not None
+                    and h48_integrity is not None, "H50_baseline_missing")
+            h50.run(target,root,roles,function_schemas,history,catalog,
+                    data,legacy_data,legacy_cols,h48_baseline,h48_integrity,
+                    h50_baseline,require,b,h44,sys.modules[__name__],h48)
         if os.environ.get("TASK08_H46_REAL_ROLE_TEST") == "1":
             spec_role = importlib.util.spec_from_file_location(
                 "task08_h46", HERE / "155_h46_real_membership_role_rollback.py")

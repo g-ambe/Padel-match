@@ -7,7 +7,7 @@ export async function readMemberGroups(supabase: SupabaseClient) {
  if(!data.user)return{uid:"",groups:[] as MemberGroup[]};
  const ids=[...new Set((await readMyMemberships(supabase)).filter(m=>m.is_active).map(m=>m.club_id))];
  if(!ids.length)return{uid:data.user.id,groups:[] as MemberGroup[]};
- const result=await supabase.from("clubs").select("id,name,description,is_active,visibility").in("id",ids).eq("is_active",true);
+ const result=await supabase.from("clubs").select("id,name,description,is_active,visibility").in("id",ids).eq("is_active",true).eq("is_deleted",false);
  if(result.error||!Array.isArray(result.data))throw new Error("所属グループを取得できませんでした。再読み込みしてください。");
  return{uid:data.user.id,groups:result.data as MemberGroup[]};
 }

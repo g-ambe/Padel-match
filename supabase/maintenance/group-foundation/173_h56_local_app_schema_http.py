@@ -240,6 +240,80 @@ def describe_constraint_diff(left,right):
               "definition" if want[k][3]!=got[k][3] else "validation")
         print("H56 constraint mismatch: "+ ".".join(safe_name(v) for v in k)+" "+kind,flush=True)
 
+COLUMN_ACL_REVIEW=f"""SELECT jsonb_build_object(
+ 'unexpected_grant',(SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+ JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(a.attacl) x
+ WHERE n.nspname IN {S} AND c.relkind IN ('r','p','v','m') AND a.attnum>0 AND NOT a.attisdropped
+ AND (pg_get_userbyid(c.relowner)<>'postgres' OR pg_get_userbyid(x.grantor)<>'postgres'
+ OR x.grantee::regrole::text NOT IN ('-','postgres','anon','authenticated','service_role')
+ OR x.privilege_type NOT IN ('SELECT','INSERT','UPDATE','REFERENCES') OR x.is_grantable)),
+ 'grants',(SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+ JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(a.attacl) x
+ WHERE n.nspname IN {S} AND c.relkind IN ('r','p','v','m') AND a.attnum>0 AND NOT a.attisdropped))"""
+
+def column_acl(row):
+    out=set()
+    for a in row[8]:
+        require(len(a)==3 and a[0] in ("-","postgres","anon","authenticated","service_role")
+                and a[1] in ("SELECT","INSERT","UPDATE","REFERENCES") and a[2] is False,
+                "column_acl_shape_unreviewed")
+        out.add((a[0],a[1]))
+    return out
+
+def reconcile_column_acl(expected_rows,actual_rows,review):
+    # PostgreSQL REVOKE on a table also revokes corresponding column grants.
+    # Restore exact source column ACLs AFTER relation ACL reconciliation.
+    want=rows_by_identity(expected_rows,9,3,"source_column")
+    got=rows_by_identity(actual_rows,9,3,"local_column")
+    local=query(COLUMN_ACL_REVIEW,"local_column_acl_review")
+    require(review=={"unexpected_grant":0,"grants":sum(len(r[8]) for r in want.values())}
+            and local=={"unexpected_grant":0,"grants":sum(len(r[8]) for r in got.values())},
+            "column_acl_review_required")
+    require(set(want)==set(got),"column_identity_diff")
+    require(all(want[k][:8]==got[k][:8] for k in want),"column_structure_diff")
+    stmts=["BEGIN; SET LOCAL search_path='';"]
+    removed=added=0
+    for k in want:
+        target,actual=column_acl(want[k]),column_acl(got[k])
+        table=b.ident(k[0])+"."+b.ident(k[1]); col=b.ident(k[2])
+        role=lambda r:"PUBLIC" if r=="-" else b.ident(r)
+        for r,priv in sorted(actual-target):
+            stmts.append("REVOKE "+priv+" ("+col+") ON TABLE "+table+" FROM "+role(r)+";")
+            removed+=1
+        for r,priv in sorted(target-actual):
+            stmts.append("GRANT "+priv+" ("+col+") ON TABLE "+table+" TO "+role(r)+";")
+            added+=1
+    stmts.append("COMMIT;")
+    if removed or added: local_sql("\n".join(stmts),"reproduce_source_column_acl")
+    print("H56 local column ACL reproduction: removed="+str(removed)+" added="+str(added),flush=True)
+
+# Only the one diagnosed CHECK is eligible. Its original PostgreSQL 17
+# source definition was reviewed independently against migration 0048.
+IG_KEY=("public","player_profile_private","player_profile_private_instagram_username_check")
+IG_DEFINITION=r"CHECK (((instagram_username IS NULL) OR (((length(instagram_username) >= 1) AND (length(instagram_username) <= 30)) AND (instagram_username ~ '^[A-Za-z0-9_](\.?[A-Za-z0-9_])*$'::text))))"
+
+def reconcile_instagram_check(expected_rows,actual_rows):
+    want=rows_by_identity(expected_rows,5,3,"source_constraint")
+    got=rows_by_identity(actual_rows,5,3,"local_constraint")
+    require(set(want)==set(got),"constraint_identity_diff")
+    diff=[k for k in want if want[k]!=got[k]]
+    if not diff: return
+    require(diff==[IG_KEY] and want[IG_KEY][3:]==[IG_DEFINITION,True]
+            and got[IG_KEY][4] is True,"constraint_difference_requires_review")
+    # Do not alter any other CHECK, FK or data. Only reconstruct the exact
+    # reviewed source definition on a verified-empty disposable app table.
+    require(query("SELECT jsonb_build_object('n',count(*)) FROM public.player_profile_private")=={"n":0},
+            "instagram_check_local_table_not_empty")
+    print("H56 reviewed Instagram CHECK: local/source rendered definition differs; reconstruct exact source CHECK on empty local table",flush=True)
+    local_sql("BEGIN; SET LOCAL standard_conforming_strings=on; SET LOCAL search_path=''; "
+              "ALTER TABLE public.player_profile_private DROP CONSTRAINT "+b.ident(IG_KEY[2])+"; "
+              "ALTER TABLE public.player_profile_private ADD CONSTRAINT "+b.ident(IG_KEY[2])+" "+IG_DEFINITION+"; COMMIT;",
+              "reproduce_reviewed_instagram_check")
+    # No equivalence shortcuts: complete fingerprint comparison must still pass.
+    actual=query(FINGERPRINT)["constraints"]
+    require(canonical_rows(expected_rows)==canonical_rows(actual),"instagram_check_exact_reproduction_failed")
+    print("H56 PASS: all CHECK/FK constraints exactly match source after local reconstruction",flush=True)
+
 def compare_fingerprints(expected,actual):
     mismatches=[]
     for name in expected:
@@ -270,7 +344,7 @@ def capture():
     env=b.clean_env()
     env.update(b.probe.connection_environment(os.environ["SUPABASE_DB_URL"]))
     env["PGSSLROOTCERT"]="/run/padel-supabase-ca.crt"
-    env["PGOPTIONS"]="-c default_transaction_read_only=on"
+    env["PGOPTIONS"]="-c default_transaction_read_only=on -c standard_conforming_strings=on"
     with b.Snapshot(b.source_prefix(ca),env) as snap:
         inv=snap.query(f"""SELECT json_build_object(
          'schemas',(SELECT json_agg(nspname ORDER BY nspname) FROM pg_namespace WHERE nspname IN {S}),
@@ -285,11 +359,13 @@ def capture():
         managed_defaults=snap.query(MANAGED_DEFAULTS)
         function_acl_review=snap.query(FUNCTION_ACL_REVIEW)
         relation_acl_review=snap.query(RELATION_ACL_REVIEW)
+        column_acl_review=snap.query(COLUMN_ACL_REVIEW)
+        require(column_acl_review["unexpected_grant"]==0,"source_column_acl_review_required")
         require(relation_acl_review["unexpected_owner_or_grantor"]==0,"source_relation_acl_review_required")
         require(function_acl_review["unexpected_owner_or_grantor"]==0,"source_function_acl_review_required")
         require(len(managed_defaults)==3,"source_managed_default_acl_review_required")
         history=snap.query("SELECT coalesce(json_agg(json_build_object('version',version,'name',name) ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
-        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults,"function_acl_review":function_acl_review,"relation_acl_review":relation_acl_review}))
+        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults,"function_acl_review":function_acl_review,"relation_acl_review":relation_acl_review,"column_acl_review":column_acl_review}))
         snap.dump(["--schema-only","--format=custom","--no-comments","--no-security-labels","--no-publications","--no-subscriptions"]+["--schema="+x for x in SCHEMAS],ROOT/"app-schema.dump")
     print("H56 PASS: source app schema only captured; no managed Auth/Storage or real rows",flush=True)
 
@@ -342,7 +418,7 @@ def local_sql(s,phase):
     return r.stdout
 
 def query(s,phase="metadata_query"):
-    return json.loads(local_sql("BEGIN READ ONLY; SET LOCAL search_path=''; "+s+"; ROLLBACK;",phase))
+    return json.loads(local_sql("BEGIN READ ONLY; SET LOCAL standard_conforming_strings=on; SET LOCAL search_path=''; "+s+"; ROLLBACK;",phase))
 
 def restore_and_test(url,key,credentials):
     require(not os.getenv("SUPABASE_DB_URL") and not os.getenv("PADEL_BACKUP_DB_URL"),"hosted_credential_forbidden")
@@ -361,6 +437,10 @@ def restore_and_test(url,key,credentials):
     reconcile_function_acl(metadata["fingerprint"]["functions"],actual["functions"],metadata["function_acl_review"])
     actual=query(FINGERPRINT)
     reconcile_relation_acl(metadata["fingerprint"]["relations"],actual["relations"],metadata["relation_acl_review"])
+    actual=query(FINGERPRINT)
+    reconcile_column_acl(metadata["fingerprint"]["columns"],actual["columns"],metadata["column_acl_review"])
+    actual=query(FINGERPRINT)
+    reconcile_instagram_check(metadata["fingerprint"]["constraints"],actual["constraints"])
     actual=query(FINGERPRINT)
     compare_fingerprints(metadata["fingerprint"],actual)
     require(query(h44.remote_schema_catalog_query())==metadata["catalog"],"source_catalog_diff")

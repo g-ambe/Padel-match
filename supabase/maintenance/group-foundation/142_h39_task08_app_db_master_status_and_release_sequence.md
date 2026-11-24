@@ -211,3 +211,18 @@
 - 初回[#45300126925](https://github.com/g-ambe/Padel-match/actions/runs/45300126925)はテストコードで未存在privileged関数を文字列からOID解決しようとしてPostgres`42883`、H51 SQL実行前にSTOP。null安全な`to_regprocedure`へ変更後に再実行[#45300504350](https://github.com/g-ambe/Padel-match/actions/runs/45300504350)で**全工程SUCCESS**。
 - **本番GOは引き続きNO-GO**。現在の本番実申請3件は全てapprovedにつき、**新named正常承認／本来のpending拒否・取消のE2Eは未実施**。旧Workerの連携承認は意図的に利用不可のまま、旧管理者画面DTOも一部一致しない。ブラウザ/実JWT/PostgREST/Cloudflare Worker全導線と本人同意新規pending fixtureの実証が別ゲート。正式SQLの組込み・同意を省く旧承認経路の閉鎖タイミングは公開前に審査。
 - **Prod/StageへはDDL/DMLせず、Cloudflare/main/PR mergeなし、無料Runnerのみ。** 既存PR #265 Draft維持。Github Project項目更新は未実施、Issue #264／親 #215への実績コメントと本台帳で記録。
+
+## 20. H52/H53：本人連携・通常加入・管理者手動復元の本番相当隔離SQL検証PASS（2026-11-24）
+
+- H52 初回 #45305167255、診断 #45305784260 は公開named正常承認でP0001。Prodの0039 FK guardに0048の本人専用3 FKが未登録。Stageに3テーブル自体なし。Prod READ ONLYで確認し、[168候補](168_h52_media_reference_guard_CANDIDATE.sql) で既知3 FKのみ許容、source側に該当行があれば拒否、未知FK拒否と本人側不変を維持。正式Migration未採用。
+- [H52 #45306362432](https://github.com/g-ambe/Padel-match/actions/runs/45306362432) HEAD 27a721a4c104c7a40a92f164f125960ba27aa567： [167 probe](167_h52_pending_link_isolated_rollback_probe.sql) 27判定すべてPASS。公開/非公開named承認、CAS、公開同意、旧承認拒否、pending拒否/取消、対象本人の画像メタデータ不変、仮選手側の3種参照拒否、未知FK拒否、監査整合、ROLLBACK後の24表・権限・履歴・マーカー保持。
+- [H53 #45307148744](https://github.com/g-ambe/Padel-match/actions/runs/45307148744) HEAD b2798daeb18eb3f22fe04bf7273995fe3791a727： [169 probe](169_h53_join_and_reviewed_restore_isolated_probe.sql) 16判定すべてPASS。H52の27判定も再PASS。通常加入、仮選手引継ぎ、公開同意なし拒否、既存mainの管理者手動復元SQL本体による元所属・表示名・仮プロフィール復元、本人画像/設定と別加入の保持、監査と申請状態、ROLLBACK後データ/ACL/履歴維持。隔離cleanup成功。通常画面からの解除機能追加なし。
+- H52/H53はSQL role/claim模擬のみ。実JWT/HTTP/Worker、並行操作、統合後に編集した行の復元拒否、実R2画像本体は未検証。Stage HTTPとH47別jobはskip。本番/Stage書込み、Cloudflare/main/mergeなし。H51/H52候補は隔離専用。NO-GO維持。
+
+## 21. H54：旧/新アプリ×旧/新DB互換性のコード調査開始（2026-11-24）
+
+- mainとPR #265の連携画面、グループ詳細/検索、通常・公式共有ページ、group-read/public-club-join、Phase1/2を比較。現段階はソースと既存SQL証跡の調査であり配信Workerや実HTTPの検証ではない。
+- 旧連携画面は旧review approvedを呼ぶ。Phase2＋H51では意図的に拒否。旧管理者画面はpendingかつrequest.sourceを要求する一方、Phase2管理者DTOはsourceを返さず、取消ボタンが表示されない（別のグループ管理画面の取消経路あり、実動作未確認）。新画面は管理者DTOを別表示しnamed承認を使用。旧DBではnamed RPC/表示名DTOが存在せず、承認不可。
+- 旧グループ詳細/検索はclub_members直接SELECT。Phase2のanon ACL撤回は確認済みだが、認証済みの旧画面の全挙動は未確認。新画面はget_my_club_memberships/get_club_roster/get_public_club_directory等、Phase1/2に依存。旧DBへ新アプリだけ先行配信するとRPC欠落。公開人数はPhase2まで必要。
+- 新通常・公式共有ページはPhase1 get_shared_eventとtoken別click RPCを使用。旧ページは直接events/official_events等と旧click RPC。Phase1は旧anon基底SELECTを撤回しない。旧click停止は新共有導線確認後の別工程。全旧共有の動作は未検証。
+- 次：旧/新アプリの4組合せ＋Phase1中間状態を実JWT/PostgREST/ブラウザで検証する方法を設計。旧→新切替に同意欠落の窓を作らない（Phase2と承認ガードの正式順序/原子性を検討）。必要な互換アプリはCodexに既存PR範囲で指示する。既存権限を再開放しない。最新版DB・Worker・自動deployの実状態照合、正式Migration・復旧/バックアップ・最終承認は残件。

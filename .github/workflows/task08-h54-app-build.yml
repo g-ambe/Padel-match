@@ -37,6 +37,8 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/h54-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
           test "$("$RUNNER_TEMP/h54-bun/node_modules/.bin/bun" --version)" = 1.2.15
           "$RUNNER_TEMP/h54-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
+          # OpenNext invokes bun run build according to packageManager.
+          echo "$RUNNER_TEMP/h54-bun/node_modules/.bin" >> "$GITHUB_PATH"
       - name: H54 current new app group and consent regression (synthetic)
         run: >-
           node --test

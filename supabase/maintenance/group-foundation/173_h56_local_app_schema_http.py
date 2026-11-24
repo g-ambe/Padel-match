@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import subprocess
 import uuid
 HERE=Path(__file__).resolve().parent
 REPO=HERE.parents[2]
@@ -75,20 +76,65 @@ def capture():
         snap.dump(["--schema-only","--format=custom","--no-comments","--no-security-labels","--no-publications","--no-subscriptions"]+["--schema="+x for x in SCHEMAS],ROOT/"app-schema.dump")
     print("H56 PASS: source app schema only captured; no managed Auth/Storage or real rows",flush=True)
 
-def query(s):
-    return json.loads(h55.sql("BEGIN READ ONLY; SET LOCAL search_path=''; "+s+"; ROLLBACK;"))
+def local_sql(s,phase):
+    # Only the dedicated, already-verified H55 local stack. Do not emit raw
+    # SQL, stderr, local auth credentials or source object definitions.
+    require(not os.getenv("SUPABASE_DB_URL") and not os.getenv("PADEL_BACKUP_DB_URL"),"hosted_credential_forbidden")
+    args=h55.DOCKER+["exec","-i",h55.DB,"psql","-U","postgres","-d","postgres",
+                     "-X","-qAt","-v","ON_ERROR_STOP=1","-v","VERBOSITY=verbose","-f","-"]
+    r=subprocess.run(args,input=s,text=True,capture_output=True,env=h55.ENV,timeout=180,check=False)
+    if r.returncode:
+        error=re.search(r"psql:<stdin>:(\d+):\s*(?:ERROR|FATAL):\s*([0-9A-Z]{5}):",r.stderr)
+        line=int(error.group(1)) if error else 0
+        state=error.group(2) if error else "unknown"
+        reason="unclassified"
+        for pattern,label in (
+            (r"permission denied for schema","schema_permission"),
+            (r"permission denied for database","database_permission"),
+            (r"permission denied for (?:table|relation|sequence)","relation_permission"),
+            (r"permission denied for function","function_permission"),
+            (r"must be owner of","owner_required"),
+            (r"must be (?:a )?superuser","superuser_required"),
+            (r"permission denied to (?:create|alter)","ddl_permission"),
+            (r"permission denied to set role","role_permission"),
+            (r"grantor must","grantor_permission"),
+            (r"permission denied","other_permission")):
+            if re.search(pattern,r.stderr,re.I):
+                reason=label
+                break
+        # Report only a fixed command category and allowlisted schema; even
+        # if the error is in a function body, never print its source text.
+        category="unknown"
+        schema="unknown"
+        if 0<line<=len(s.splitlines()):
+            lines=s.splitlines()
+            for candidate in reversed(lines[max(0,line-50):line]):
+                m=re.match(r"^\s*(CREATE(?: OR REPLACE)?|ALTER|GRANT|REVOKE|SET|DROP|SELECT|INSERT|DO|COMMENT|NOTIFY)\b",candidate,re.I)
+                if m:
+                    category=m.group(1).upper().replace(" ","_")
+                    for name in SCHEMAS+("auth","storage","extensions","supabase_migrations"):
+                        if re.search(r"\b"+re.escape(name)+r"\b",candidate):
+                            schema=name
+                            break
+                    break
+        require(False,phase+"_line_"+str(line)+"_state_"+state+"_"+reason+"_"+category+"_"+schema)
+    return r.stdout
+
+def query(s,phase="metadata_query"):
+    return json.loads(local_sql("BEGIN READ ONLY; SET LOCAL search_path=''; "+s+"; ROLLBACK;",phase))
 
 def restore_and_test(url,key,credentials):
     require(not os.getenv("SUPABASE_DB_URL") and not os.getenv("PADEL_BACKUP_DB_URL"),"hosted_credential_forbidden")
     metadata=json.loads((ROOT/"metadata.json").read_text())
-    h55.sql("DROP TABLE public.h55_auth_probe; DROP FUNCTION public.h55_whoami();")
+    local_sql("DROP TABLE public.h55_auth_probe; DROP FUNCTION public.h55_whoami();","drop_sentinel")
     require(query("SELECT json_build_object('n',count(*)) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')")=={"n":0},"local_public_not_empty")
     toc=b.run(b.DOCKER+["run","--rm","--interactive","--network","none",b.probe.POSTGRES_IMAGE,"pg_restore","--list"],phase="H56_archive_inventory_failed",data=(ROOT/"app-schema.dump").read_bytes(),timeout=120).decode()
     require(not re.search(r"(?m)^\d+;[^\n]*\b(?:TABLE DATA|SEQUENCE SET|MATERIALIZED VIEW DATA|BLOB DATA|BLOBS)\b",toc),"archive_must_be_schema_only")
     rendered=b.run(b.DOCKER+["run","--rm","--interactive","--network","none",b.probe.POSTGRES_IMAGE,"pg_restore","--schema-only","--no-owner","--no-comments","--file","-"],phase="H56_schema_render_failed",data=(ROOT/"app-schema.dump").read_bytes(),timeout=300).decode()
     rendered=re.sub(r"(?m)^CREATE SCHEMA public;[ \t]*$","",rendered)
     require(not re.search(r"(?mi)^(CREATE (?:SCHEMA|TABLE) (?:auth|storage|vault)\b|CREATE (?:PUBLICATION|SUBSCRIPTION|SERVER|USER MAPPING)\b)",rendered),"unexpected_schema_archive_content")
-    h55.sql(rendered)
+    print("H56: restore schema-only archive into local app schemas",flush=True)
+    local_sql(rendered,"schema_restore")
     actual=query(FINGERPRINT)
     for name in metadata["fingerprint"]:
         require(actual[name]==metadata["fingerprint"][name],"schema_fingerprint_diff_"+name)
@@ -103,7 +149,7 @@ def restore_and_test(url,key,credentials):
     require(query("SELECT json_build_object('n',count(*)) FROM supabase_migrations.schema_migrations")=={"n":0},"local_migration_history_not_empty")
     rows=",".join("("+b.literal(x["version"])+","+b.literal(x["name"])+",ARRAY['H56 schema metadata only']::text[])" for x in metadata["history"])
     h55.sql("INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES "+rows+";")
-    h55.sql(h44.PHASE1.read_text())
+    local_sql(h44.PHASE1.read_text(),"phase1")
     h55.sql("INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('20990101010001','task08_prod_phase1_additive',ARRAY['H56 isolated test']);")
     combined="BEGIN;\n"+h54.body(h44.PHASE2,require)+"""
 INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('20990101010002','task08_prod_phase2_atomic',ARRAY['H56 isolated test']);
@@ -112,11 +158,11 @@ CREATE TABLE public.h51_postcutover_data_preservation(marker text PRIMARY KEY);
 REVOKE ALL ON public.h51_postcutover_data_preservation FROM PUBLIC,anon,authenticated;
 INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
 """+h54.body(HERE/"168_h52_media_reference_guard_CANDIDATE.sql",require)+"\nCOMMIT;"
-    h55.sql(combined)
+    local_sql(combined,"atomic_phase2")
     require(query("SELECT json_build_object('guard',position('最新版の連携画面' IN pg_get_functiondef('public.review_player_profile_link(uuid,text,text)'::regprocedure))>0,'anon',has_any_column_privilege('anon','public.club_members','SELECT'),'count',to_regprocedure('public.get_public_club_member_count(uuid)') IS NOT NULL)")=={"guard":True,"anon":False,"count":True},"post_cutover_contract")
     print("H56 PASS: verified Phase1 plus atomic Phase2/H51/H52 on local stack",flush=True)
     ids=seed(credentials)
-    h55.sql("NOTIFY pgrst,'reload schema';")
+    local_sql("NOTIFY pgrst,'reload schema';","schema_cache_reload")
     payload=json.dumps({"url":url,"key":key,"actors":credentials,"ids":ids})
     raw=h55.run(["node",str(REPO/"tests/integration/task08-h56-real-sdk.cjs")],"real_sdk",data=payload,cwd=REPO,timeout=180)
     report=json.loads(raw)
@@ -170,7 +216,7 @@ def seed(credentials):
               f"INSERT INTO public.profile_media_operations(request_id,actor_id,profile_id,kind,status,object_key,expected_version,committed_at) VALUES({b.literal(media_request)},{q('recipient')},{q('recipient_profile')},'upload','committed',{b.literal(media_key)},0,now());",
               f"INSERT INTO public.player_profile_private(profile_id,owner_id,instagram_username,instagram_version,avatar_version,avatar_key) VALUES({q('recipient_profile')},{q('recipient')},'h56_synthetic',1,1,{b.literal(media_key)}) ON CONFLICT(profile_id) DO UPDATE SET owner_id=excluded.owner_id,instagram_username=excluded.instagram_username,instagram_version=1,avatar_version=1,avatar_key=excluded.avatar_key;",
               "COMMIT;"]
-    h55.sql("\n".join(stmts))
+    local_sql("\n".join(stmts),"fixture_seed")
     return ids
 
 if __name__=="__main__":

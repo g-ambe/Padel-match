@@ -256,3 +256,25 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
         require(target.query(guard_sql)==guard_before,'H52_post_rollback_media_guard_changed')
         print("H52 PASS: synthetic fixture rolled back; source rows, legacy rows, marker, history and RPC/ACL contract unchanged",flush=True)
         print("H52 LIMITATION: SQL roles/claim simulation only; real JWT/PostgREST and Worker browser compatibility remain unverified; Prod NO-GO",flush=True)
+
+        if 'H53_JOIN_RESTORE_TEST=1' in trigger:
+            probe53=HERE/'169_h53_join_and_reviewed_restore_isolated_probe.sql'
+            require(probe53.is_file(),'H53_probe_missing')
+            raw53=run_h52_sql(probe53,'h53_join_restore')
+            report53=json.loads(raw53.splitlines()[-1])
+            expected53={'rollback_only','no_consent_rejected','approval_requests',
+                'recipient_name_applied','claimed_name_applied','provisional_profile_inactivated',
+                'merge_audit_consistent','public_directory_only_consented','public_ref_not_real_member_id',
+                'direct_named_raw_rpc_revoked','reviewed_restore_completed','restored_member',
+                'restored_source','restored_request_cancelled','normal_join_retained','canonical_media_unchanged'}
+            require(set(report53)==expected53,'H53_report_shape_invalid')
+            for key in sorted(expected53):
+                require(report53[key] is True,'H53_assertion_failed_'+key)
+                print('H53 PASS: '+key,flush=True)
+            require(h45.digest(target.query(snapshot_sql))==before_h52,'H53_rollback_group_auth_audit_or_history_changed')
+            h48.verify(target,b,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
+                       require,h45,'H53_after_rollback')
+            require(target.query(CONTRACT)==after and target.query(guard_sql)==guard_before,
+                    'H53_contract_changed')
+            print('H53 PASS: reviewed join/restore fixture rolled back, source data and security unchanged',flush=True)
+            print('H53 LIMITATION: SQL role simulation, reviewed restore only; concurrent operations and HTTP/browser not proven',flush=True)

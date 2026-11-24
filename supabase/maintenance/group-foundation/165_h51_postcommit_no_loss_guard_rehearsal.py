@@ -176,46 +176,68 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
           'marker',(SELECT count(*) FROM public.h51_postcutover_data_preservation WHERE marker='retained'))"""
         before_h52=h45.digest(target.query(snapshot_sql))
         print("H52: synthetic pending-link RPC checks on post-H51 isolated DB",flush=True)
-        # Keep raw database stderr private. Capture only the failing static SQL
-        # line and a predefined reason code, never a UUID, row, token or context.
+        # Keep raw database stderr private. Capture only failing static SQL
+        # line and predefined reason code, never a UUID, row, token or context.
         import re
         import subprocess
-        sql_text=probe.read_text()
-        result=subprocess.run(target.prefix+b.PSQL+["--set","VERBOSITY=verbose"],
-            input=("SET ROLE postgres;\n"+sql_text+"\n").encode(),
-            stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=600,check=False)
-        if result.returncode:
-            err=result.stderr.decode(errors='replace')
-            loc=re.search(r'psql:[^\n]*?:(\d+):\s*ERROR:',err)
-            state=re.search(r'ERROR:\s+([0-9A-Z]{5}):',err)
-            reason='unclassified'
-            known={
-              '連携申請を送信する権限がありません':'request_manager',
-              '対象メンバーを管理する権限がありません':'request_member',
-              '登録済みアカウントを確認できません':'request_account',
-              '承認待ちの申請があります':'request_duplicate',
-              '申請元の管理権限が変更されています':'review_manager',
-              '申請先本人の承認、または管理者の取消が必要です':'review_actor',
-              '確認後に内容が変更されています':'review_token',
-              'プロフィール画面で本人の正規プロフィールを作成':'canonical_missing',
-              'この連携申請を確認する権限がありません':'detail_denied',
-            }
-            for needle,label in known.items():
-                if needle in err:
-                    reason=label
-                    break
-            # Only echo literal H52 assertion messages authored in the probe.
-            for label in re.findall(r"RAISE EXCEPTION '(H52 [A-Za-z0-9 _-]+)'",sql_text):
-                if label in err:
-                    reason=label.replace(' ','_')
-                    break
-            require(False,'H52_probe_failed_line_'+(loc.group(1) if loc else 'unknown')
-                    +'_state_'+(state.group(1) if state else 'unknown')+'_'+reason)
-        raw=result.stdout.decode().strip()
+
+        def run_h52_sql(path,label):
+            sql_text=path.read_text()
+            result=subprocess.run(target.prefix+b.PSQL+["--set","VERBOSITY=verbose"],
+                input=("SET ROLE postgres;\n"+sql_text+"\n").encode(),
+                stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=600,check=False)
+            if result.returncode:
+                err=result.stderr.decode(errors='replace')
+                loc=re.search(r'psql:[^\n]*?:(\d+):\s*ERROR:',err)
+                state=re.search(r'ERROR:\s+([0-9A-Z]{5}):',err)
+                reason='unclassified'
+                known={
+                  '未確認の外部キーがあります':'unreviewed_reference',
+                  'H52 source private/media references require separate review':'source_media_guard',
+                  '連携申請を送信する権限がありません':'request_manager',
+                  '対象メンバーを管理する権限がありません':'request_member',
+                  '登録済みアカウントを確認できません':'request_account',
+                  '承認待ちの申請があります':'request_duplicate',
+                  '申請元の管理権限が変更されています':'review_manager',
+                  '申請先本人の承認、または管理者の取消が必要です':'review_actor',
+                  '確認後に内容が変更されています':'review_token',
+                  'プロフィール画面で本人の正規プロフィールを作成':'canonical_missing',
+                  'この連携申請を確認する権限がありません':'detail_denied',
+                }
+                for needle,code in known.items():
+                    if needle in err:
+                        reason=code
+                        break
+                for code in re.findall(r"RAISE EXCEPTION '(H52[ _][A-Za-z0-9 _-]+)'",sql_text):
+                    if code in err:
+                        reason=code.replace(' ','_')
+                        break
+                require(False,'H52_'+label+'_failed_line_'+(loc.group(1) if loc else 'unknown')
+                        +'_state_'+(state.group(1) if state else 'unknown')+'_'+reason)
+            return result.stdout.decode().strip()
+
+        candidate=HERE/'168_h52_media_reference_guard_CANDIDATE.sql'
+        require(candidate.is_file(),'H52_media_candidate_missing')
+        print("H52: reproduce old FK guard failure and apply isolated media-reference candidate",flush=True)
+        run_h52_sql(candidate,'media_candidate')
+        require(h45.digest(target.query(snapshot_sql))==before_h52,'H52_candidate_changed_group_auth_audit_or_history')
+        h48.verify(target,b,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
+                   require,h45,'H52_after_media_candidate')
+        require(target.query(CONTRACT)==after,'H52_candidate_changed_H51_contract')
+        print("H52 PASS: old FK guard reproduced; reviewed media compatibility candidate applied; rows and H51 contract unchanged",flush=True)
+        guard_sql="""SELECT json_build_object(
+          'guard',pg_get_functiondef('profile_link_private.check_reference_schema()'::regprocedure),
+          'merge',pg_get_functiondef('profile_link_private.merge_profiles(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid)'::regprocedure),
+          'guard_auth',has_function_privilege('authenticated','profile_link_private.check_reference_schema()','EXECUTE'),
+          'merge_auth',has_function_privilege('authenticated','profile_link_private.merge_profiles(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid)','EXECUTE'))"""
+        guard_before=target.query(guard_sql)
+        require(not guard_before['guard_auth'] and not guard_before['merge_auth'],'H52_private_guard_granted')
+        raw=run_h52_sql(probe,'probe')
         # SQL emits only synthetic set_config values and the final boolean report.
         # Never echo raw output or tokens; parse the final JSON line.
         report=json.loads(raw.splitlines()[-1])
-        expected={'rollback_only','legacy_approval_denied','pending_rejected_cancelled',
+        expected={'rollback_only','unknown_fk_denied','source_private_denied','source_object_denied',
+          'source_operation_denied','canonical_target_media_unchanged','legacy_approval_denied','pending_rejected_cancelled',
           'no_merge_reject_cancel','cancel_source_preserved','manager_scope_safe',
           'other_user_rejected','public_requires_consent','alias_cas_pt409',
           'obsolete_review_token_rejected','private_public_flag_rejected','approved_both',
@@ -231,5 +253,6 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
         h48.verify(target,b,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
                    require,h45,'H52_after_rollback')
         require(target.query(CONTRACT)==after,'H52_post_rollback_contract_changed')
+        require(target.query(guard_sql)==guard_before,'H52_post_rollback_media_guard_changed')
         print("H52 PASS: synthetic fixture rolled back; source rows, legacy rows, marker, history and RPC/ACL contract unchanged",flush=True)
         print("H52 LIMITATION: SQL roles/claim simulation only; real JWT/PostgREST and Worker browser compatibility remain unverified; Prod NO-GO",flush=True)

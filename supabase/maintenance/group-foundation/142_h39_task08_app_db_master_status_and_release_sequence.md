@@ -379,3 +379,12 @@
 - [178 compiler](178_h61_release_package.py) 56090d3、元6SQL blob固定、オフラインで3SQL＋SHA256 manifest生成。version 20261124044001 task08_prod_phase1_additive / 20261124044002 task08_prod_phase2_atomic (H51/H52同transaction) / 20261124044003 task08_prod_share_anon_close (新Worker正規共有確認後)。既存22件と段階ごとの厳密history gate、同時適用防止lock、DDL＋実SQL segments履歴1件のatomic commit。H52 marker条件を実H51 named/旧承認/anon ACL契約へ置換、H12合成token照合SELECTのみ除去、2099/marker/合成token無し。過去のmigrationファイルは変更しない。管理手動パッケージでありdb push禁止。正式適用は未承認。
 - 173 optional release_runner（85dbb87）、175 optional close_runner（f9430f0）、179 exact package rehearsal（a4e3af5）、workflow 168e381。[180 runbook](180_h61_production_release_runbook.md) a36cdde。H61 [#45328528428](https://github.com/g-ambe/Padel-match/actions/runs/45328528428) tested HEAD 2d354c24506646499a6abbb567d8b1a0e32c24ba、実行開始。隔離本番schema＋合成Authで順序違い拒否、各3段階の末尾障害注入/履歴ACL rollback/正常commit/repeat拒否、H56 SDK・H58正規共有前後を実施予定。結果未確定。H54実データ保全は別証跡。
 - H62残件：独立Codexレビュー、最新全件暗号化backup/独立restore、R2実ファイル保全・配信経路/固定build/停止窓・本番承認。H63 DB→新Worker即時→正規共有→SQL3→利用再開。SQL2確定後は旧Worker単純rollbackや広いACL再付与禁止、停止継続/限定forward-fix、過去全DB復元は追加承認必要。Draft #265 NO-GO、本番/Stage書込み・Cloudflare deploy・main mergeなし。Projectフィールド同期未確認。
+
+## 46. H61 SUCCESS・H62リリース前最終ゲート（2026-11-24）
+
+- [H61 #45328528428](https://github.com/g-ambe/Padel-match/actions/runs/45328528428) tested HEAD 2d354c24506646499a6abbb567d8b1a0e32c24ba、job 138223821233 SUCCESS。H56 schema capture/restore fingerprint全PASS。生成3本の順序違い拒否、各末尾障害注入時schema/ACL/full history rollback、実version/履歴とDDL atomic commit・再実行拒否PASS。旧22履歴＋正式候補3履歴、H56 SDK15/DB8、TypeScript/OpenNext/local Worker、H58共有遮断前10/後13/OFF1・click各0→2→4→4、cleanup PASS。
+- 検証済み生成SQL SHA256（再生成時一致必須）：
+  - 20261124044001_task08_prod_phase1_additive.sql: `0ccd82e5c550a04f6e9788904346fd7e1551cabe2b0e713b44e16feac9f4e24c`
+  - 20261124044002_task08_prod_phase2_atomic.sql: `03759e9c36760c85ebc5d0548e225de64440deff512408f94cfe9248e1935aeb`
+  - 20261124044003_task08_prod_share_anon_close.sql: `50ed1b8f67a88faf086c8fb05e5e38f545f45d73d7143110bb8410aabb6eb463`
+- H61は合成ローカルDBでの正式候補リハーサルであり本番適用ではない。H54実データ保全、H57–60機能検証は別証跡。H62は独立Codexレビュー、最新全件暗号化DB backup/独立restore、R2実ファイル保全、Prod history/catalog・main/PR差分/配信経路（CF trigger GET 0件と旧main自動配信記録の差）・固定ビルド・停止窓/RPO確認、ユーザーの明示承認。H63実適用は全条件充足後のみ。180 runbook準拠、SQL2後の旧Worker単純復帰やACL緩和禁止。Draft #265 NO-GO、本番/Stage書込み・Cloudflare deploy・main mergeなし。Projectフィールド同期未確認。

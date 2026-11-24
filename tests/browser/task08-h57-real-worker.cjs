@@ -78,7 +78,7 @@ async function main(){
   assert.equal(await tabs(recipient).count(),0);mark(phase);
   phase='manager_view';
   await openRequest(owner,'public');
-  await owner.getByText('対象選手：H57 public current',{exact:true}).waitFor();
+  await owner.getByText('対象選手：H57 public provisional',{exact:true}).waitFor();
   assert.equal(await nameField(owner).count(),0);assert.equal(await inherit(owner).count(),0);
   assert.equal(await publication(owner).count(),0);assert.equal(await approve(owner).count(),0);mark(phase);
   phase='third_party';

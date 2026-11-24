@@ -156,6 +156,90 @@ def reconcile_function_acl(expected_rows,actual_rows,review):
     print("H56 local ACL reproduction: removed="+str(removed)+" added="+str(added)+
           "; source exact-match verification follows",flush=True)
 
+RELATION_ACL_REVIEW=f"""SELECT jsonb_build_object(
+ 'unexpected_owner_or_grantor',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ CROSS JOIN LATERAL aclexplode(coalesce(c.relacl,acldefault(CASE WHEN c.relkind='S' THEN 's'::"char" ELSE 'r'::"char" END,c.relowner))) a
+ WHERE n.nspname IN {S} AND c.relkind IN ('r','p','v','m','S')
+ AND (pg_get_userbyid(c.relowner)<>'postgres' OR pg_get_userbyid(a.grantor)<>'postgres'
+ OR a.grantee::regrole::text NOT IN ('-','postgres','anon','authenticated','service_role')
+ OR a.is_grantable)),
+ 'relations',(SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+ WHERE n.nspname IN {S} AND c.relkind IN ('r','p','v','m','S')))"""
+
+def rows_by_identity(rows,length,key_length,label):
+    out={}
+    for row in rows:
+        require(isinstance(row,list) and len(row)==length,label+"_shape")
+        k=tuple(row[:key_length])
+        require(k not in out,label+"_duplicate_identity")
+        out[k]=row
+    return out
+
+def safe_name(value):
+    return value if isinstance(value,str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,100}",value) else "unknown"
+
+def relation_acl(row):
+    require(row[5]=="postgres","relation_owner_unreviewed")
+    allowed={"SELECT","INSERT","UPDATE","DELETE","TRUNCATE","REFERENCES","TRIGGER","MAINTAIN"} if row[2]!="S" else {"SELECT","UPDATE","USAGE"}
+    privileges=set()
+    for a in row[6]:
+        require(len(a)==3 and a[0] in ("-","postgres","anon","authenticated","service_role")
+                and a[1] in allowed and a[2] is False,"relation_acl_shape_unreviewed")
+        privileges.add((a[0],a[1]))
+    return privileges
+
+def reconcile_relation_acl(expected_rows,actual_rows,review):
+    want=rows_by_identity(expected_rows,7,2,"source_relation")
+    got=rows_by_identity(actual_rows,7,2,"local_relation")
+    local=query(RELATION_ACL_REVIEW,"local_relation_acl_review")
+    require(review=={"unexpected_owner_or_grantor":0,"relations":len(want)}
+            and local=={"unexpected_owner_or_grantor":0,"relations":len(got)},
+            "relation_acl_review_required")
+    require(set(want)==set(got),"relation_identity_diff")
+    structure=[k for k in want if want[k][:6]!=got[k][:6]]
+    acl_diff=[k for k in want if relation_acl(want[k])!=relation_acl(got[k])]
+    print("H56 relation comparison: identities="+str(len(want))+" structure_diff="+
+          str(len(structure))+" acl_diff="+str(len(acl_diff)),flush=True)
+    for k in structure[:12]:
+        print("H56 relation structure mismatch: "+safe_name(k[0])+"."+safe_name(k[1]),flush=True)
+    require(not structure,"relation_structure_diff")
+    statements=["BEGIN; SET LOCAL search_path='';"]
+    removed=added=0
+    for k in acl_diff:
+        target,actual=relation_acl(want[k]),relation_acl(got[k])
+        identity=b.ident(k[0])+"."+b.ident(k[1])
+        kind="SEQUENCE" if want[k][2]=="S" else "TABLE"
+        role=lambda v:"PUBLIC" if v=="-" else b.ident(v)
+        for r,priv in sorted(actual-target):
+            statements.append("REVOKE "+priv+" ON "+kind+" "+identity+" FROM "+role(r)+";")
+            removed+=1
+        for r,priv in sorted(target-actual):
+            statements.append("GRANT "+priv+" ON "+kind+" "+identity+" TO "+role(r)+";")
+            added+=1
+    statements.append("COMMIT;")
+    if acl_diff: local_sql("\n".join(statements),"reproduce_source_relation_acl")
+    print("H56 local relation ACL reproduction: removed="+str(removed)+" added="+str(added),flush=True)
+
+def canonical_rows(rows):
+    # ORDER BY text can differ between source/local collation. Compare a
+    # multiset of complete records (preserve duplicates and every field).
+    return sorted(json.dumps(r,ensure_ascii=False,sort_keys=True,separators=(",",":")) for r in rows)
+
+def normalize_relation_rows(rows):
+    return [r[:6]+[sorted(r[6])] for r in rows]
+
+def describe_constraint_diff(left,right):
+    want=rows_by_identity(left,5,3,"source_constraint")
+    got=rows_by_identity(right,5,3,"local_constraint")
+    only_source=set(want)-set(got);only_local=set(got)-set(want)
+    different=[k for k in want.keys()&got.keys() if want[k]!=got[k]]
+    print("H56 constraint comparison: missing="+str(len(only_source))+
+          " extra="+str(len(only_local))+" definition_or_validation_diff="+str(len(different)),flush=True)
+    for k in sorted(only_source|only_local|set(different))[:25]:
+        kind=("missing" if k in only_source else "extra" if k in only_local else
+              "definition" if want[k][3]!=got[k][3] else "validation")
+        print("H56 constraint mismatch: "+ ".".join(safe_name(v) for v in k)+" "+kind,flush=True)
+
 def compare_fingerprints(expected,actual):
     mismatches=[]
     for name in expected:
@@ -163,8 +247,12 @@ def compare_fingerprints(expected,actual):
             left,right=function_map(expected[name]),function_map(actual[name])
             same=(set(left)==set(right) and all(left[k][:5]==right[k][:5] and
                   sorted(left[k][5])==sorted(right[k][5]) for k in left))
+        elif name=="relations":
+            same=canonical_rows(normalize_relation_rows(expected[name]))==canonical_rows(normalize_relation_rows(actual[name]))
         else:
-            same=expected[name]==actual[name]
+            same=canonical_rows(expected[name])==canonical_rows(actual[name])
+            if name=="constraints" and not same:
+                describe_constraint_diff(expected[name],actual[name])
         print("H56 fingerprint "+name+": "+("PASS" if same else "FAIL")+
               " source="+str(len(expected[name]))+" local="+str(len(actual[name])),flush=True)
         if not same: mismatches.append(name)
@@ -196,10 +284,12 @@ def capture():
         fingerprint=snap.query(FINGERPRINT)
         managed_defaults=snap.query(MANAGED_DEFAULTS)
         function_acl_review=snap.query(FUNCTION_ACL_REVIEW)
+        relation_acl_review=snap.query(RELATION_ACL_REVIEW)
+        require(relation_acl_review["unexpected_owner_or_grantor"]==0,"source_relation_acl_review_required")
         require(function_acl_review["unexpected_owner_or_grantor"]==0,"source_function_acl_review_required")
         require(len(managed_defaults)==3,"source_managed_default_acl_review_required")
         history=snap.query("SELECT coalesce(json_agg(json_build_object('version',version,'name',name) ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
-        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults,"function_acl_review":function_acl_review}))
+        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults,"function_acl_review":function_acl_review,"relation_acl_review":relation_acl_review}))
         snap.dump(["--schema-only","--format=custom","--no-comments","--no-security-labels","--no-publications","--no-subscriptions"]+["--schema="+x for x in SCHEMAS],ROOT/"app-schema.dump")
     print("H56 PASS: source app schema only captured; no managed Auth/Storage or real rows",flush=True)
 
@@ -269,6 +359,8 @@ def restore_and_test(url,key,credentials):
     local_sql(rendered,"schema_restore")
     actual=query(FINGERPRINT)
     reconcile_function_acl(metadata["fingerprint"]["functions"],actual["functions"],metadata["function_acl_review"])
+    actual=query(FINGERPRINT)
+    reconcile_relation_acl(metadata["fingerprint"]["relations"],actual["relations"],metadata["relation_acl_review"])
     actual=query(FINGERPRINT)
     compare_fingerprints(metadata["fingerprint"],actual)
     require(query(h44.remote_schema_catalog_query())==metadata["catalog"],"source_catalog_diff")

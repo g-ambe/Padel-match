@@ -50,29 +50,33 @@ CONTRACT="""SELECT json_build_object(
 )"""
 
 def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
-        require,b,h44,h45,h48):
+        require,b,h44,h45,h48,atomic_preapplied=False):
     require(isinstance(target,b.LocalRestore),'H51_must_run_in_isolated_db')
     require(SQL.is_file(),'H51_candidate_sql_missing')
     print("H51: capture pre-guard RPC/ACL contract",flush=True)
     before=target.query(CONTRACT)
-    require(before['legacy_authenticated'] and before['named_authenticated']
-            and not before['legacy_approval_guarded']
-            and not before['private_exists'] and before['alias_present']
-            and not before['direct_anon_membership'],
-            'H51_expected_unpatched_phase2_missing')
+    if not atomic_preapplied:
+        require(before['legacy_authenticated'] and before['named_authenticated']
+                and not before['legacy_approval_guarded']
+                and not before['private_exists'] and before['alias_present']
+                and not before['direct_anon_membership'],
+                'H51_expected_unpatched_phase2_missing')
     rows_digest=h45.digest(target.query(h45.rows_sql()))
     require(h48.legacy_signature(target,b,legacy_cols,require,h45)==legacy_digest,
             'H51_before_legacy_data_mismatch')
-    # Add a post-COMMIT write in the *local* DB. The recovery guard must not
-    # remove this marker or replace full business tables with stale data.
-    h44.isolated(target,"""BEGIN;
-      CREATE TABLE public.h51_postcutover_data_preservation (
-        marker text PRIMARY KEY);
-      INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
-      COMMIT;""")
-    print("H51: original new-DB rows and a post-COMMIT-only marker captured",flush=True)
-    print("H51: apply guarded RPC candidate only in isolated DB",flush=True)
-    h44.isolated(target,SQL.read_text())
+    if not atomic_preapplied:
+        # Add a post-COMMIT write in the *local* DB. The recovery guard must not
+        # remove this marker or replace full business tables with stale data.
+        h44.isolated(target,"""BEGIN;
+          CREATE TABLE public.h51_postcutover_data_preservation (
+            marker text PRIMARY KEY);
+          INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
+          COMMIT;""")
+        print("H51: original new-DB rows and a post-COMMIT-only marker captured",flush=True)
+        print("H51: apply guarded RPC candidate only in isolated DB",flush=True)
+        h44.isolated(target,SQL.read_text())
+    else:
+        print('H54: H51 guard and isolated marker already committed atomically',flush=True)
     print("H51: inspect guarded RPC contract",flush=True)
     after=target.query(CONTRACT)
     require(after['private_exists'] and not after['private_anon']
@@ -219,12 +223,15 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
         candidate=HERE/'168_h52_media_reference_guard_CANDIDATE.sql'
         require(candidate.is_file(),'H52_media_candidate_missing')
         print("H52: reproduce old FK guard failure and apply isolated media-reference candidate",flush=True)
-        run_h52_sql(candidate,'media_candidate')
+        if not atomic_preapplied:
+            run_h52_sql(candidate,'media_candidate')
+        else:
+            print('H54: H52 media guard already committed atomically',flush=True)
         require(h45.digest(target.query(snapshot_sql))==before_h52,'H52_candidate_changed_group_auth_audit_or_history')
         h48.verify(target,b,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
                    require,h45,'H52_after_media_candidate')
         require(target.query(CONTRACT)==after,'H52_candidate_changed_H51_contract')
-        print("H52 PASS: old FK guard reproduced; reviewed media compatibility candidate applied; rows and H51 contract unchanged",flush=True)
+        print("H52 PASS: reviewed media compatibility candidate present; rows and H51 contract unchanged",flush=True)
         guard_sql="""SELECT json_build_object(
           'guard',pg_get_functiondef('profile_link_private.check_reference_schema()'::regprocedure),
           'merge',pg_get_functiondef('profile_link_private.merge_profiles(uuid,uuid,uuid,uuid,uuid,uuid,uuid,uuid)'::regprocedure),

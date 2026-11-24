@@ -337,3 +337,9 @@
 - [H57 #45320034451](https://github.com/g-ambe/Padel-match/actions/runs/45320034451) tested HEAD aada44f65efb1137a6f8663ed295bf2c7793177a、job 138196078369 SUCCESS。H55/H56全ゲート、実SDK15/DB8、H57 owner RPC準備、TypeScript、OpenNext build ID、local Worker起動、375px light/dark実ブラウザ14/14、独立DB保存8/8、cleanup PASS。管理者加入承認は実HTTP成功/approved応答、POP内成功表示、承認済み一覧・操作消失、加入者再読込・DB事後照合を通過。アプリ/SQLの仕様変更なし。
 - H57は合成ローカルAuth/DB/Workerのみ。共有イベント3種、R2実バイナリ、復元後編集・並行承認、実機ハードウェアは未検証。次工程H58候補は共有イベントの実HTTP/ブラウザ（通常・チーム混合・公式、無効/別種token、動画clickとDB記録）。既存H34証跡/fixtureを照合し、H56/H57成功基盤を活用。H57完了を理由に全受入完了とはしない。
 - PR #265 Draft、NO-GO維持。本番/Stage書込み・Cloudflare deploy・main mergeなし。Projectフィールド同期未確認。
+
+## 39. H58 共有イベント実HTTP・Worker画面と匿名経路遮断リハーサル開始（2026-11-24）
+
+- H56成功DBゲートとH57成功Worker起動を再利用。174に任意callback追加（8bdced0、H57既存経路維持）。175 H58 driver（1d49d8f）、`tests/browser/task08-h58-real-share.cjs`（b2a36a7/e5c34bc）、`.github/workflows/task08-h58-real-share.yml`（99b82b2）。H34既存129 fixtureの3 lookupのみ実ローカルAuth/club IDに置換、既存空イベント表guard維持。通常4-2、混合4-2、公式4-2の合成fixture、実業務行なし。
+- 共有token専用DTO/最小返却/別イベント・個人識別子・生guest ID非混入、誤token/別種/空token、実匿名HTTPクリック、375px Worker共有画面3種・無効リンクを先に確認（10判定）。独立DBで3種類のclick各2件のみ・scope一致・referrer NULLを照合。その後、既存53 H12匿名基底表7表SELECT遮断候補とH35既存旧click anon EXECUTE遮断を**合成ローカルのみ**適用し、同じ共有画面/HTTP＋旧RPC/基底表直接GET負例（13判定）を確認予定。click各4件、共有OFF後の3リンク/3click no-op、DB件数不変を追加確認。旧匿名経路の遮断後も正規リンクを使えることを確認する。候補SQLの本番適用/正式履歴登録は別工程。共有はゲスト中心、混合のみ（チーム対決等の全回帰・実端末・実動画再生は未検証）。
+- [H58 #45322761561](https://github.com/g-ambe/Padel-match/actions/runs/45322761561) tested HEAD d96bf2f923b676125e4906ee7cefd032aa32e2b5、queued確認。結果未確定、FAIL時はphase/HTTP/DB診断から原因特定。既存PR #265 Draft、NO-GO維持。Prod/Stage書込み・Cloudflare deploy・main mergeなし、追加有料環境なし。Projectフィールド同期未確認。

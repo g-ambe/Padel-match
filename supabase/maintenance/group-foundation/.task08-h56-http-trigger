@@ -1,0 +1,2 @@
+H56_REAL_SDK=1
+# Source schema-only read; real Auth and application SDK on synthetic local data.

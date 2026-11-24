@@ -271,3 +271,9 @@
 - [#45311812905](https://github.com/g-ambe/Padel-match/actions/runs/45311812905) tested HEAD 6d963725cbc05bebd119b2e148f2ca6e0efbd0b4：source schema-only取得、H55実Auth3役/RLS/loopbackはPASS。ローカルapp schema構築工程で `local_sql_exit_3_42501`。詳細失敗SQLは従来ログでは特定不可。schema fingerprint/Phase1/2/SDK/DB事後確認はPASS未確認。cleanup成功。本番書込みなし。
 - 173 driverのみ診断強化（be70a7faaedd9160f05af74d65deea002292aaf4）。SQL実行フェーズ、エラー行番号、SQLSTATE、許可リストの権限原因分類・文種・schema名のみを記録。raw SQL/個人情報/credentialはログ出力しない。ACL/本番SQL/app機能は変更していない。
 - 再実行trigger HEAD 63f41bf3303f61e9545efda8b5bf45d292eac2aa。次は対応するrunログから実際の失敗文を特定し、ローカル管理ロール/restore手順を必要最小限修正。元のACL/RLS fingerprint一致要件は緩めない。H56未完了、PR #265 Draft/NO-GO維持。Prod/Stage書込み、Cloudflare/main/mergeなし。
+
+## 28. H56 二回目FAIL、管理ロールのdefault ACL復元方式変更（2026-11-24）
+
+- [#45312185706](https://github.com/g-ambe/Padel-match/actions/runs/45312185706) HEAD 63f41bf3303f61e9545efda8b5bf45d292eac2aa：schema-only取得/H55再PASS、schema_restore_line_8140_state_42501_other_permission_ALTER_public、cleanup PASS。SDK/DB事後試験未到達。
+- Prod READ ONLY catalogでpublicのsupabase_admin所有default ACL（table/function/sequenceの3種）を確認。アプリ実体の所有者はpostgres。supabase_adminの権限をpostgresで再設定しようとしていることが有力原因（8140行の具体文は未確認）。173のみ変更 a7279ded046e654751131aa5459653cdd5af42af。source/localの管理ロールdefault ACLが3種すべて一致した場合だけ、明示許可リストの冗長なALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT文を除外。ロール昇格・追加GRANTなし、アプリ実体のACL/RLS/関数fingerprintは維持。一致しなければ停止。原因仮説は再実行で確認する。
+- 再実行trigger HEAD be59e54fbb08e58f6ef021ee9ca44dff110be139。次は管理default ACL parity、restore、SDK/DB照合、cleanupのログ確認。H56未完了、既存Draft #265、NO-GO維持。Prod/Stage書込み、Cloudflare/main/mergeなし。

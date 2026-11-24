@@ -1,0 +1,2 @@
+H61_RELEASE_REHEARSAL=1
+# Exact rendered manual SQL only in local synthetic stack; no production apply.

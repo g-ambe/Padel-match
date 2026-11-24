@@ -277,3 +277,9 @@
 - [#45312185706](https://github.com/g-ambe/Padel-match/actions/runs/45312185706) HEAD 63f41bf3303f61e9545efda8b5bf45d292eac2aa：schema-only取得/H55再PASS、schema_restore_line_8140_state_42501_other_permission_ALTER_public、cleanup PASS。SDK/DB事後試験未到達。
 - Prod READ ONLY catalogでpublicのsupabase_admin所有default ACL（table/function/sequenceの3種）を確認。アプリ実体の所有者はpostgres。supabase_adminの権限をpostgresで再設定しようとしていることが有力原因（8140行の具体文は未確認）。173のみ変更 a7279ded046e654751131aa5459653cdd5af42af。source/localの管理ロールdefault ACLが3種すべて一致した場合だけ、明示許可リストの冗長なALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT文を除外。ロール昇格・追加GRANTなし、アプリ実体のACL/RLS/関数fingerprintは維持。一致しなければ停止。原因仮説は再実行で確認する。
 - 再実行trigger HEAD be59e54fbb08e58f6ef021ee9ca44dff110be139。次は管理default ACL parity、restore、SDK/DB照合、cleanupのログ確認。H56未完了、既存Draft #265、NO-GO維持。Prod/Stage書込み、Cloudflare/main/mergeなし。
+
+## 29. H56 管理ACL問題解消、関数fingerprint差分の対処（2026-11-24）
+
+- [#45312700551](https://github.com/g-ambe/Padel-match/actions/runs/45312700551) HEAD be59e54fbb08e58f6ef021ee9ca44dff110be139：source capture/H55/管理default ACL3種一致・12冗長文除外・schema restore実行成功。旧42501解消。`schema_fingerprint_diff_functions`で停止。関数差分の種類は未確定。cleanup PASS、SDK未到達。
+- Prod READ ONLY catalogで関数ACLの実パターンとpostgres default ACLを再確認。173 driverをe75106820909bb3160490d469b595243286c0468で修正。関数identity集合、定義hash/所有者、EXECUTE ACLを個別比較。定義/所有者差は停止。source/local所有者/付与者postgres・既知role・EXECUTE・grant optionなしの条件を検証し、ACL差のみなら合成local環境でsourceと完全一致する差分GRANT/REVOKEを実行。関数の定義は変更せず、全fingerprint再照合。全項目別件数/成否を出力。権限緩和や一致条件の省略ではなくsource ACLの正確な再現。
+- 再実行HEAD a69bcec66cd899bde9a06597cc8df8a1e260fac7。次は関数定義/ACL差分類、全fingerprint、Phase1/2、SDK/DB事後検証・cleanupのログを確認。H56未完了、Draft #265、NO-GO。Prod/Stage書込み・Cloudflare/main/mergeなし。

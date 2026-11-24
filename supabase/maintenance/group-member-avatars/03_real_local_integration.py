@@ -27,7 +27,7 @@ local.ROOT = TEMP / "stack"
 local.DB = "supabase_db_group-avatar-final"
 local.ENV.update(SUPABASE_HOME=str(TEMP / "supabase-config"))
 URL = "http://127.0.0.1:54321"
-MIGRATION = REPO / "supabase/migrations/20261124104619_group_member_avatar_read.sql"
+MIGRATION = REPO / "supabase/migrations/20261124230702_group_member_avatar_read.sql"
 EXPECTED = "c58d8b7de3e4540486f578b295a705609797a41c2dadd0708a6fbde6a93f4dc6"
 release_spec = importlib.util.spec_from_file_location("avatar_release", HERE / "04_render_manual_release.py")
 release = importlib.util.module_from_spec(release_spec)
@@ -110,7 +110,7 @@ INSERT INTO public.club_members VALUES({literal(ids['target'])},{literal(ids['cl
  'policies',(SELECT json_agg(to_jsonb(t) ORDER BY schemaname,tablename,policyname) FROM pg_policies t WHERE schemaname IN ('public','profile_media_private','group_read_private')),
  'existing_functions',(SELECT json_agg(json_build_array(p.oid::int,md5(pg_get_functiondef(p.oid)),p.proacl::text) ORDER BY p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','profile_media_private','group_read_private') AND p.prokind='f' AND p.proname<>'get_group_member_avatar_for_worker'))"""
     catalog_before = query(catalog_sql)
-    # Test the exact manual package, including rollback of a final-statement failure.
+    # Reproduce the historical fixed-version manual package in the isolated local DB only.
     package = release.render()
     try:
         local.sql(package.rsplit("COMMIT;", 1)[0] + "SELECT 1/0; COMMIT;")

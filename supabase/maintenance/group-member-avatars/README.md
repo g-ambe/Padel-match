@@ -1,5 +1,7 @@
 # TASK-08-03 / #241 同一グループ内プロフィール写真
 
+> **2026-11-25 本番DB適用済み（最新）**：ユーザー承認により通信制限のあるCodexの固定採番方式からChatGPTのSupabase自動採番方式へ変更。実登録は `20261124230702_group_member_avatar_read` の1件（履歴26→27件）。正式Migrationは `supabase/migrations/20261124230702_group_member_avatar_read.sql` へ改名しSQL本体は02と同一（Git blob 38f9059ef05251312025db7f4b29b39f8ce6d38c、検証済みSHA256 c58d8b7de3e4540486f578b295a705609797a41c2dadd0708a6fbde6a93f4dc6）。既存RLS/ACL/関数4指紋不変、対象RPC定義・権限確認済み。旧番号20261124104619および旧手動適用パッケージは**本番適用禁止**。以下は以前の試験時点の記録で、現行の実行手順ではない。04 rendererは隔離試験での旧パッケージ再現専用、CLI出力停止。新規バックアップ省略はユーザー承認済み。PR #268 Draft・アプリ未配信、クラウドR2/実機受入未実施。詳細：[適用承認・実績](https://github.com/g-ambe/Padel-match/issues/264#issuecomment-7147041462)。
+
 基点：main `a8d2ab12eec70d2da8534fd17a7ca43998e12cb1`。旧PR #265/#266はマージ済み、開始時open PRなし。写真表示だけを新規ブランチ `codex/group-member-avatars` に分離する。
 
 正本：Issue #264 [承認済み設計](https://github.com/g-ambe/Padel-match/issues/264#issuecomment-7127560349)、[SQL候補/API契約](https://github.com/g-ambe/Padel-match/issues/264#issuecomment-7127764270)。本書は実装記録であり本番適用の承認ではない。

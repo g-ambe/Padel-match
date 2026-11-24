@@ -1,5 +1,6 @@
-"""Offline only: render the reviewed migration plus atomic history registration.
-Never connects to a database, deploys, or grants release authorization.
+"""Historical fixed-version package, retained only for isolated local test reproduction.
+Production was applied via Supabase auto-numbering (20261124230702).
+Do not execute this package on production or staging; CLI generation is disabled.
 """
 import hashlib
 import pathlib
@@ -8,7 +9,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 VERSION = "20261124104619"
 NAME = "group_member_avatar_read"
-SOURCE = ROOT / f"supabase/migrations/{VERSION}_{NAME}.sql"
+SOURCE = ROOT / "supabase/maintenance/group-member-avatars/02_group_member_avatar_CANDIDATE.sql"
 EXPECTED = "c58d8b7de3e4540486f578b295a705609797a41c2dadd0708a6fbde6a93f4dc6"
 
 def render():
@@ -40,9 +41,4 @@ COMMIT;
 """
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("Usage: python 04_render_manual_release.py NEW_OUTPUT_FILE")
-    raw = render().encode()
-    with pathlib.Path(sys.argv[1]).open("xb") as output:
-        output.write(raw)
-    print("Rendered manual release SHA256=" + hashlib.sha256(raw).hexdigest())
+    raise SystemExit("Retired production package; import render() only for isolated historical tests.")

@@ -3,3 +3,4 @@ H56_REAL_SDK=1
 # Retry with sanitized SQL phase/line and permission classification.
 # Retry with managed default ACL equivalence gate; preserve app grants.
 # Compare exact function identities, definitions, owners and local execute ACL.
+# Reproduce exact relation ACL; compare full constraint records without collation order dependency.

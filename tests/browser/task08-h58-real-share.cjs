@@ -61,14 +61,14 @@ async function main(){
   phase='raw_table_denied';
   for(const table of ['event_team_matches','event_team_guests','event_team_sides','event_video_links','official_events','official_matches','official_opponents']){
    for(const token of [undefined,tokens.bad,tokens.friendly]){
-    const r=await request(table+'?select=id&limit=1',undefined,token);
+    const r=await request(table+'?select=*&limit=1',undefined,token);
     assert(!r.ok&&[401,403,404].includes(r.status));
    }
   }mark();
   phase='raw_other_scope';
   for(const table of ['events','event_participants','matches','match_players','match_results']){
    for(const token of [undefined,tokens.bad]){
-    const r=await request(table+'?select=id&limit=1',undefined,token);
+    const r=await request(table+'?select=*&limit=1',undefined,token);
     assert((!r.ok&&[401,403,404].includes(r.status))||(r.ok&&Array.isArray(r.data)&&r.data.length===0));
    }
   }mark();

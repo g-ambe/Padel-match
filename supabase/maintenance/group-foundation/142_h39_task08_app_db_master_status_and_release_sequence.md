@@ -414,3 +414,9 @@
 
 - 初回 job の実ログは HTTP 500 まで。合成 PGlite に既存 clubs/club_members ポリシー、Phase1 の member 関数、183 候補を適用して操作別に確認。従来の SELECT 条件では両 INSERT 成功。旧183で clubs INSERT RETURNING は成功、続く club_members INSERT は SQLSTATE `42P17`。所属 INSERT の clubs 参照 → clubs SELECT の所属参照 → club_members SELECT に直接置いた player_profiles サブクエリが再帰判定を起こす。所有者・所属参照トリガーの例外ではない。
 - 183 は本人照合の同一条件を非公開スキーマの真偽値関数に移動。既存の公開プロフィール、所属 INSERT/UPDATE ポリシー、clubs ポリシー、アプリは変更なし。合成 PostgreSQL で両 INSERT、所属者・退会後の本人・未所属者の読み取り境界を確認。実 Auth/REST は次の限定 Actions の結果待ち。診断出力は操作名と SQLSTATE のみ追加。Phase2 の確定 SHA256 と独立再レビュー、H62-3 は残件。Draft #265、NO-GO 維持。
+
+## 51. H62-2 限定検証 SUCCESS・Phase2 SHA256固定（2026-11-24 JST）
+
+- [Actions #45337201214](https://github.com/g-ambe/Padel-match/actions/runs/45337201214)、job 138251992020、tested HEAD `ac818f46580f10a469c68892c0526de76dd8defc`、SUCCESS。H62 実Auth/REST 11/11。新規グループ作成（clubs INSERT RETURNING・本人の初期所属INSERT・第三者拒否）、通常イベント、公式試合結果、退会後の本人閲覧を含む。H56 SDK15/DB8、TypeScript/OpenNext、H58共有24、隔離環境cleanupもPASS。
+- 正式手動パッケージの検証対象を固定。Phase2 `20261124044002_task08_prod_phase2_atomic.sql` SHA256 `27d2246259f3292792ca073d7a23d7baeec3df5618ffc025c5c551af97543acf`。Phase1/3は§46と一致。§49の失敗時ハッシュは採用しない。再生成時は実適用前に3本のハッシュを照合する。
+- 修正差分の独立再レビューとH62-3直前バックアップ・復元確認・R2簡易保全、本番承認は残件。既存PR #265 Draft、NO-GO維持。Prod/Stage書込み、Cloudflare設定変更・配信、mainマージなし。Projectフィールド未同期。

@@ -552,7 +552,19 @@ def local_sql(s,phase):
 def query(s,phase="metadata_query"):
     return json.loads(local_sql("BEGIN READ ONLY; SET LOCAL standard_conforming_strings=on; SET LOCAL search_path=''; "+s+"; ROLLBACK;",phase))
 
-def restore_and_test(url,key,credentials):
+def apply_test_candidates():
+    local_sql(h44.PHASE1.read_text(),"phase1")
+    h55.sql("INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('20990101010001','task08_prod_phase1_additive',ARRAY['H56 isolated test']);")
+    combined="BEGIN;\n"+h54.body(h44.PHASE2,require)+"""
+INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('20990101010002','task08_prod_phase2_atomic',ARRAY['H56 isolated test']);
+"""+h54.body(HERE/"164_h51_postcommit_safe_legacy_approval_guard_CANDIDATE.sql",require)+"""
+CREATE TABLE public.h51_postcutover_data_preservation(marker text PRIMARY KEY);
+REVOKE ALL ON public.h51_postcutover_data_preservation FROM PUBLIC,anon,authenticated;
+INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
+"""+h54.body(HERE/"168_h52_media_reference_guard_CANDIDATE.sql",require)+"\nCOMMIT;"
+    local_sql(combined,"atomic_phase2")
+
+def restore_and_test(url,key,credentials,release_runner=None):
     require(not os.getenv("SUPABASE_DB_URL") and not os.getenv("PADEL_BACKUP_DB_URL"),"hosted_credential_forbidden")
     metadata=json.loads((ROOT/"metadata.json").read_text())
     local_sql("DROP TABLE public.h55_auth_probe; DROP FUNCTION public.h55_whoami();","drop_sentinel")
@@ -585,16 +597,10 @@ def restore_and_test(url,key,credentials):
     require(query("SELECT json_build_object('n',count(*)) FROM supabase_migrations.schema_migrations")=={"n":0},"local_migration_history_not_empty")
     rows=",".join("("+b.literal(x["version"])+","+b.literal(x["name"])+",ARRAY['H56 schema metadata only']::text[])" for x in metadata["history"])
     h55.sql("INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES "+rows+";")
-    local_sql(h44.PHASE1.read_text(),"phase1")
-    h55.sql("INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('20990101010001','task08_prod_phase1_additive',ARRAY['H56 isolated test']);")
-    combined="BEGIN;\n"+h54.body(h44.PHASE2,require)+"""
-INSERT INTO supabase_migrations.schema_migrations(version,name,statements) VALUES('20990101010002','task08_prod_phase2_atomic',ARRAY['H56 isolated test']);
-"""+h54.body(HERE/"164_h51_postcommit_safe_legacy_approval_guard_CANDIDATE.sql",require)+"""
-CREATE TABLE public.h51_postcutover_data_preservation(marker text PRIMARY KEY);
-REVOKE ALL ON public.h51_postcutover_data_preservation FROM PUBLIC,anon,authenticated;
-INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
-"""+h54.body(HERE/"168_h52_media_reference_guard_CANDIDATE.sql",require)+"\nCOMMIT;"
-    local_sql(combined,"atomic_phase2")
+    if release_runner is None:
+        apply_test_candidates()
+    else:
+        release_runner()
     require(query("SELECT json_build_object('guard',position('最新版の連携画面' IN pg_get_functiondef('public.review_player_profile_link(uuid,text,text)'::regprocedure))>0,'anon',has_any_column_privilege('anon','public.club_members','SELECT'),'count',to_regprocedure('public.get_public_club_member_count(uuid)') IS NOT NULL)")=={"guard":True,"anon":False,"count":True},"post_cutover_contract")
     print("H56 PASS: verified Phase1 plus atomic Phase2/H51/H52 on local stack",flush=True)
     ids=seed(credentials)

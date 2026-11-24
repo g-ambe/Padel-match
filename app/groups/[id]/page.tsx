@@ -22,6 +22,7 @@ import { ProfileMergeSummary } from "@/components/profile-merge-summary";
 import { FacilitySelector } from "@/components/facility-selector";
 import type { Facility } from "@/lib/padel-facilities";
 import { AppDialog } from "@/components/app-dialog";
+import { GroupMemberAvatar, useGroupAvatarSession } from "@/components/group-member-avatar";
 
 type Role = "main_admin" | "sub_admin" | "member";
 type Member = ClubNameMember & {
@@ -130,6 +131,9 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
   const [myPendingRequest, setMyPendingRequest] = useState<JoinRequest | null>(null);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const [joinSubmitted, setJoinSubmitted] = useState(false);
+  const avatarSession = useGroupAvatarSession(id, accountId,
+    tab === "メンバー" && isMemberOfGroup && canViewGroup && !loading && !error,
+    members.map(m => `${m.id}:${m.is_active}:${m.player_active}:${m.linked_auth_user_id}`).join("|"));
 
   const roleCtx = { isSuperUser, myRole };
   const nameContext = { ...roleCtx, clubId: id, userId: myAuthUserId, visibility };
@@ -510,7 +514,7 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
   useEffect(()=>{if(history.state?.h21?.id===id)history.replaceState({...history.state,h21:{...history.state.h21,tab,stat:statTab,mode:individualMode}},"",location.href);},[tab,statTab,individualMode]);
   useEffect(()=>{if(popup&&!childOpen)requestAnimationFrame(()=>{if(popupScroll.current)popupScroll.current.scrollTop=popupPositions.current[popups.length]??0;});},[popup,childOpen]);
   const memberButton=(m:Member)=><button key={m.id} type="button" data-member-id={m.id} className="flex min-h-14 w-full items-center gap-3 py-2 text-left" onClick={()=>{setSelectedMemberId(m.id);pushPopup({kind:"member",id:m.id});}}>
-    <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-zinc-400"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/></svg></span>
+    <GroupMemberAvatar member={m} session={avatarSession}/>
     <span className="min-w-0 flex-1 break-words text-sm font-semibold">{m.public_unlinked!==undefined?m.display_name:groupMemberLabel(m)}</span>
     {(isMemberOfGroup||isSuperUser)&&<span className="shrink-0 text-[11px] text-zinc-400">{roleLabel[m.role]}</span>}
     {(!m.linked_auth_user_id&&m.public_unlinked!==false)&&<span className="shrink-0 text-[11px] text-zinc-400">未連携</span>}<span aria-hidden="true">›</span>

@@ -3,6 +3,16 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { emptyPrivateProfile, IMAGE_LIMIT, isUuid, type PrivateProfile } from "./shared";
 import { MediaFailure, type Bucket, type Operation, type Rpc } from "./service";
 export type MediaEnv = { PROFILE_IMAGES?: Bucket; PROFILE_MEDIA_COMMIT_SECRET?: string; PROFILE_MEDIA_RATE_LIMITER?: { limit(args: { key: string }): Promise<{ success: boolean }> } };
+export async function authenticatedMediaClient(request: Request) {
+  const token = /^Bearer ([^\s]+)$/.exec(request.headers.get("authorization") ?? "")?.[1];
+  if (!token) throw new MediaFailure("ログインしてください", 401);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new MediaFailure("接続設定を確認してください", 503);
+  const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { headers: { Authorization: `Bearer ${token}` }, fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(10000) }) } });
+  const { data, error } = await db.auth.getUser(token);
+  if (error || !data.user) throw new MediaFailure("ログイン情報を確認してください", 401);
+  return { db, user: data.user };
+}
 export async function mediaContext(request: Request, profile: string, mutation = false) {
   let env: MediaEnv = {}, waitUntil: (p: Promise<unknown>) => void = () => {};
   try { const cf = await getCloudflareContext({ async: true }); env = cf.env as MediaEnv; waitUntil = p => cf.ctx.waitUntil(p); } catch { /* 設定のない通常Next開発では画像更新だけを閉じる。 */ }
@@ -11,13 +21,7 @@ export async function mediaContext(request: Request, profile: string, mutation =
     const limited = await env.PROFILE_MEDIA_RATE_LIMITER.limit({ key: `profile-media:${request.headers.get("cf-connecting-ip") ?? "unknown"}` });
     if (!limited.success) throw new MediaFailure("操作が続いています。時間をおいてください", 429);
   }
-  const token = /^Bearer ([^\s]+)$/.exec(request.headers.get("authorization") ?? "")?.[1];
-  if (!token) throw new MediaFailure("ログインしてください", 401);
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) throw new MediaFailure("接続設定を確認してください", 503);
-  const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { headers: { Authorization: `Bearer ${token}` }, fetch: (input, init) => fetch(input, { ...init, signal: AbortSignal.timeout(10000) }) } });
-  const { data, error } = await db.auth.getUser(token);
-  if (error || !data.user) throw new MediaFailure("ログイン情報を確認してください", 401);
+  const { db, user } = await authenticatedMediaClient(request);
   const rpc: Rpc = async <T>(name: string, args?: Record<string, unknown>) => {
     const result = await db.rpc(name, args);
     if (result.error) {
@@ -32,7 +36,7 @@ export async function mediaContext(request: Request, profile: string, mutation =
   const ticket = mutation ? await rpc<string | null>("profile_media_attempt") : null;
   if (mutation && !ticket) throw new MediaFailure("操作回数の上限です。10分ほどお待ちください", 429);
   if (!isUuid(profile)) throw new MediaFailure("プロフィールを確認してください", 400);
-  const { data: owner, error: ownerError } = await db.from("player_profiles").select("id,linked_auth_user_id,is_active").eq("id", profile).eq("linked_auth_user_id", data.user.id).eq("is_active", true).maybeSingle();
+  const { data: owner, error: ownerError } = await db.from("player_profiles").select("id,linked_auth_user_id,is_active").eq("id", profile).eq("linked_auth_user_id", user.id).eq("is_active", true).maybeSingle();
   if (ownerError) throw new MediaFailure("プロフィールを取得できませんでした", 503);
   if (!owner) throw new MediaFailure("プロフィールを確認できません", 404);
   const read = async (operation?: string) => {
@@ -40,11 +44,11 @@ export async function mediaContext(request: Request, profile: string, mutation =
     if (m.error) throw new MediaFailure("プロフィール拡張は準備中です", 503);
     let op: Operation | null = null;
     if (operation) {
-      const result = await db.from("profile_media_operations").select("request_id,status,object_key,old_key").eq("request_id", operation).eq("profile_id", profile).eq("actor_id", data.user!.id).maybeSingle();
+      const result = await db.from("profile_media_operations").select("request_id,status,object_key,old_key").eq("request_id", operation).eq("profile_id", profile).eq("actor_id", user.id).maybeSingle();
       if (result.error) throw new MediaFailure("画像の操作状態を確認できませんでした", 503, true);
       op = result.data as Operation | null;
     }
-    return { profile: (m.data as PrivateProfile | null) ?? emptyPrivateProfile(profile, data.user!.id), operation: op };
+    return { profile: (m.data as PrivateProfile | null) ?? emptyPrivateProfile(profile, user.id), operation: op };
   };
   return { env, rpc, read, ticket, waitUntil };
 }

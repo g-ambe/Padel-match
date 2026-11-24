@@ -7,7 +7,8 @@ const pid='00000000-0000-4000-8000-000000000011',request='00000000-0000-4000-800
 test('未認証・不正ID・権限外・レート制限をR2へ触る前に拒否し、不正要求も試行を消費',async()=>{
  let calls=[],allowed=true,owns=true;
  const db={auth:{getUser:async()=>{calls.push('auth');return {data:{user:{id:'owner'}}};}},rpc:async()=>{calls.push('ticket');return {data:'ticket'};},from:()=>({select(){return this;},eq(){return this;},maybeSingle:async()=>({data:owns?{id:pid}:null})})};
- const factory=()=>evaluate(source,'mediaContext',{MediaFailure,isUuid,emptyPrivateProfile:()=>{},createClient:()=>db,getCloudflareContext:async()=>({env:{PROFILE_MEDIA_RATE_LIMITER:{limit:async()=>{calls.push('limit');return {success:allowed};}}},ctx:{waitUntil(){}}}),process:{env:{NEXT_PUBLIC_SUPABASE_URL:'http://local.invalid',NEXT_PUBLIC_SUPABASE_ANON_KEY:'public'}}});
+ const bindings=()=>({MediaFailure,isUuid,emptyPrivateProfile:()=>{},createClient:()=>db,getCloudflareContext:async()=>({env:{PROFILE_MEDIA_RATE_LIMITER:{limit:async()=>{calls.push('limit');return {success:allowed};}}},ctx:{waitUntil(){}}}),process:{env:{NEXT_PUBLIC_SUPABASE_URL:'http://local.invalid',NEXT_PUBLIC_SUPABASE_ANON_KEY:'public'}}});
+ const factory=()=>{const values=bindings();return evaluate(source,'mediaContext',{...values,authenticatedMediaClient:evaluate(source,'authenticatedMediaClient',values)});};
  await assert.rejects(factory()(new Request('https://app.invalid'),pid,true),e=>e.status===401);assert.deepEqual(calls,['limit']);
  calls=[];const req=new Request('https://app.invalid',{headers:{Authorization:'Bearer synthetic'}});
  await assert.rejects(factory()(req,'bad-id',true),e=>e.status===400);assert.deepEqual(calls,['limit','auth','ticket']);

@@ -1,0 +1,2 @@
+H54_APP_CHECKS=1
+# Synthetic regression and OpenNext build only. No hosted secrets or deploy.

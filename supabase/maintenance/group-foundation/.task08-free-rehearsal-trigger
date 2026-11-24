@@ -8,3 +8,5 @@ H52_PENDING_LINK_TEST=1
 # H52: test reviewed 0048 FK compatibility, guarded source references and canonical media retention.
 H53_JOIN_RESTORE_TEST=1
 # H53 reviewed manual restore and named join only, isolated rollback.
+H54_ATOMIC_CUTOVER_TEST=1
+# H54 atomic Phase2 + H51 + H52, injected failure / repeat denial / H53.

@@ -24,14 +24,12 @@ CONTRACT="""SELECT json_build_object(
    'public.review_player_profile_link_named(uuid,text,text,text,boolean)','EXECUTE'),
  'private_exists',to_regprocedure(
    'profile_link_private.review_player_profile_link_original(uuid,text,text)') IS NOT NULL,
- 'private_anon',(CASE WHEN to_regprocedure(
-   'profile_link_private.review_player_profile_link_original(uuid,text,text)') IS NULL
-   THEN false ELSE has_function_privilege('anon',
-   'profile_link_private.review_player_profile_link_original(uuid,text,text)','EXECUTE') END),
- 'private_authenticated',(CASE WHEN to_regprocedure(
-   'profile_link_private.review_player_profile_link_original(uuid,text,text)') IS NULL
-   THEN false ELSE has_function_privilege('authenticated',
-   'profile_link_private.review_player_profile_link_original(uuid,text,text)','EXECUTE') END),
+ 'private_anon',coalesce(has_function_privilege('anon',
+   to_regprocedure('profile_link_private.review_player_profile_link_original(uuid,text,text)'),
+   'EXECUTE'),false),
+ 'private_authenticated',coalesce(has_function_privilege('authenticated',
+   to_regprocedure('profile_link_private.review_player_profile_link_original(uuid,text,text)'),
+   'EXECUTE'),false),
  'direct_anon_membership',has_table_privilege('anon','public.club_members','SELECT'),
  'alias_present',EXISTS(SELECT 1 FROM information_schema.columns WHERE
    table_schema='public' AND table_name='club_members'
@@ -46,8 +44,8 @@ CONTRACT="""SELECT json_build_object(
  'private_merge_preserved',(CASE WHEN to_regprocedure(
    'profile_link_private.review_player_profile_link_original(uuid,text,text)') IS NULL
    THEN false ELSE position('profile_link_private.merge_profiles' IN
-    (SELECT pg_get_functiondef(oid) FROM pg_proc WHERE oid=
-    'profile_link_private.review_player_profile_link_original(uuid,text,text)'::regprocedure))>0 END),
+    (SELECT pg_get_functiondef(oid) FROM pg_proc WHERE oid=to_regprocedure(
+     'profile_link_private.review_player_profile_link_original(uuid,text,text)')))>0 END),
  'migration_count',(SELECT count(*) FROM supabase_migrations.schema_migrations)
 )"""
 
@@ -55,6 +53,7 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
         require,b,h44,h45,h48):
     require(isinstance(target,b.LocalRestore),'H51_must_run_in_isolated_db')
     require(SQL.is_file(),'H51_candidate_sql_missing')
+    print("H51: capture pre-guard RPC/ACL contract",flush=True)
     before=target.query(CONTRACT)
     require(before['legacy_authenticated'] and before['named_authenticated']
             and not before['legacy_approval_guarded']
@@ -72,7 +71,9 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
       INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
       COMMIT;""")
     print("H51: original new-DB rows and a post-COMMIT-only marker captured",flush=True)
+    print("H51: apply guarded RPC candidate only in isolated DB",flush=True)
     h44.isolated(target,SQL.read_text())
+    print("H51: inspect guarded RPC contract",flush=True)
     after=target.query(CONTRACT)
     require(after['private_exists'] and not after['private_anon']
             and not after['private_authenticated']

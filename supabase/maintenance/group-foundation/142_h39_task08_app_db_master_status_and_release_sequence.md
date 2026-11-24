@@ -388,3 +388,12 @@
   - 20261124044002_task08_prod_phase2_atomic.sql: `03759e9c36760c85ebc5d0548e225de64440deff512408f94cfe9248e1935aeb`
   - 20261124044003_task08_prod_share_anon_close.sql: `50ed1b8f67a88faf086c8fb05e5e38f545f45d73d7143110bb8410aabb6eb463`
 - H61は合成ローカルDBでの正式候補リハーサルであり本番適用ではない。H54実データ保全、H57–60機能検証は別証跡。H62は独立Codexレビュー、最新全件暗号化DB backup/独立restore、R2実ファイル保全、Prod history/catalog・main/PR差分/配信経路（CF trigger GET 0件と旧main自動配信記録の差）・固定ビルド・停止窓/RPO確認、ユーザーの明示承認。H63実適用は全条件充足後のみ。180 runbook準拠、SQL2後の旧Worker単純復帰やACL緩和禁止。Draft #265 NO-GO、本番/Stage書込み・Cloudflare deploy・main mergeなし。Projectフィールド同期未確認。
+
+## 47. H62 独立レビュー：NO-GO・旧直接SELECTの反例（2026-11-24 JST）
+
+- 対象HEAD `fca781bbbf2423cb22d6ece73840f362b9ffb256`、main `f914d1baa23c65f6fb016e6f657ba7161d978ce7`。詳細は[181 独立レビュー](181_h62_independent_release_review.md)、再現は[182 合成DBプローブ](182_h62_authenticated_boundary_probe.cjs)。元6 SQLのblob固定と正式3本のSHA256は§46/H61と完全一致。H61実ログで順序違い/故障rollback/履歴原子性/再実行拒否を確認した。
+- **Critical C1**：旧0039の認証済み`club_members`/`player_profiles`直接SELECTを正式候補が閉じていない。実0001–0039＋0054/55＋H38 alias節の合成PGliteで、公開RPCが省く未公開の連携済み別名を未所属者が役職・内部IDと一緒に直接取得でき、匿名の他人プロフィール自己紹介も読める反例を再現。正式全3本/本番/実Auth・HTTPでの実測とは区別。H56はanon直接SELECT拒否だけで、認証済み未所属者の直接SELECT負例が欠ける。DB担当の対象限定設計/独立レビューと全役割REST負例・既存操作正例、修正版パッケージの再検証が必須。SQL/権限は変更していない。
+- **High**：CF GETで本番#389/直前#388・R2/rate-limit/secret binding存在・r2.dev無効を再確認。一方Build Trigger GETは今回は403、main自動配信/稼働コードSHA/即時再配信経路は確定不能。GitHub branch protection/Projectも403。旧「成功0件」から自動配信なしと推測しない。最新Prod catalogは固定CA取得不可で接続前停止（TLS緩和なし）、Stageも無変更。
+- バックアップRun44966082064の実zipログ・既存コード・非公開Draft Release454086112を照合：166表暗号化/別ジョブ独立復元/行・ACL・RLS・定義一致PASS。ただし11/22時点であり最新ではなくR2本体を含まない。直前再取得＋R2別保全/復元＋Worker/DB秘密値整合＋停止/RPO/取得後更新の扱いが必須。今回backup/restoreを新規起動していない。
+- H62実行：TypeScript成功、関連15 test files成功、表示名helper9件成功、Cloudflare互換build/Worker-assets BUILD_ID一致成功（合成localhost公開設定の検証用で本番配信物ではない）、C1プローブ反例成立。H47 304実行・H54–61の実コード/ログを確認して再利用。H47以降app/components/lib/package/lock/build設定に差分なし、無関係な全再試験なし。
+- **NO-GO、H63へ進まない**。既存PR265 Draft/Issue215・264未完了維持。変更はレビュー・プローブ・本台帳のみ。Prod/Stage SQL/データ/R2書込み、Cloudflare deploy、main merge、Draft解除なし。Issue/PRへ記録しProjectフィールドは権限不足で同期不可。指摘解決・再レビュー後もユーザーの明示的本番承認が必要。

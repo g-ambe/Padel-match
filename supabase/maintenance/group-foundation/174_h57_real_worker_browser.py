@@ -67,7 +67,7 @@ def run_checked(args,env,phase,timeout):
         raise RuntimeError(phase+"_timeout") from None
     require(result.returncode==0,phase+"_exit_"+str(result.returncode))
 
-def browser_test(url,key,actors,ids):
+def browser_test(url,key,actors,ids,browser_runner=None):
     env=build_env(url,key)
     TEMP.mkdir(mode=0o700)
     run_checked(["node","node_modules/typescript/bin/tsc","--noEmit"],env,"h57_typescript",180)
@@ -90,6 +90,9 @@ def browser_test(url,key,actors,ids):
                 time.sleep(1)
             else: raise RuntimeError("h57_worker_readiness_timeout")
             print("H57 PASS: built Worker serving loopback HTTP; local R2 only",flush=True)
+            if browser_runner is not None:
+                browser_runner(url,key,ORIGIN,ids)
+                return
             payload=json.dumps({"url":url,"base":ORIGIN,"actors":actors,"ids":ids})
             raw=h55.run(["node",str(REPO/"tests/browser/task08-h57-real-worker.cjs")],"h57_browser",data=payload,cwd=REPO,timeout=240)
             report=json.loads(raw)

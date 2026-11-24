@@ -283,3 +283,9 @@
 - [#45312700551](https://github.com/g-ambe/Padel-match/actions/runs/45312700551) HEAD be59e54fbb08e58f6ef021ee9ca44dff110be139：source capture/H55/管理default ACL3種一致・12冗長文除外・schema restore実行成功。旧42501解消。`schema_fingerprint_diff_functions`で停止。関数差分の種類は未確定。cleanup PASS、SDK未到達。
 - Prod READ ONLY catalogで関数ACLの実パターンとpostgres default ACLを再確認。173 driverをe75106820909bb3160490d469b595243286c0468で修正。関数identity集合、定義hash/所有者、EXECUTE ACLを個別比較。定義/所有者差は停止。source/local所有者/付与者postgres・既知role・EXECUTE・grant optionなしの条件を検証し、ACL差のみなら合成local環境でsourceと完全一致する差分GRANT/REVOKEを実行。関数の定義は変更せず、全fingerprint再照合。全項目別件数/成否を出力。権限緩和や一致条件の省略ではなくsource ACLの正確な再現。
 - 再実行HEAD a69bcec66cd899bde9a06597cc8df8a1e260fac7。次は関数定義/ACL差分類、全fingerprint、Phase1/2、SDK/DB事後検証・cleanupのログを確認。H56未完了、Draft #265、NO-GO。Prod/Stage書込み・Cloudflare/main/mergeなし。
+
+## 30. H56 関数103件一致、残りrelation/constraint差分（2026-11-24）
+
+- [#45313631928](https://github.com/g-ambe/Padel-match/actions/runs/45313631928) HEAD a69bcec66cd899bde9a06597cc8df8a1e260fac7：schema restore PASS、103関数のidentity/definition/owner差0、ACL差42関数。localのみ余分なEXECUTE 53件削除、追加0、関数fingerprint103件PASS。列386、index103、policy106、trigger33、view0 PASS。relation44、constraint208は件数一致だがfingerprint FAIL、SDK未到達。cleanup PASS。
+- Prod READ ONLYでrelation ACL所有者/付与者postgres、既知role、grant optionなし、未検証constraintなしを確認。173 driver d4358e563065662349d2b46135f5d5b0354e9a4cでrelation構造/ACL分離・既知role/権限/所有者の確認・合成localだけsource ACLへの厳密な差分再現、全recordを順序に依存しないmultisetで比較（定義/検証済み状態等の値は一切省かない）。constraint差残存時はidentityと差の種類を記録して停止。原因はまだ仮説、制約の変更や削除はしない。
+- 再実行HEAD a32f8a9b62746d0763f690a136f5a2e024326ed5。次はrelation/constraint parity、Phase1/2、SDK/DB事後検証・cleanup確認。H56未完了、PR #265 Draft/NO-GO維持、Prod/Stage書込み、Cloudflare/main/mergeなし。再度構造差が残る場合は診断に基づき復元方式を見直し、盲目的に同じrunを繰り返さない。

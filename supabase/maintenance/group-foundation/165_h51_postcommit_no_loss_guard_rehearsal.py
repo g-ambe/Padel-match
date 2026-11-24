@@ -151,3 +151,50 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
           " ACL+RPC guard does not rewind the DB",flush=True)
     print("H51 LIMITATION: old Worker link approval is unavailable by design;"
           " real pending named approval/HTTP/E2E NOT proven; Prod NO-GO",flush=True)
+
+    # H52 is explicitly opt-in and only runs after the existing H51 proof.
+    trigger=(HERE / '.task08-free-rehearsal-trigger').read_text().splitlines()
+    if 'H52_PENDING_LINK_TEST=1' in trigger:
+        import json
+        require(isinstance(target,b.LocalRestore),'H52_must_run_in_isolated_db')
+        probe=HERE / '167_h52_pending_link_isolated_rollback_probe.sql'
+        require(probe.is_file(),'H52_probe_missing')
+        # Include complete group rows (new alias/consent fields too), auth fixture
+        # counts, notifications and merge audit; compare digest only, never print rows.
+        snapshot_sql="""SELECT json_build_object(
+          'groups',(SELECT coalesce(json_agg(to_jsonb(t) ORDER BY id),'[]'::json) FROM public.clubs t),
+          'members',(SELECT coalesce(json_agg(to_jsonb(t) ORDER BY id),'[]'::json) FROM public.club_members t),
+          'players',(SELECT coalesce(json_agg(to_jsonb(t) ORDER BY id),'[]'::json) FROM public.player_profiles t),
+          'profiles',(SELECT coalesce(json_agg(to_jsonb(t) ORDER BY id),'[]'::json) FROM public.profiles t),
+          'links',(SELECT coalesce(json_agg(to_jsonb(t) ORDER BY id),'[]'::json) FROM public.player_profile_link_requests t),
+          'joins',(SELECT coalesce(json_agg(to_jsonb(t) ORDER BY id),'[]'::json) FROM public.join_requests t),
+          'auth_count',(SELECT count(*) FROM auth.users),
+          'notification_count',(SELECT count(*) FROM public.notifications),
+          'merge_count',(SELECT count(*) FROM public.player_profile_merges),
+          'merge_changes_count',(SELECT count(*) FROM profile_link_private.merge_changes),
+          'history',(SELECT coalesce(json_agg(to_jsonb(t) ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations t),
+          'marker',(SELECT count(*) FROM public.h51_postcutover_data_preservation WHERE marker='retained'))"""
+        before_h52=h45.digest(target.query(snapshot_sql))
+        print("H52: synthetic pending-link RPC checks on post-H51 isolated DB",flush=True)
+        raw=h44.isolated(target,probe.read_text())
+        # SQL emits only synthetic set_config values and the final boolean report.
+        # Never echo raw output or tokens; parse the final JSON line.
+        report=json.loads(raw.splitlines()[-1])
+        expected={'rollback_only','legacy_approval_denied','pending_rejected_cancelled',
+          'no_merge_reject_cancel','cancel_source_preserved','manager_scope_safe',
+          'other_user_rejected','public_requires_consent','alias_cas_pt409',
+          'obsolete_review_token_rejected','private_public_flag_rejected','approved_both',
+          'public_alias_saved','private_alias_is_private','old_legacy_rejection_preserves_source',
+          'public_directory_confirmed_or_unlinked','merge_snapshots_consistent',
+          'request_receiver_consent_saved','private_request_consent_not_public',
+          'legacy_request_not_backfilled','original_profile_names_unmodified','approved_sources_retired'}
+        require(isinstance(report,dict) and set(report)==expected,'H52_report_shape_invalid')
+        for key in sorted(expected):
+            require(report[key] is True,'H52_assertion_failed_'+key)
+            print('H52 PASS: '+key,flush=True)
+        require(h45.digest(target.query(snapshot_sql))==before_h52,'H52_rollback_group_auth_audit_or_history_changed')
+        h48.verify(target,b,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
+                   require,h45,'H52_after_rollback')
+        require(target.query(CONTRACT)==after,'H52_post_rollback_contract_changed')
+        print("H52 PASS: synthetic fixture rolled back; source rows, legacy rows, marker, history and RPC/ACL contract unchanged",flush=True)
+        print("H52 LIMITATION: SQL roles/claim simulation only; real JWT/PostgREST and Worker browser compatibility remain unverified; Prod NO-GO",flush=True)

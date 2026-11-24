@@ -292,29 +292,117 @@ def reconcile_column_acl(expected_rows,actual_rows,review):
 IG_KEY=("public","player_profile_private","player_profile_private_instagram_username_check")
 IG_DEFINITION=r"CHECK (((instagram_username IS NULL) OR (((length(instagram_username) >= 1) AND (length(instagram_username) <= 30)) AND (instagram_username ~ '^[A-Za-z0-9_](\.?[A-Za-z0-9_])*$'::text))))"
 
-def reconcile_instagram_check(expected_rows,actual_rows):
+# PostgreSQL deparses BETWEEN into two AND terms. Re-parsing a dump
+# can flatten the nested AND without changing the CHECK expression.
+# Preserve the restored constraint; prove the only reviewed equivalence.
+IG_CATALOG="""SELECT jsonb_build_object(
+ 'server_major',current_setting('server_version_num')::int/10000,
+ 'tree',c.conbin::text,'expression',pg_get_expr(c.conbin,c.conrelid),
+ 'flags',jsonb_build_array(c.contype,c.convalidated,c.connoinherit,c.conislocal,c.coninhcount,c.condeferrable,c.condeferred,c.conkey),
+ 'attribute',jsonb_build_array(a.attname,a.atttypid,a.attcollation))
+ FROM pg_constraint c JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=c.conkey[1]
+ WHERE c.conrelid='public.player_profile_private'::regclass
+ AND c.conname='player_profile_private_instagram_username_check'"""
+IG_CASES=[(None,True),("",False),("a",True),("_",True),("A9",True),("a.b",True),("a_b",True),
+ ("a..b",False),(".a",False),("a.",False),("a-b",False),("a b",False),("a\\b",False),
+ ("a@b",False),("日本語",False),("a\nb",False),("a"*30,True),("a"*31,False),("a.b.c",True)]
+
+def check_tree(raw):
+    # Strict parser for the limited built-in CHECK node types of this
+    # single constraint. Preserve every token except parser locations and
+    # associative grouping of consecutive AND nodes; never normalize CONST.
+    require(isinstance(raw,str) and len(raw)<20000,"instagram_tree_shape")
+    tokens=re.findall(r"[{}()\[\]]|[^\s{}()\[\]]+",raw)
+    require(0<len(tokens)<4000,"instagram_tree_token_limit")
+    closes={"{":"}","(":")","[":"]"}
+    pos=0
+    def parse(depth=0):
+        nonlocal pos
+        require(depth<80 and pos<len(tokens),"instagram_tree_parse")
+        tok=tokens[pos];pos+=1
+        if tok not in closes:
+            require(tok not in closes.values(),"instagram_tree_unexpected_close")
+            return tok
+        children=[]
+        while pos<len(tokens) and tokens[pos]!=closes[tok]:
+            children.append(parse(depth+1))
+        require(pos<len(tokens),"instagram_tree_unclosed")
+        pos+=1
+        if tok!="{":
+            return (tok,tuple(children))
+        require(children and children[0] in ("BOOLEXPR","NULLTEST","VAR","OPEXPR","FUNCEXPR","CONST"),"instagram_tree_unknown_node")
+        tag=children[0];fields=[];i=1
+        while i<len(children):
+            field=children[i];i+=1
+            require(isinstance(field,str) and field.startswith(":") and i<len(children),"instagram_tree_unknown_field")
+            value=children[i];i+=1
+            # CONST :constvalue is a byte count followed by a bracketed array.
+            if field==":constvalue":
+                require(i<len(children) and isinstance(children[i],tuple) and children[i][0]=="[","instagram_const_bytes")
+                value=(value,children[i]);i+=1
+            if field==":location":
+                require(isinstance(value,str) and re.fullmatch(r"-?\d+",value),"instagram_tree_location")
+                continue
+            fields.append((field,value))
+        if tag=="BOOLEXPR" and dict(fields).get(":boolop")=="and":
+            args=dict(fields).get(":args")
+            require(isinstance(args,tuple) and args[0]=="(","instagram_tree_and_args")
+            flattened=[]
+            for child in args[1]:
+                if isinstance(child,tuple) and child[0]=="BOOLEXPR" and dict(child[1]).get(":boolop")=="and":
+                    require(set(dict(child[1]))=={":boolop",":args"},"instagram_tree_nested_and_fields")
+                    flattened.extend(dict(child[1])[":args"][1])
+                else: flattened.append(child)
+            fields=[(k,("(",tuple(flattened)) if k==":args" else v) for k,v in fields]
+        return (tag,tuple(fields))
+    result=parse()
+    require(pos==len(tokens),"instagram_tree_trailing_tokens")
+    return result
+
+def prove_instagram_equivalence(expected_rows,actual_rows,source):
     want=rows_by_identity(expected_rows,5,3,"source_constraint")
     got=rows_by_identity(actual_rows,5,3,"local_constraint")
     require(set(want)==set(got),"constraint_identity_diff")
     diff=[k for k in want if want[k]!=got[k]]
-    if not diff: return
-    require(diff==[IG_KEY] and want[IG_KEY][3:]==[IG_DEFINITION,True]
-            and got[IG_KEY][4] is True,"constraint_difference_requires_review")
-    # Do not alter any other CHECK, FK or data. Only reconstruct the exact
-    # reviewed source definition on a verified-empty disposable app table.
-    require(query("SELECT jsonb_build_object('n',count(*)) FROM public.player_profile_private")=={"n":0},
-            "instagram_check_local_table_not_empty")
-    print("H56 reviewed Instagram CHECK: local/source rendered definition differs; reconstruct exact source CHECK on empty local table",flush=True)
-    local_sql("BEGIN; SET LOCAL standard_conforming_strings=on; SET LOCAL search_path=''; "
-              "ALTER TABLE public.player_profile_private DROP CONSTRAINT "+b.ident(IG_KEY[2])+"; "
-              "ALTER TABLE public.player_profile_private ADD CONSTRAINT "+b.ident(IG_KEY[2])+" "+IG_DEFINITION+"; COMMIT;",
-              "reproduce_reviewed_instagram_check")
-    # No equivalence shortcuts: complete fingerprint comparison must still pass.
-    actual=query(FINGERPRINT)["constraints"]
-    require(canonical_rows(expected_rows)==canonical_rows(actual),"instagram_check_exact_reproduction_failed")
-    print("H56 PASS: all CHECK/FK constraints exactly match source after local reconstruction",flush=True)
+    if diff:
+        describe_constraint_diff(expected_rows,actual_rows)
+    require(not diff or diff==[IG_KEY],"constraint_difference_requires_review")
+    require(want[IG_KEY][3:]==[IG_DEFINITION,True] and got[IG_KEY][4] is True,
+            "instagram_source_contract_changed")
+    local=query(IG_CATALOG,"instagram_local_catalog")
+    require(source["server_major"]==local["server_major"]==17
+            and source["flags"]==local["flags"]==["c",True,False,True,0,False,False,[3]]
+            and source["attribute"]==local["attribute"]==["instagram_username",25,100],
+            "instagram_constraint_catalog_diff")
+    require(check_tree(source["tree"])==check_tree(local["tree"]),"instagram_parsed_expression_diff")
+    print("H56 PASS: Instagram CHECK parsed expression and flags match (AND grouping only)",flush=True)
+    # Exercise the actual restored table CHECK, copied by PostgreSQL to a
+    # temporary table. No changes to the application relation or real rows.
+    values=",".join("("+str(i)+","+("NULL" if value is None else b.literal(value))+"::text,"+("true" if accepted else "false")+")" for i,(value,accepted) in enumerate(IG_CASES))
+    probe="""BEGIN;
+SET LOCAL standard_conforming_strings=on;
+CREATE TEMP TABLE h56_instagram_probe (LIKE public.player_profile_private INCLUDING DEFAULTS INCLUDING CONSTRAINTS);
+DO $ig$
+DECLARE r record; accepted boolean; constraint_name text;
+BEGIN
+ FOR r IN SELECT * FROM (VALUES """+values+""") v(i,username,expected) LOOP
+  accepted:=true;
+  BEGIN
+   INSERT INTO h56_instagram_probe(profile_id,owner_id,instagram_username) VALUES(gen_random_uuid(),gen_random_uuid(),r.username);
+  EXCEPTION WHEN check_violation THEN
+   GET STACKED DIAGNOSTICS constraint_name=CONSTRAINT_NAME;
+   IF constraint_name<>'player_profile_private_instagram_username_check' THEN RAISE; END IF;
+   accepted:=false;
+  END;
+  IF accepted IS DISTINCT FROM r.expected THEN RAISE EXCEPTION 'H56 Instagram behavioral mismatch at case %',r.i; END IF;
+ END LOOP;
+END $ig$;
+ROLLBACK;"""
+    local_sql(probe,"instagram_behavior")
+    print("H56 PASS: "+str(len(IG_CASES))+" real CHECK acceptance/rejection cases; no constraint rebuilt",flush=True)
+    return bool(diff)
 
-def compare_fingerprints(expected,actual):
+def compare_fingerprints(expected,actual,instagram_equivalent=False):
     mismatches=[]
     for name in expected:
         if name=="functions":
@@ -326,7 +414,11 @@ def compare_fingerprints(expected,actual):
         else:
             same=canonical_rows(expected[name])==canonical_rows(actual[name])
             if name=="constraints" and not same:
-                describe_constraint_diff(expected[name],actual[name])
+                if instagram_equivalent:
+                    # Only the proven equivalent CHECK's deparsed formatting
+                    # may differ. Compare all 207 other full records.
+                    same=canonical_rows([r for r in expected[name] if tuple(r[:3])!=IG_KEY])==canonical_rows([r for r in actual[name] if tuple(r[:3])!=IG_KEY])
+                if not same: describe_constraint_diff(expected[name],actual[name])
         print("H56 fingerprint "+name+": "+("PASS" if same else "FAIL")+
               " source="+str(len(expected[name]))+" local="+str(len(actual[name])),flush=True)
         if not same: mismatches.append(name)
@@ -360,12 +452,14 @@ def capture():
         function_acl_review=snap.query(FUNCTION_ACL_REVIEW)
         relation_acl_review=snap.query(RELATION_ACL_REVIEW)
         column_acl_review=snap.query(COLUMN_ACL_REVIEW)
+        instagram_catalog=snap.query(IG_CATALOG)
+        require(isinstance(instagram_catalog,dict),"source_instagram_catalog_missing")
         require(column_acl_review["unexpected_grant"]==0,"source_column_acl_review_required")
         require(relation_acl_review["unexpected_owner_or_grantor"]==0,"source_relation_acl_review_required")
         require(function_acl_review["unexpected_owner_or_grantor"]==0,"source_function_acl_review_required")
         require(len(managed_defaults)==3,"source_managed_default_acl_review_required")
         history=snap.query("SELECT coalesce(json_agg(json_build_object('version',version,'name',name) ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
-        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults,"function_acl_review":function_acl_review,"relation_acl_review":relation_acl_review,"column_acl_review":column_acl_review}))
+        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults,"function_acl_review":function_acl_review,"relation_acl_review":relation_acl_review,"column_acl_review":column_acl_review,"instagram_catalog":instagram_catalog}))
         snap.dump(["--schema-only","--format=custom","--no-comments","--no-security-labels","--no-publications","--no-subscriptions"]+["--schema="+x for x in SCHEMAS],ROOT/"app-schema.dump")
     print("H56 PASS: source app schema only captured; no managed Auth/Storage or real rows",flush=True)
 
@@ -440,9 +534,8 @@ def restore_and_test(url,key,credentials):
     actual=query(FINGERPRINT)
     reconcile_column_acl(metadata["fingerprint"]["columns"],actual["columns"],metadata["column_acl_review"])
     actual=query(FINGERPRINT)
-    reconcile_instagram_check(metadata["fingerprint"]["constraints"],actual["constraints"])
-    actual=query(FINGERPRINT)
-    compare_fingerprints(metadata["fingerprint"],actual)
+    instagram_equivalent=prove_instagram_equivalence(metadata["fingerprint"]["constraints"],actual["constraints"],metadata["instagram_catalog"])
+    compare_fingerprints(metadata["fingerprint"],actual,instagram_equivalent)
     require(query(h44.remote_schema_catalog_query())==metadata["catalog"],"source_catalog_diff")
     h55.sql(f"""DO $check$ DECLARE r record; v bigint; BEGIN
       FOR r IN SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN {S} AND c.relkind IN ('r','p') LOOP

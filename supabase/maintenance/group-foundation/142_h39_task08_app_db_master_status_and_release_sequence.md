@@ -242,3 +242,10 @@
 - 新アプリ回帰16ファイル＋TypeScript＋OpenNext build専用CI追加（dummy localhostのみ、Prod/Stage credentialなし、deployなし）。[初回 #45308698957](https://github.com/g-ambe/Padel-match/actions/runs/45308698957) tested HEAD def66b2b258077f6acfda649905e6d6785682aae：66/66 PASS、TypeScript PASS、OpenNextは /bin/sh: bun: not found でFAIL（Nextビルド開始前）。固定Bun PATHのCIのみ修正 115b452a4ceb、[retry #45308838062](https://github.com/g-ambe/Padel-match/actions/runs/45308838062) tested HEAD 10b448a4701f8db980dba8e7d6e4d478b5ee22cf、完了未確認。
 - [171 新アプリ×新DB実Auth/HTTP受入計画](171_h54_new_app_new_db_http_acceptance_plan.md) を追加。実データ入り隔離DBをHTTP公開しない。実Auth/HTTP・SDK・ブラウザは別の合成データ専用ローカルSupabaseで確認する設計、既存Stageの構造差/未検証範囲とA1〜A10受入条件・Codex担当を記録。環境の構築・実HTTP受入は未実施。
 - 次：両runのログとcleanup確認、失敗時は原因別に修正。新アプリ×新DBの合成環境実Auth/HTTP・画面試験（Codex担当とSQL担当分離）へ。正式Migration/履歴整合、リリース順序/バックアップ・復元・本番承認は残る。NO-GO、PR #265 Draft維持。Prod/Stage書込み、Cloudflare変更、main merge、追加有料環境なし。
+
+## 24. H54：一括切替SQL・新アプリCIともPASS確定（2026-11-24）
+
+- [DB run #45308564260](https://github.com/g-ambe/Padel-match/actions/runs/45308564260) tested HEAD 1cd17708fc17822f4ebc76013edb88779126462e：全対象step SUCCESS。ログでH54故障注入後のPhase1契約・行・履歴復帰、Phase2＋H51＋H52＋試験履歴の一括COMMIT、二重適用拒否と状態不変を確認。H45/H48/H51、H52 27/27、H53 16/16、既存24表の元データ/権限/整合と後片付けstep再PASS。H47・Stage HTTP jobは対象外skip。実JWT/HTTP/Worker連携を証明するものではない。
+- [新アプリretry #45308838062](https://github.com/g-ambe/Padel-match/actions/runs/45308838062) tested HEAD 10b448a4701f8db980dba8e7d6e4d478b5ee22cf：66 tests、66 PASS、fail/skip 0、TypeScript PASS、Next compile PASS、OpenNext worker.js生成、Worker/assets BUILD_ID一致PASS。固定Bun PATH修正のみで初回CI環境障害を解消。dummy localhostでbuildのみ、実配信なし。両run以降のHEAD b15f4eb23cd07e014aa21857fb1f97dfc7a9df39 は台帳更新のみ。
+- **H54 SQL/新アプリCI部分PASS。実Auth/HTTP/ブラウザ受入は未実施**。次は171計画に従い、合成データ専用ローカル環境で新アプリと新DBをつなぐ受入検証。アプリ実装/試験はCodex担当、SQL/DB契約と独立安全審査はChatGPT担当。正式Migration履歴と原子性、最新バックアップ・復元、配信制御と明示本番承認も残る。
+- Prod/Stage書込み、Cloudflare変更、main merge、追加有料環境なし。PR #265 Draft／本番NO-GO維持。Projectフィールド未更新。

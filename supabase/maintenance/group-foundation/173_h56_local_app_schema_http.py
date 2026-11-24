@@ -74,6 +74,102 @@ def preserve_managed_defaults(rendered,expected):
     print("H56 PASS: existing managed supabase_admin default ACL matches source; skip "+str(count)+" redundant managed-only statements",flush=True)
     return "".join(kept)
 
+# Use exact function identities, not their catalog collation-dependent order.
+# Only the local synthetic stack may reproduce a source ACL. The source
+# fingerprint is read-only, and definitions/owners must match before ACL work.
+FUNCTION_ACL_REVIEW=f"""SELECT jsonb_build_object(
+ 'unexpected_owner_or_grantor',(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ CROSS JOIN LATERAL aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) a
+ WHERE n.nspname IN {S} AND p.prokind='f'
+ AND (pg_get_userbyid(p.proowner)<>'postgres' OR pg_get_userbyid(a.grantor)<>'postgres'
+ OR a.grantee::regrole::text NOT IN ('-','postgres','anon','authenticated','service_role')
+ OR a.privilege_type<>'EXECUTE' OR a.is_grantable)),
+ 'functions',(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+ WHERE n.nspname IN {S} AND p.prokind='f'))"""
+
+def function_map(rows):
+    out={}
+    for row in rows:
+        require(isinstance(row,list) and len(row)==6,"function_fingerprint_shape")
+        key=tuple(row[:3])
+        require(key not in out,"duplicate_function_identity")
+        out[key]=row
+    return out
+
+def function_label(key):
+    # Names only, never arguments, bodies, ACL text or user data.
+    schema,name,_=key
+    return schema+"."+name if schema in SCHEMAS and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,100}",name) else "unknown_function"
+
+def acl_roles(row):
+    require(row[4]=="postgres","unexpected_function_owner")
+    roles=set()
+    for a in row[5]:
+        require(len(a)==3 and a[0] in ("-","postgres","anon","authenticated","service_role")
+                and a[1]=="EXECUTE" and a[2] is False,"unexpected_function_acl_shape")
+        roles.add(a[0])
+    require("postgres" in roles,"function_owner_execute_missing")
+    return roles
+
+def reconcile_function_acl(expected_rows,actual_rows,review):
+    want=function_map(expected_rows)
+    got=function_map(actual_rows)
+    require(review["unexpected_owner_or_grantor"]==0 and review["functions"]==len(want),
+            "source_function_acl_not_reviewed")
+    local=query(FUNCTION_ACL_REVIEW,"local_function_acl_review")
+    require(local["unexpected_owner_or_grantor"]==0 and local["functions"]==len(got),
+            "local_function_acl_not_reviewed")
+    if set(want)!=set(got):
+        print("H56 function identity differences: missing="+str(len(set(want)-set(got)))+
+              " extra="+str(len(set(got)-set(want))),flush=True)
+        require(False,"function_identity_diff")
+    definition_diff=[k for k in want if want[k][3:5]!=got[k][3:5]]
+    acl_diff=[k for k in want if acl_roles(want[k])!=acl_roles(got[k])]
+    print("H56 function comparison: identities="+str(len(want))+" definition_or_owner_diff="+
+          str(len(definition_diff))+" acl_diff="+str(len(acl_diff)),flush=True)
+    for k in definition_diff[:12]:
+        print("H56 definition/owner mismatch: "+function_label(k),flush=True)
+    for k in acl_diff[:12]:
+        print("H56 execute ACL mismatch: "+function_label(k),flush=True)
+    require(not definition_diff,"function_definition_or_owner_diff")
+    # pg_dump restores ACL deltas relative to the source defaults. The
+    # Supabase local init defaults may differ when the CREATE runs. Reproduce
+    # the exact catalog-derived EXECUTE set for these app functions only.
+    # No blanket grants, no membership changes, no security-definer edits.
+    if not acl_diff:
+        return
+    statements=["BEGIN; SET LOCAL search_path='';"]
+    removed=added=0
+    for k in acl_diff:
+        identity=query("SELECT jsonb_build_object('identity',p.oid::regprocedure::text) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname="+b.literal(k[0])+" AND p.proname="+b.literal(k[1])+" AND pg_get_function_identity_arguments(p.oid)="+b.literal(k[2]),"local_function_identity")["identity"]
+        require(isinstance(identity,str) and identity.startswith(k[0]+".") and ";" not in identity and "\n" not in identity,"function_identity_unsafe")
+        target=acl_roles(want[k]);actual=acl_roles(got[k])
+        role=lambda v:"PUBLIC" if v=="-" else b.ident(v)
+        for v in sorted(actual-target):
+            statements.append("REVOKE EXECUTE ON FUNCTION "+identity+" FROM "+role(v)+";")
+            removed+=1
+        for v in sorted(target-actual):
+            statements.append("GRANT EXECUTE ON FUNCTION "+identity+" TO "+role(v)+";")
+            added+=1
+    statements.append("COMMIT;")
+    local_sql("\n".join(statements),"reproduce_source_function_acl")
+    print("H56 local ACL reproduction: removed="+str(removed)+" added="+str(added)+
+          "; source exact-match verification follows",flush=True)
+
+def compare_fingerprints(expected,actual):
+    mismatches=[]
+    for name in expected:
+        if name=="functions":
+            left,right=function_map(expected[name]),function_map(actual[name])
+            same=(set(left)==set(right) and all(left[k][:5]==right[k][:5] and
+                  sorted(left[k][5])==sorted(right[k][5]) for k in left))
+        else:
+            same=expected[name]==actual[name]
+        print("H56 fingerprint "+name+": "+("PASS" if same else "FAIL")+
+              " source="+str(len(expected[name]))+" local="+str(len(actual[name])),flush=True)
+        if not same: mismatches.append(name)
+    require(not mismatches,"schema_fingerprint_diff_"+"_".join(sorted(mismatches)))
+
 def trusted():
     require(os.getenv("GITHUB_ACTIONS")=="true" and os.getenv("GITHUB_REPOSITORY")=="g-ambe/Padel-match" and os.getenv("GITHUB_REF")=="refs/heads/codex/task-08-group-foundation","trusted_runner_required")
     require(ROOT.parent==Path(os.environ["RUNNER_TEMP"]),"runner_temp_required")
@@ -99,9 +195,11 @@ def capture():
         require(catalog["legacy_fixed_pairs"] and catalog["legacy_media"] and not catalog["new_shared_rpc"],"source_baseline_changed")
         fingerprint=snap.query(FINGERPRINT)
         managed_defaults=snap.query(MANAGED_DEFAULTS)
+        function_acl_review=snap.query(FUNCTION_ACL_REVIEW)
+        require(function_acl_review["unexpected_owner_or_grantor"]==0,"source_function_acl_review_required")
         require(len(managed_defaults)==3,"source_managed_default_acl_review_required")
         history=snap.query("SELECT coalesce(json_agg(json_build_object('version',version,'name',name) ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
-        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults}))
+        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults,"function_acl_review":function_acl_review}))
         snap.dump(["--schema-only","--format=custom","--no-comments","--no-security-labels","--no-publications","--no-subscriptions"]+["--schema="+x for x in SCHEMAS],ROOT/"app-schema.dump")
     print("H56 PASS: source app schema only captured; no managed Auth/Storage or real rows",flush=True)
 
@@ -170,8 +268,9 @@ def restore_and_test(url,key,credentials):
     print("H56: restore schema-only archive into local app schemas",flush=True)
     local_sql(rendered,"schema_restore")
     actual=query(FINGERPRINT)
-    for name in metadata["fingerprint"]:
-        require(actual[name]==metadata["fingerprint"][name],"schema_fingerprint_diff_"+name)
+    reconcile_function_acl(metadata["fingerprint"]["functions"],actual["functions"],metadata["function_acl_review"])
+    actual=query(FINGERPRINT)
+    compare_fingerprints(metadata["fingerprint"],actual)
     require(query(h44.remote_schema_catalog_query())==metadata["catalog"],"source_catalog_diff")
     h55.sql(f"""DO $check$ DECLARE r record; v bigint; BEGIN
       FOR r IN SELECT n.nspname,c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN {S} AND c.relkind IN ('r','p') LOOP

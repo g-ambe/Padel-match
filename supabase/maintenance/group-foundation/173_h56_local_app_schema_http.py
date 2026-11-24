@@ -83,9 +83,11 @@ def restore_and_test(url,key,credentials):
     metadata=json.loads((ROOT/"metadata.json").read_text())
     h55.sql("DROP TABLE public.h55_auth_probe; DROP FUNCTION public.h55_whoami();")
     require(query("SELECT json_build_object('n',count(*)) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p','v','m','f')")=={"n":0},"local_public_not_empty")
+    toc=b.run(b.DOCKER+["run","--rm","--interactive","--network","none",b.probe.POSTGRES_IMAGE,"pg_restore","--list"],phase="H56_archive_inventory_failed",data=(ROOT/"app-schema.dump").read_bytes(),timeout=120).decode()
+    require(not re.search(r"(?m)^\d+;[^\n]*\b(?:TABLE DATA|SEQUENCE SET|MATERIALIZED VIEW DATA|BLOB DATA|BLOBS)\b",toc),"archive_must_be_schema_only")
     rendered=b.run(b.DOCKER+["run","--rm","--interactive","--network","none",b.probe.POSTGRES_IMAGE,"pg_restore","--schema-only","--no-owner","--no-comments","--file","-"],phase="H56_schema_render_failed",data=(ROOT/"app-schema.dump").read_bytes(),timeout=300).decode()
     rendered=re.sub(r"(?m)^CREATE SCHEMA public;[ \t]*$","",rendered)
-    require(not re.search(r"(?mi)^(COPY |INSERT INTO |CREATE (?:SCHEMA|TABLE) (?:auth|storage|vault)\b|CREATE (?:PUBLICATION|SUBSCRIPTION|SERVER|USER MAPPING)\b)",rendered),"unexpected_schema_archive_content")
+    require(not re.search(r"(?mi)^(CREATE (?:SCHEMA|TABLE) (?:auth|storage|vault)\b|CREATE (?:PUBLICATION|SUBSCRIPTION|SERVER|USER MAPPING)\b)",rendered),"unexpected_schema_archive_content")
     h55.sql(rendered)
     actual=query(FINGERPRINT)
     for name in metadata["fingerprint"]:
@@ -118,7 +120,11 @@ INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
     payload=json.dumps({"url":url,"key":key,"actors":credentials,"ids":ids})
     raw=h55.run(["node",str(REPO/"tests/integration/task08-h56-real-sdk.cjs")],"real_sdk",data=payload,cwd=REPO,timeout=180)
     report=json.loads(raw)
-    require(report.get("ok") is True and report.get("checks")==15,"sdk_report_failed")
+    if report.get("ok") is not True:
+        stage=report.get("phase")
+        allowed={"setup","auth","count","directory","roster_boundary","manager","third_party","consent","cas","public_approval","private_approval","old_approval_denied","reject","join_no_consent","join_approval","readback"}
+        require(False,"sdk_failed_"+(stage if stage in allowed else "unknown"))
+    require(report.get("checks")==15,"sdk_report_failed")
     print("H56 PASS: 15 real SDK/RPC assertions including public/private approval and join",flush=True)
     q=lambda x:b.literal(ids[x])+"::uuid"
     check=query(f"""SELECT json_build_object(

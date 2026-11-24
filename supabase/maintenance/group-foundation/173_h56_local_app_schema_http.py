@@ -622,6 +622,7 @@ INSERT INTO public.h51_postcutover_data_preservation VALUES('retained');
     require(all(v is True for v in check.values()),"committed_row_checks_failed")
     print("H56 PASS: 8 independent committed-row/merge/media checks",flush=True)
     print("H56 LIMITATION: SDK/HTTP only; browser/Worker local preview not tested; no real rows or R2 bytes",flush=True)
+    return ids  # H57 reuses only these synthetic actors after all H56 assertions pass.
 
 def seed(credentials):
     # Auth users are the actual local signups, no manual auth.users inserts.

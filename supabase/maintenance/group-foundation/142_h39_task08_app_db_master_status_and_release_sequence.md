@@ -302,3 +302,9 @@
 - [#45314506577](https://github.com/g-ambe/Padel-match/actions/runs/45314506577) HEAD b98d31d54c8e598145c513949d4fd05d5e85b53c：restore/H55/managed defaults、関数余分53・table余分454削除、column60追加完了。単一Instagram CHECKの再構築後も `instagram_check_exact_reproduction_failed`。全fingerprint最終PASS・SDK未到達。cleanup PASS。
 - 以前のCHECK DROP/ADD方式を撤回。Prod READ ONLYでPG17.6、conbin、conkey=3、validated、属性型text/default collationを確認。sourceの構文木は0048のBETWEEN由来の入れ子AND（length >=1、<=30）とregexのAND。pg_get_constraintdefの再パースによるAND平坦化が有力仮説。PostgreSQL 17 pg_constraint docs参照。173 driver 5247eef4ff9ae6fdaa699ad87b109c8637ffc71f：復元済み制約をそのまま保持。source/local PG17・制約flags・対象属性・内部構文木を照合し、限定されたnode型の全field/CONST値/演算子・順序を保持、parser locationと同じANDの入れ子構造のみ正規化。一致した場合のみ単一CHECKの表示文字列差を同等と扱う。実テーブルのCHECKをLIKE INCLUDING CONSTRAINTSで複製したローカルtemp tableへの19件の実INSERTで許可/拒否、対象制約名を確認しROLLBACK。他207制約と全ACL/RLS/他fingerprintは厳密比較。実際の制約を落とさない。source/local解析木不一致、未知node、動作差は停止。
 - 再実行HEAD f1e87a7d2e5c6af22bf264eceacf06a903001c6a。H56未完了。従来の同じSQL文字列再構築の反復を止め、意味と動作の証明に切り替えた。Prod/Stage書込み・Cloudflare/main/mergeなし、Draft #265 NO-GO。
+
+## 33. H56 検証コードのOID JSON型不一致を実クエリで特定（2026-11-24）
+
+- [#45315052733](https://github.com/g-ambe/Padel-match/actions/runs/45315052733) HEAD f1e87a7d2e5c6af22bf264eceacf06a903001c6a：schema restore/ACL再現（関数53・table454除去、column60追加）成功。単一Instagram CHECKの内部catalog gate `instagram_constraint_catalog_diff` で停止、tree/19ケース/最終fingerprint/SDK未到達。cleanup PASS。
+- Prod READ ONLYでIG_CATALOG相当を実行：server_major=17、flags=[c,true,false,true,0,false,false,[3]]は期待どおりだが、OID型のJSON attribute=[instagram_username,"25","100"]、int cast後=[instagram_username,25,100]。数値を期待した検証コードの誤りを確認。local側の他差分は未確定。
+- 173 driver 28eb4705fc1e1aeecd4256295be48daaa4fcd070で両環境のOIDを明示int castし、version/flags/attributeをsource/local別に厳密確認。tree/behavior/全fingerprintのゲートは維持。今回の原因は実クエリで再現済み。再実行HEAD 9ebb278da2bddf6141ce859c6caffe06beeff45b。H56未完了、Draft #265 NO-GO。Prod/Stage書込み・Cloudflare/main/mergeなし。

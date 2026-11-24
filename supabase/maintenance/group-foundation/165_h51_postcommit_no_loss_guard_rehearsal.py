@@ -176,7 +176,42 @@ def run(target,data,legacy_data,legacy_cols,legacy_digest,legacy_integrity,
           'marker',(SELECT count(*) FROM public.h51_postcutover_data_preservation WHERE marker='retained'))"""
         before_h52=h45.digest(target.query(snapshot_sql))
         print("H52: synthetic pending-link RPC checks on post-H51 isolated DB",flush=True)
-        raw=h44.isolated(target,probe.read_text())
+        # Keep raw database stderr private. Capture only the failing static SQL
+        # line and a predefined reason code, never a UUID, row, token or context.
+        import re
+        import subprocess
+        sql_text=probe.read_text()
+        result=subprocess.run(target.prefix+b.PSQL+["--set","VERBOSITY=verbose"],
+            input=("SET ROLE postgres;\n"+sql_text+"\n").encode(),
+            stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=600,check=False)
+        if result.returncode:
+            err=result.stderr.decode(errors='replace')
+            loc=re.search(r'psql:[^\n]*?:(\d+):\s*ERROR:',err)
+            state=re.search(r'ERROR:\s+([0-9A-Z]{5}):',err)
+            reason='unclassified'
+            known={
+              '連携申請を送信する権限がありません':'request_manager',
+              '対象メンバーを管理する権限がありません':'request_member',
+              '登録済みアカウントを確認できません':'request_account',
+              '承認待ちの申請があります':'request_duplicate',
+              '申請元の管理権限が変更されています':'review_manager',
+              '申請先本人の承認、または管理者の取消が必要です':'review_actor',
+              '確認後に内容が変更されています':'review_token',
+              'プロフィール画面で本人の正規プロフィールを作成':'canonical_missing',
+              'この連携申請を確認する権限がありません':'detail_denied',
+            }
+            for needle,label in known.items():
+                if needle in err:
+                    reason=label
+                    break
+            # Only echo literal H52 assertion messages authored in the probe.
+            for label in re.findall(r"RAISE EXCEPTION '(H52 [A-Za-z0-9 _-]+)'",sql_text):
+                if label in err:
+                    reason=label.replace(' ','_')
+                    break
+            require(False,'H52_probe_failed_line_'+(loc.group(1) if loc else 'unknown')
+                    +'_state_'+(state.group(1) if state else 'unknown')+'_'+reason)
+        raw=result.stdout.decode().strip()
         # SQL emits only synthetic set_config values and the final boolean report.
         # Never echo raw output or tokens; parse the final JSON line.
         report=json.loads(raw.splitlines()[-1])

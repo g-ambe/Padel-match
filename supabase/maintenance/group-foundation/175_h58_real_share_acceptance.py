@@ -88,14 +88,17 @@ def verify_disabled_clicks(url,key):
         status,data=h55.request(url,"/rest/v1/rpc/"+func,key,body={arg:ids[k],"p_share_token":t,"p_user_agent":"task08-h58-http","p_referrer":None})
         require(status in (200,204) and data is None,"h58_disabled_click_http_"+str(status))
 
-def share_runner(url,key,base,ids):
+def share_runner(url,key,base,ids,close_runner=None):
     click_counts(0)
     run_browser(url,key,base,ids,"before",10)
     click_counts(2)
     # Release ordering: first verify new share UI, then try the already
     # versioned later closure candidates only on this disposable local DB.
-    h56.local_sql((HERE/"53_h12_anon_shared_base_acl_candidate.sql").read_text(),"h58_local_anon_base_close")
-    h56.local_sql((h57.REPO/"supabase/migrations/20261121131943_task08_h35_legacy_video_click_anon_close.sql").read_text(),"h58_local_legacy_click_close")
+    if close_runner is None:
+        h56.local_sql((HERE/"53_h12_anon_shared_base_acl_candidate.sql").read_text(),"h58_local_anon_base_close")
+        h56.local_sql((h57.REPO/"supabase/migrations/20261121131943_task08_h35_legacy_video_click_anon_close.sql").read_text(),"h58_local_legacy_click_close")
+    else:
+        close_runner()
     h56.local_sql("NOTIFY pgrst,'reload schema';","h58_schema_reload")
     print("H58 PASS: existing H12/H35 closure candidates applied locally after positive share acceptance",flush=True)
     run_browser(url,key,base,ids,"after",13)

@@ -1,5 +1,5 @@
 H43_NO_COST_ISOLATED=1
 H45_REAL_GROUP_DATA=1
 H48_REAL_LEGACY_TEST=1
-H50_POSTCOMMIT_ROLLBACK=1
-# H50: isolated only; Phase2 COMMIT, old client deny, destructive rollback test.
+H51_SAFE_FORWARD_FIX_TEST=1
+# H51: safe legacy approval guard, post-COMMIT data preserved, offline only.

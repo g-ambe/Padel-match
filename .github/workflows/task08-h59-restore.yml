@@ -1,0 +1,70 @@
+# H59 isolated real Auth/HTTP concurrency and reviewed restore, no hosted writes.
+name: TASK-08 H59 restore and concurrent operations
+on:
+  push:
+    branches:
+      - codex/task-08-group-foundation
+    paths:
+      - supabase/maintenance/group-foundation/.task08-h59-restore-trigger
+permissions:
+  contents: read
+concurrency:
+  group: task08-h59-restore
+  cancel-in-progress: false
+jobs:
+  local-auth:
+    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation' && contains(github.event.head_commit.message, '[task08-h59-restore]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Explicit local synthetic-only opt-in
+        run: grep -qx 'H59_RESTORE=1' supabase/maintenance/group-foundation/.task08-h59-restore-trigger
+      - name: Compile local environment probe
+        run: python3 -B -m py_compile supabase/maintenance/group-foundation/172_h55_local_auth_http_environment.py
+      - name: Install existing pinned checksum-verified Supabase CLI
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: Compile H56 and H59 probes
+        run: python3 -B -m py_compile supabase/maintenance/group-foundation/173_h56_local_app_schema_http.py supabase/maintenance/group-foundation/176_h59_restore_and_concurrency.py
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Locked dependencies without hosted credentials
+        run: |
+          npm install --prefix "$RUNNER_TEMP/h59-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
+          "$RUNNER_TEMP/h59-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
+          node --check tests/integration/task08-h56-real-sdk.cjs
+      - name: Verify official CA
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h56-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: Read-only source app schema capture (no business rows)
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h56-ca.crt
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+        run: python3 -B supabase/maintenance/group-foundation/173_h56_local_app_schema_http.py capture
+      - name: Local H56 gates, concurrent HTTP and reviewed restore (no hosted secrets)
+        run: python3 -B supabase/maintenance/group-foundation/176_h59_restore_and_concurrency.py
+      - name: Remove only this synthetic local stack and volumes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/task08-h55-synthetic"
+          cli="$RUNNER_TEMP/supabase-tools/supabase"
+          if [[ -d "$root/supabase" && -x "$cli" ]]; then
+            (cd "$root"; env -i PATH="$PATH" HOME="$HOME" "$cli" stop --no-backup >/dev/null 2>&1) || true
+          fi
+          # This is a fresh dedicated runner. Remove only matching project containers.
+          mapfile -t ids < <(docker --host=unix:///var/run/docker.sock ps -aq --filter 'name=task08-h55-synthetic')
+          if (( ${#ids[@]} )); then docker --host=unix:///var/run/docker.sock rm -fv "${ids[@]}" >/dev/null; fi
+          mapfile -t vols < <(docker --host=unix:///var/run/docker.sock volume ls -q --filter 'name=task08-h55-synthetic')
+          if (( ${#vols[@]} )); then docker --host=unix:///var/run/docker.sock volume rm "${vols[@]}" >/dev/null; fi
+          if docker --host=unix:///var/run/docker.sock network inspect task08-h55-local >/dev/null 2>&1; then
+            docker --host=unix:///var/run/docker.sock network rm task08-h55-local >/dev/null
+          fi
+          rm -rf -- "$root" "$RUNNER_TEMP/task08-h56-schema"
+          rm -f -- "$RUNNER_TEMP/task08-h56-ca.crt"
+          echo 'H59 synthetic local stack and schema cleanup complete; no hosted writes'

@@ -46,7 +46,7 @@ SOURCES={
  "h51":(HERE/"164_h51_postcommit_safe_legacy_approval_guard_CANDIDATE.sql","355708f527f4fb2b574d10c5cf7540d3fecebb44"),
  "h52":(HERE/"168_h52_media_reference_guard_CANDIDATE.sql","084fc072b2979d2daa10cc535ab1cd713ab9c787"),
  "h12_close":(HERE/"53_h12_anon_shared_base_acl_candidate.sql","a74b446351e1b364523cb219046088b52c59c628"),
- "h62_boundary":(HERE/"183_h62_membership_read_boundary_CANDIDATE.sql","7ded1f14ff6b2d9b0d906396fdeb693349e8c5a9"),
+ "h62_boundary":(HERE/"183_h62_membership_read_boundary_CANDIDATE.sql","029a91370d6a8fb596c14cb9f771cc541ef9416b"),
  "h35_close":(REPO/"supabase/migrations/20261121131943_task08_h35_legacy_video_click_anon_close.sql","9662868395e39c58d5fa61ad5b214c06b6f3aaed"),
 }
 def require(condition,reason):

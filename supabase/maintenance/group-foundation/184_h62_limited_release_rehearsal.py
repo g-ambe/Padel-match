@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import sys
 
 HERE=pathlib.Path(__file__).resolve().parent
@@ -33,6 +34,11 @@ def after_auth(url,key,actors):
         allowed=("setup","auth","direct_nonmember","embedded","public_rpc","member_reads","visibility_flip","manager_returning","new_club","normal_event","official_member","withdraw")
         status=report.get("httpStatus")
         kind=report.get("errorKind")
+        code=report.get("sqlState")
+        operation=report.get("operation")
+        if operation in ("insert_club_returning","insert_founder_membership","read_founder_membership","read_as_unrelated_user"):
+            safe_code=code if isinstance(code,str) and re.fullmatch("[0-9A-Z]{5}",code) else "none"
+            print(f"H62 new_club operation={operation} SQLSTATE={safe_code}",flush=True)
         require(False,"h62_"+(phase if phase in allowed else "unknown")+"_http_"+(str(status) if type(status) is int and 100<=status<=599 else "none")+"_kind_"+(kind if kind in ("assertion","other") else "unknown")+"_checks_"+str(int(report.get("checks",0))))
     require(report.get("checks")==11,"h62_check_count")
     print("H62 PASS: 11 real Auth/REST boundary and normal group/event operation checks",flush=True)

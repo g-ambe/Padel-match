@@ -409,3 +409,8 @@
 
 - [H62 #45335966200](https://github.com/g-ambe/Padel-match/actions/runs/45335966200) tested HEAD aca227d7ddc22e33bca21e0a34cf17b705ef7512、job 138247995048 FAILURE。H55実Auth、H56本番schema-only/fingerprint/SDK15/DB8、H61改訂3本の順序/末尾障害rollback/正常commit/再適用拒否/22+3履歴、TS/OpenNext/local Worker、H58共有24・click件数/cleanup全PASS。H62専用11判定のうち先頭7（auth/direct_nonmember/embedded/public_rpc/member_reads/visibility_flip/manager_returning）通過。失敗 `H62 FAIL: h62_new_club_http_500_kind_assertion_checks_7`。new_club段階のclubs INSERT RETURNING/club_members INSERT等のどれかは現診断では未確定。normal_event/official_member/withdraw未到達。原因の断定・権限緩和・無条件retry禁止。次は対象SQL/依存policy/triggerと安全なエラーcode・操作単位の診断を確認し、最小限の原因対応のみ行う。修正版Phase2ハッシュは今回の生成値 `b9f518218c15ba7e6faeba39e6e3b941122ce398b3ee200a7f411bc165208714`（**FAIL・正式採用不可**）、Phase1/3は§46一致。
 - ユーザー希望により新トーク「パデルアプリ仕様書⑧」で続行。本工程の原因未確定、修正/retry未実施。§48のCF正しいWorker tag/main自動配信確認は有効。過剰な権限再設計はしない。既存機能と公開同意/非公開名簿境界を同時に維持。限定再レビュー・H62-3直前DB backup/簡易R2保全・H63明示承認は残件。Draft #265 NO-GO、Prod/Stage書込み・deploy・mergeなし。
+
+## 50. H62-2 新規グループ作成の原因と限定修正（2026-11-24 JST）
+
+- 初回 job の実ログは HTTP 500 まで。合成 PGlite に既存 clubs/club_members ポリシー、Phase1 の member 関数、183 候補を適用して操作別に確認。従来の SELECT 条件では両 INSERT 成功。旧183で clubs INSERT RETURNING は成功、続く club_members INSERT は SQLSTATE `42P17`。所属 INSERT の clubs 参照 → clubs SELECT の所属参照 → club_members SELECT に直接置いた player_profiles サブクエリが再帰判定を起こす。所有者・所属参照トリガーの例外ではない。
+- 183 は本人照合の同一条件を非公開スキーマの真偽値関数に移動。既存の公開プロフィール、所属 INSERT/UPDATE ポリシー、clubs ポリシー、アプリは変更なし。合成 PostgreSQL で両 INSERT、所属者・退会後の本人・未所属者の読み取り境界を確認。実 Auth/REST は次の限定 Actions の結果待ち。診断出力は操作名と SQLSTATE のみ追加。Phase2 の確定 SHA256 と独立再レビュー、H62-3 は残件。Draft #265、NO-GO 維持。

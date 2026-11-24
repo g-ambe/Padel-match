@@ -1,2 +1,3 @@
 H62_BOUNDARY=1
 # Exact revised release candidate, synthetic isolated Auth/REST/Worker only.
+# H62-2: verify the isolated 42P17 fix.

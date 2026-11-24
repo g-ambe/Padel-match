@@ -5,7 +5,7 @@ const {createClient}=require('@supabase/supabase-js');
 require('node:module').registerHooks({resolve(s,c,next){return next(['./player-profiles','./group-read','./permissions'].includes(s)?s+'.ts':s,c)}});
 const {addMissingClubMembersToEvent}=require('../../lib/event-participants.ts');
 const {url,key,actors,ids}=JSON.parse(fs.readFileSync(0,'utf8'));
-let phase='setup',checks=0,httpStatus=null;
+let phase='setup',checks=0,httpStatus=null,sqlState=null,operation=null;
 const mark=()=>checks++;
 const localFetch=(input,init)=>{
  assert.equal(new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url).origin,url);
@@ -13,7 +13,9 @@ const localFetch=(input,init)=>{
 };
 const client=()=>createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:localFetch}});
 async function ok(query){
- const r=await query;httpStatus=r.status??null;assert(!r.error);return r.data;
+ const r=await query;httpStatus=r.status??null;
+ sqlState=/^[0-9A-Z]{5}$/.test(r.error?.code??'')?r.error.code:null;
+ assert(!r.error);return r.data;
 }
 async function raw(db,club,cols='*'){
  return ok(db.from('club_members').select(cols).eq('club_id',club));
@@ -71,10 +73,14 @@ async function main(){
  assert(outsiderUpdate.error||outsiderUpdate.data.length===0);
  assert((await raw(owner,ids.public)).find(x=>x.id===ids.legacy_member).is_active===true);mark();
  phase='new_club';
+ operation='insert_club_returning';
  const club=await ok(outsider.from('clubs').insert({name:'H62 synthetic new club',description:null,owner_id:ids.outsider,is_active:true,visibility:'private'}).select('id').single());
+ operation='insert_founder_membership';
  await ok(outsider.from('club_members').insert({club_id:club.id,profile_id:ids.outsider,player_profile_id:ids.outsider_profile,role:'main_admin',is_active:true}));
+ operation='read_founder_membership';
  assert((await raw(outsider,club.id)).some(x=>x.role==='main_admin'));
- assert.deepEqual(await raw(owner,club.id),[]);mark();
+ operation='read_as_unrelated_user';
+ assert.deepEqual(await raw(owner,club.id),[]);operation=null;mark();
  phase='normal_event';
  const ev=await ok(owner.from('events').insert({name:'H62 synthetic event',court_count:1,category:'club',club_id:ids.public,event_mode:'manual',stats_mode:'undecided',created_by_auth_user_id:ids.owner}).select('id').single());
  const added=await addMissingClubMembersToEvent(owner,ev.id,ids.public);
@@ -102,4 +108,4 @@ async function main(){
  assert((await raw(owner,ids.private)).some(x=>x.id===membership.id&&!x.is_active));mark();
  return {ok:true,checks};
 }
-main().then(r=>console.log(JSON.stringify(r))).catch(e=>console.log(JSON.stringify({ok:false,phase,checks,httpStatus,errorKind:e?.name==='AssertionError'?'assertion':'other'})));
+main().then(r=>console.log(JSON.stringify(r))).catch(e=>console.log(JSON.stringify({ok:false,phase,checks,httpStatus,sqlState,operation,errorKind:e?.name==='AssertionError'?'assertion':'other'})));

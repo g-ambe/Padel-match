@@ -67,7 +67,7 @@ def run_checked(args,env,phase,timeout):
         raise RuntimeError(phase+"_timeout") from None
     require(result.returncode==0,phase+"_exit_"+str(result.returncode))
 
-def browser_test(url,key,actors,ids,browser_runner=None):
+def browser_test(url,key,actors,ids,browser_runner=None,local_media_proof=None):
     env=build_env(url,key)
     TEMP.mkdir(mode=0o700)
     run_checked(["node","node_modules/typescript/bin/tsc","--noEmit"],env,"h57_typescript",180)
@@ -76,8 +76,13 @@ def browser_test(url,key,actors,ids,browser_runner=None):
     run_checked(["node","-e","if (!require('./scripts/ensure-cloudflare-worker.cjs').current()) process.exit(1)"],env,"h57_worker_build_id",30)
     print("H57 PASS: OpenNext build ID and Worker/assets",flush=True)
     # Explicit local mode, no remote resources and no hosted credentials.
+    args=["node_modules/.bin/wrangler","dev","--local","--ip","127.0.0.1","--port","3070","--persist-to",str(TEMP/"state"),"--config","wrangler.jsonc"]
+    if local_media_proof is not None:
+        # Only H60's newly generated, disposable proof. Not a hosted secret.
+        require(isinstance(local_media_proof,str) and len(local_media_proof)==64 and all(c in "0123456789abcdef" for c in local_media_proof),"h60_local_proof_format")
+        args+=["--var","PROFILE_MEDIA_COMMIT_SECRET:"+local_media_proof]
     with (TEMP/"worker.log").open("wb") as log:
-        worker=subprocess.Popen(["node_modules/.bin/wrangler","dev","--local","--ip","127.0.0.1","--port","3070","--persist-to",str(TEMP/"state"),"--config","wrangler.jsonc"],cwd=REPO,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+        worker=subprocess.Popen(args,cwd=REPO,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
         try:
             opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
             until=time.monotonic()+150

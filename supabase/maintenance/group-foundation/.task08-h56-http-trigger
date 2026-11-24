@@ -5,3 +5,4 @@ H56_REAL_SDK=1
 # Compare exact function identities, definitions, owners and local execute ACL.
 # Reproduce exact relation ACL; compare full constraint records without collation order dependency.
 # Restore source column grants after table revokes; exact reviewed Instagram CHECK only on empty local table.
+# New approach: preserve restored CHECK, prove exact parsed terms/flags and actual valid/invalid inserts.

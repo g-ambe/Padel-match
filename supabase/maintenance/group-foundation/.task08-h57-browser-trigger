@@ -1,0 +1,3 @@
+H57_REAL_WORKER=1
+# Local synthetic Auth and real Worker browser only; no deployment.
+# Scope join approval status to the active modal; separately verify HTTP response and approved state.

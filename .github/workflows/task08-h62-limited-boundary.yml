@@ -1,0 +1,78 @@
+# H62 revised release package, targeted membership authorization and no hosted changes.
+name: TASK-08 H62 limited membership boundary and release rehearsal
+on:
+  push:
+    branches:
+      - codex/task-08-group-foundation
+    paths:
+      - supabase/maintenance/group-foundation/.task08-h62-boundary-trigger
+permissions:
+  contents: read
+concurrency:
+  group: task08-h62-boundary
+  cancel-in-progress: false
+jobs:
+  local-auth:
+    if: github.repository == 'g-ambe/Padel-match' && github.ref == 'refs/heads/codex/task-08-group-foundation' && contains(github.event.head_commit.message, '[task08-h62-boundary]')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Explicit local synthetic-only opt-in
+        run: grep -qx 'H62_BOUNDARY=1' supabase/maintenance/group-foundation/.task08-h62-boundary-trigger
+      - name: Compile local environment probe
+        run: python3 -B -m py_compile supabase/maintenance/group-foundation/172_h55_local_auth_http_environment.py
+      - name: Install existing pinned checksum-verified Supabase CLI
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
+      - name: Compile H56 H57 H58 H61 and H62 probes
+        run: python3 -B -m py_compile supabase/maintenance/group-foundation/173_h56_local_app_schema_http.py supabase/maintenance/group-foundation/174_h57_real_worker_browser.py supabase/maintenance/group-foundation/175_h58_real_share_acceptance.py supabase/maintenance/group-foundation/178_h61_release_package.py supabase/maintenance/group-foundation/179_h61_release_package_rehearsal.py supabase/maintenance/group-foundation/184_h62_limited_release_rehearsal.py
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Locked dependencies without hosted credentials
+        run: |
+          npm install --prefix "$RUNNER_TEMP/h62-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
+          "$RUNNER_TEMP/h62-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
+          echo "$RUNNER_TEMP/h62-bun/node_modules/.bin" >> "$GITHUB_PATH"
+          node --check tests/integration/task08-h56-real-sdk.cjs
+          node --check tests/browser/task08-h58-real-share.cjs
+          node --check tests/integration/task08-h62-membership-boundary.cjs
+      - name: Install pinned Playwright and Chromium (no hosted credentials)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/task08-playwright" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright@1.51.1
+          "$RUNNER_TEMP/task08-playwright/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Verify official CA
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h56-ca.crt
+        run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_connection_probe.py --prepare-ca
+      - name: Read-only source app schema capture (no business rows)
+        env:
+          PADEL_BACKUP_CA_FILE: ${{ runner.temp }}/task08-h56-ca.crt
+          SUPABASE_DB_URL: ${{ secrets.PADEL_BACKUP_DB_URL }}
+        run: python3 -B supabase/maintenance/group-foundation/173_h56_local_app_schema_http.py capture
+      - name: Local revised package and real member/outsider REST plus sharing (no hosted secrets)
+        run: python3 -B supabase/maintenance/group-foundation/184_h62_limited_release_rehearsal.py
+      - name: Remove only this synthetic local stack and volumes
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/task08-h55-synthetic"
+          cli="$RUNNER_TEMP/supabase-tools/supabase"
+          if [[ -d "$root/supabase" && -x "$cli" ]]; then
+            (cd "$root"; env -i PATH="$PATH" HOME="$HOME" "$cli" stop --no-backup >/dev/null 2>&1) || true
+          fi
+          # This is a fresh dedicated runner. Remove only matching project containers.
+          mapfile -t ids < <(docker --host=unix:///var/run/docker.sock ps -aq --filter 'name=task08-h55-synthetic')
+          if (( ${#ids[@]} )); then docker --host=unix:///var/run/docker.sock rm -fv "${ids[@]}" >/dev/null; fi
+          mapfile -t vols < <(docker --host=unix:///var/run/docker.sock volume ls -q --filter 'name=task08-h55-synthetic')
+          if (( ${#vols[@]} )); then docker --host=unix:///var/run/docker.sock volume rm "${vols[@]}" >/dev/null; fi
+          if docker --host=unix:///var/run/docker.sock network inspect task08-h55-local >/dev/null 2>&1; then
+            docker --host=unix:///var/run/docker.sock network rm task08-h55-local >/dev/null
+          fi
+          rm -rf -- "$root" "$RUNNER_TEMP/task08-h56-schema" "$RUNNER_TEMP/task08-h57-browser" "$RUNNER_TEMP/task08-playwright"
+          rm -rf -- .next .open-next .wrangler "$RUNNER_TEMP/task08-h61-release-sql"
+          rm -f -- "$RUNNER_TEMP/task08-h56-ca.crt"
+          echo 'H62 synthetic local stack, Worker, generated package and schema cleanup complete; no hosted writes'

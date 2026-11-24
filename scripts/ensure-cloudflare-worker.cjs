@@ -8,12 +8,13 @@ function current(root=process.cwd()){
   return Boolean(nextId)&&fs.existsSync(path.join(root,'.open-next/worker.js'))&&nextId===fs.readFileSync(path.join(root,'.open-next/assets/BUILD_ID'),'utf8').trim();
  }catch{return false;}
 }
-function ensure(){
- if(current())return;
- const built=fs.existsSync('.next/BUILD_ID');
- const cli=path.resolve('node_modules/@opennextjs/cloudflare/dist/cli/index.js');
- const result=spawnSync(process.execPath,[cli,'build',...(built?['--skipNextBuild']:[])],{stdio:'inherit',env:process.env});
- if(result.error||result.status!==0||!current())throw new Error('Cloudflare Workerの生成・ビルドID照合に失敗しました');
+function ensure(root=process.cwd(),spawn=spawnSync){
+ if(current(root))return;
+ // A normal next build has BUILD_ID but no OpenNext standalone output.
+ // Let OpenNext build with its own configuration rather than skipping Next.
+ const cli=path.join(root,'node_modules/@opennextjs/cloudflare/dist/cli/index.js');
+ const result=spawn(process.execPath,[cli,'build'],{cwd:root,stdio:'inherit',env:process.env});
+ if(result.error||result.status!==0||!current(root))throw new Error('Cloudflare Workerの生成・ビルドID照合に失敗しました');
 }
-module.exports={current};
+module.exports={current,ensure};
 if(require.main===module){try{ensure();}catch{console.error('Cloudflare Workerを確認できませんでした');process.exitCode=1;}}

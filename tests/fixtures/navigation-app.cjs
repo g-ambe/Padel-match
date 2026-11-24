@@ -34,6 +34,7 @@ function navigationFixture(){
    for(const c of b.matches){const m={id:id(seq++),event_id:b.eventId,round_id:r.id,court_number:c.court,completed:false};tables.matches.push(m);for(const[team,people]of[['A',c.teamA],['B',c.teamB]])for(const participant_id of people)tables.match_players.push({id:id(seq++),match_id:m.id,participant_id,team});}
    const data={event_id:b.eventId,request_id:b.requestId,round_id:r.id,round_number:r.round_number};operations.set(b.requestId,data);return new Response(JSON.stringify(data),{status:200});
   }
+  if(table==='get_my_club_memberships')return new Response(JSON.stringify(tables.club_members.filter(m=>m.profile_id===user.id||tables.player_profiles.some(p=>p.id===m.player_profile_id&&p.linked_auth_user_id===user.id&&p.is_active!==false)).map(m=>({...m,status:m.status??'active'}))),{status:200});
   if(url.pathname.includes('/rpc/')){
    const data=table==='get_event_fixed_pair_state'?{event_id:body.p_event_id,revision:0,used_fixed_pairs:false,pairs:[],eligible_rounds:[]}:[];
    return new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});

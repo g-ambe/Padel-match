@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 const { createClient } = require('@supabase/supabase-js');
-require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./friendly-team-rounds','./friendly-rounds','./friendly-round-history','./permissions','./stats-history','./friendly-match-results'].includes(specifier) ? specifier + '.ts' : specifier, context); } });
+require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./group-read','./friendly-team-rounds','./friendly-rounds','./friendly-round-history','./permissions','./stats-history','./friendly-match-results'].includes(specifier) ? specifier + '.ts' : specifier, context); } });
 const history = require('../../lib/stats-history.ts');
 const results = require('../../lib/friendly-match-results.ts');
 const { readProfileRows } = require('../../lib/player-profiles.ts');
@@ -54,6 +54,12 @@ function database(tables, options = {}) {
       calls.push(call);
       const failure = await options.fail?.(call);
       if (failure) return new Response(JSON.stringify({ code: '42501', message: '取得または更新を拒否' }), { status: 403 });
+      if (table === 'get_club_stats_members')return new Response(JSON.stringify(tables.club_members.filter(m=>m.club_id===call.body.p_club_id).map(({player_profile_id,is_active})=>({player_profile_id,is_active}))),{status:200});
+      if (table === 'get_club_stats_player_names') {
+        const club=call.body.p_club_id,events=new Set(tables.events.filter(e=>e.club_id===club).map(e=>e.id));
+        const ids=new Set([...tables.club_members.filter(m=>m.club_id===club).map(m=>m.player_profile_id),...tables.event_participants.filter(p=>events.has(p.event_id)).map(p=>p.player_profile_id)]);
+        return new Response(JSON.stringify(tables.player_profiles.filter(p=>ids.has(p.id)).map(({id,display_name})=>({id,display_name}))),{status:200});
+      }
       if (table === 'get_friendly_lineup_versions') return new Response(JSON.stringify({version:1,editing_enabled:false,event_revision:0,rounds:[]}),{status:200});
       if (table === 'get_friendly_round_lineup') {
         const b=call.body,cards=tables.matches.filter(m=>m.event_id===b.p_event_id&&m.round_id===b.p_round_id).map(m=>({id:m.id,completed:m.completed,players:roundLineup.canonicalPlayers(tables.match_players.filter(p=>p.match_id===m.id)),result:tables.match_results.filter(r=>r.match_id===m.id).map(({id,score_a,score_b,winner_team})=>({id,score_a,score_b,winner_team}))}));
@@ -164,7 +170,7 @@ function fixture() {
 }
 async function groupStats(s, legacy = false, initial = {}) {
   const state = { ...initial };
-  const bindings = { console:{error() {}}, getSupabaseClient:() => s, id:'club-a', setError:v=>state.error=v, setIndividualRows:v=>state.individual=v, setPairRows:v=>state.pairs=v, setEventHistoryRows:v=>state.events=v };
+  const bindings = { console:{error() {}}, getSupabaseClient:() => s, id:'club-a', alive:{current:true}, setStatsError:v=>{if(v)state.error=v;}, setError:v=>state.error=v, setIndividualRows:v=>state.individual=v, setPairRows:v=>state.pairs=v, setEventHistoryRows:v=>state.events=v };
   await (legacy ? evaluate(legacySource(),'loadStats',bindings) : handler('app/groups/[id]/page.tsx','loadStats',bindings))();
   return state;
 }

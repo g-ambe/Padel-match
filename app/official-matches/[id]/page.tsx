@@ -1,4 +1,5 @@
 "use client";
+import { GroupEventReturn } from "@/components/group-event-return";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -147,7 +148,7 @@ export default function OfficialMatchDetailPage() {
       const confirmed = previous.find(match => match.id === row.id);
       return { ...row, our_score: confirmed?.our_score ?? null, opponent_score: confirmed?.opponent_score ?? null, result: confirmed?.result ?? "undecided" };
     }));
-    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,history.flatMap(match=>[match.our_player1_profile_id,match.our_player2_profile_id]))); }
+    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,history.flatMap(match=>[match.our_player1_profile_id,match.our_player2_profile_id]),{eventId:id,official:true})); }
     catch { setError("過去の試合の選手名を取得できませんでした"); }
     if (access.superUser || nextAccessRole === "main_admin") {
       const { data: clickRows, error: clickError } = await supabase.rpc("get_official_video_click_counts", { p_event_id: id });
@@ -162,7 +163,7 @@ export default function OfficialMatchDetailPage() {
     }
   };
 
-  useEffect(() => { void loadDetail(); }, [id]);
+  useEffect(() => { void loadDetail().catch(()=>setError("情報を取得できませんでした。再度読み込んでください")); }, [id]);
   useEffect(() => {
     if (unsavedScoreCount) reloadAfterScores.current = true;
     else if (reloadAfterScores.current) { reloadAfterScores.current = false; void loadDetail().catch(() => setError("保存後の再読み込みに失敗しました")); }
@@ -331,6 +332,7 @@ export default function OfficialMatchDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
+      <GroupEventReturn />
       <h1 className="pr-14 text-xl font-bold sm:pr-0">オフィシャルチームマッチ詳細</h1>
       {error && <p className="rounded-xl border border-red-500/60 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
       {notice && <p className="rounded-xl border border-emerald-500/60 bg-emerald-950/40 p-3 text-sm text-emerald-200">{notice}</p>}

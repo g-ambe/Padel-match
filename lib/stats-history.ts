@@ -1,3 +1,4 @@
+import { readStatsMembers, readClubStatsNames } from "./group-read";
 import type { EmbeddedMatchResults } from "./friendly-match-results";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readFriendlyRoundRows } from "./friendly-round-history";
@@ -47,13 +48,10 @@ export async function fetchGroupStatsHistory(s: SupabaseClient, clubId: string) 
   const eventIds = events.map(event => event.id);
   if (!eventIds.length) return { events, membersRaw: [] as StatsMember[], participants: [] as StatsParticipant[], pps: [] as StatsPlayer[], matches: [] as StatsMatch[] };
   // 退会済みも含む所属履歴を使う。現在の在籍条件による表示は既存の集計側で行う。
-  const membersRaw = await readStatsRows<StatsMember>((start, end) => s.from("club_members")
-    .select("player_profile_id,is_active").eq("club_id", clubId).order("id").range(start, end));
+  const membersRaw = await readStatsMembers(s,clubId);
   const participants = await readStatsRowsByIds<StatsParticipant>(eventIds, (ids, start, end) => s.from("event_participants")
     .select("id,event_id,player_profile_id,participant_type").in("event_id", ids).order("id").range(start, end));
-  const profileIds = participants.map(participant => participant.player_profile_id).filter((id): id is string => !!id);
-  const pps = await readStatsRowsByIds<StatsPlayer>(profileIds, (ids, start, end) => s.from("player_profiles")
-    .select("id,display_name").in("id", ids).order("id").range(start, end));
+  const pps = await readClubStatsNames(s,clubId);
   const matches = await readStatsRowsByIds<StatsMatch>(eventIds, (ids, start, end) => s.from("matches")
     .select("id,event_id,completed,match_players(participant_id,team),match_results(score_a,score_b,winner_team)")
     .in("event_id", ids).order("id").range(start, end));

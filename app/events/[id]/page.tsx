@@ -1,4 +1,5 @@
 "use client";
+import { GroupEventReturn } from "@/components/group-event-return";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -19,6 +20,7 @@ import { EventResultHistory, ResultMatchCard } from "@/components/event-result-h
 import { EventResultShare } from "@/components/event-result-share";
 import { getSupabaseClient } from "@/lib/supabase";
 import { getGuestEvent, isGuestModeEnabled, removeGuestEvent, upsertGuestEvent, type EventMode, type StatsMode } from "@/lib/guest-events";
+import { readEventNames, readMyMemberships } from "@/lib/group-read";
 import { addMissingClubMembersToEvent, fetchActiveClubMemberParticipants } from "@/lib/event-participants";
 import { readParticipantStatus, saveParticipantStatus, type ParticipantStatus } from "@/lib/event-participant-status";
 import { firstMatchResult, hasEnteredFriendlyMatchScore } from "@/lib/friendly-match-results";
@@ -307,51 +309,15 @@ export default function EventDetailPage() {
     let allowViewVideoClickCounts = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
     let allowManageEventVideos = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
     let canDelete = superUser || (!!uid && !event?.club_id && event?.created_by_auth_user_id === uid);
-    if (!canDelete && uid && event?.club_id) {
-      const { data: linkedProfiles } = await supabase
-        .from("player_profiles")
-        .select("id")
-        .eq("linked_auth_user_id", uid);
-      const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
-      if (linkedProfileIds.length) {
-        const { data: myMembers } = await supabase
-          .from("club_members")
-          .select("role")
-          .eq("club_id", event.club_id)
-          .in("player_profile_id", linkedProfileIds)
-          .eq("is_active", true);
-        canDelete = (myMembers ?? []).some((m: any) => m.role === "main_admin");
-        allowViewVideoClickCounts = allowViewVideoClickCounts || (myMembers ?? []).some((m: any) => m.role === "main_admin");
-      }
-      if (!canDelete) {
-        const { data: myMember } = await supabase
-          .from("club_members")
-          .select("role")
-          .eq("club_id", event.club_id)
-          .eq("profile_id", uid)
-          .eq("is_active", true)
-          .maybeSingle();
-        canDelete = myMember?.role === "main_admin";
-        allowViewVideoClickCounts = allowViewVideoClickCounts || myMember?.role === "main_admin";
-      }
-    }
+    const myMembers=uid?(await readMyMemberships(supabase)).filter(m=>m.club_id===event?.club_id&&m.is_active):[];
+    if(!canDelete&&myMembers.some(m=>m.role==="main_admin")){canDelete=true;allowViewVideoClickCounts=true;}
     setCanDeleteEvent(canDelete);
     const isNoGroupCreator = !!uid && !event?.club_id && event?.created_by_auth_user_id === uid;
     let allowManageShare = superUser || isNoGroupCreator;
     let allowCopyShare = allowManageShare;
     let allowOperateEvent = allowManageShare;
     if (uid && event?.club_id) {
-      const { data: linkedProfiles } = await supabase.from("player_profiles").select("id").eq("linked_auth_user_id", uid);
-      const linkedProfileIds = (linkedProfiles ?? []).map((p: any) => p.id).filter(Boolean);
-      let memberRoles: any[] = [];
-      if (linkedProfileIds.length) {
-        const { data } = await supabase.from("club_members").select("role").eq("club_id", event.club_id).in("player_profile_id", linkedProfileIds).eq("is_active", true);
-        memberRoles = data ?? [];
-      }
-      if (!memberRoles.length) {
-        const { data } = await supabase.from("club_members").select("role").eq("club_id", event.club_id).eq("profile_id", uid).eq("is_active", true);
-        memberRoles = data ?? [];
-      }
+      const memberRoles = myMembers;
       const roles = new Set(memberRoles.map((x: any) => x.role));
       allowOperateEvent = allowOperateEvent || (memberRoles.length > 0 && ["auto", "manual"].includes(event.event_mode ?? "auto"));
       allowViewVideoClickCounts = allowViewVideoClickCounts || roles.has("main_admin");
@@ -390,22 +356,13 @@ export default function EventDetailPage() {
       .eq("event_id", eventId)
       .order("created_at", { ascending: true }).order("id", { ascending: true });
         const participantRows = (pt ?? []) as any[];
-    const playerProfileIds = participantRows.map((r) => r.player_profile_id).filter(Boolean);
-    const profileIds = participantRows.map((r) => r.profile_id).filter(Boolean);
-
-    const { data: pps } = playerProfileIds.length
-      ? await supabase.from("player_profiles").select("id,display_name,is_active").in("id", playerProfileIds)
-      : { data: [] as any[] };
-    const { data: ps } = profileIds.length
-      ? await supabase.from("profiles").select("id,display_name").in("id", profileIds)
-      : { data: [] as any[] };
-
-    const playerProfileNameMap = new Map((pps ?? []).map((x: any) => [x.id, x.display_name]));
-    const profileNameMap = new Map((ps ?? []).map((x: any) => [x.id, x.display_name]));
+    const names = await readEventNames(supabase,eventId);
+    const playerProfileNameMap = new Map(names.filter(x=>x.kind==="player").map(x=>[x.id,x.display_name]));
+    const profileNameMap = new Map(names.filter(x=>x.kind==="account").map(x=>[x.id,x.display_name]));
 
     const activeMemberProfileIds = new Set<string>();
     if (event?.club_id) {
-      const activeMembers = await fetchActiveClubMemberParticipants(supabase, event.club_id);
+      const activeMembers = await fetchActiveClubMemberParticipants(supabase, event.club_id,eventId);
       for (const member of activeMembers) activeMemberProfileIds.add(member.playerProfileId);
     }
 
@@ -674,7 +631,7 @@ export default function EventDetailPage() {
   };
 
   useEffect(() => {
-    void loadAll();
+    void loadAll().catch(()=>setError("情報を取得できませんでした。再度読み込んでください"));
   }, [eventId]);
 
   useEffect(() => {
@@ -1230,7 +1187,7 @@ export default function EventDetailPage() {
       await loadAll();
       throw new Error("スコア登録済み試合が10試合未満になったため、選択中の特別モードは利用できません。通常モードを選択するかスコアを登録してください");
     }
-    const members = currentEvent.club_id ? await fetchActiveClubMemberParticipants(supabase, currentEvent.club_id) : [];
+    const members = currentEvent.club_id ? await fetchActiveClubMemberParticipants(supabase, currentEvent.club_id,eventId) : [];
     const memberIds = new Set(members.map(member => member.playerProfileId));
     const activeIds = (participantsResult.data ?? []).filter(p => p.status === "active" && (p.participant_type === "guest" || !currentEvent.club_id || memberIds.has(p.player_profile_id ?? p.profile_id))).map(p => p.id as string);
     const playedToday = requestedMode === "balance" ? new Set(scoredFriendlyMatches(eventId, historyMatches, knownIds).flatMap(match => match.players.map(p => p.participant_id))) : null;
@@ -1563,6 +1520,7 @@ export default function EventDetailPage() {
 
   return (
     <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-1.5 p-3 pb-20">
+      <GroupEventReturn />
       <EditableEventTitle statusLabel={tabReady ? `${eventStatus === "closed" ? "終了済み" : "開催中"} · ${eventMode === "manual" ? "手動" : "乱数"}${guestMode ? " · ゲストの一時保存" : ""}` : ""} label="イベント詳細" name={eventName} canEdit={guestMode || canManageEventName} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={() => void saveEventName()} onCancel={cancelEventNameEdit} />
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
       {message && <p role="status" className="text-sm text-emerald-400">{message}</p>}

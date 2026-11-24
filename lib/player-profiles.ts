@@ -1,4 +1,5 @@
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { readClubRoster } from "./group-read";
 import { canManageTargetMember } from "./permissions";
 
 export const PLAYER_PROFILE_COLUMNS = "id,linked_auth_user_id,display_name,bio,play_level,dominant_hand,preferred_position,activity_area,is_active,created_at";
@@ -43,8 +44,13 @@ export async function readProfileRows<T>(query: (start: number, end: number) => 
 }
 
 export async function fetchLinkedPlayerProfiles(supabase: SupabaseClient, userId: string): Promise<PlayerProfile[]> {
-  return readProfileRows<PlayerProfile>((start, end) => supabase.from("player_profiles")
-    .select(PLAYER_PROFILE_COLUMNS).eq("linked_auth_user_id", userId).eq("is_active", true).order("id").range(start, end));
+  // 詳細列のグローバルSELECT権限は開かず、本人限定の既存RPCで取得する。
+  const rows = await readProfileRows<PlayerProfile>((start, end) => supabase.rpc("get_my_player_profiles")
+    .order("id").range(start, end));
+  if (rows.some((row) => row.linked_auth_user_id !== userId || !row.is_active)) {
+    fail("本人の選手プロフィールを確認できません。再ログインしてください");
+  }
+  return rows;
 }
 
 export function profileDetailCount(profile: PlayerProfile) {
@@ -130,19 +136,21 @@ export async function ensureLinkedPlayerProfile(supabase: SupabaseClient, userId
 export async function saveLinkedPlayerProfile(supabase: SupabaseClient, userId: string, profileId: string, values: ProfileValues, expected: ProfileValues): Promise<PlayerProfile> {
   const { data: auth, error: authError } = await supabase.auth.getUser();
   if (authError || auth.user?.id !== userId) fail("ログイン情報が変わりました。プロフィールを再読み込みしてください", authError);
-  let query = supabase.from("player_profiles").update(values, { count: "exact" }).eq("id", profileId).eq("linked_auth_user_id", userId);
-  // 編集開始後に別の画面で保存された値も、古いフォームで上書きしない。
-  for (const field of Object.keys(values) as (keyof ProfileValues)[]) {
-    query = expected[field] === null ? query.is(field, null) : query.eq(field, expected[field]);
-  }
-  const { data, error, count } = await query.select(PLAYER_PROFILE_COLUMNS);
+  // 既存の本人専用RPCが認証・列ホワイトリスト・編集開始時の期待値を一括検証する。
+  // 通常のREST UPDATE ... RETURNINGは詳細列の広域GRANTを必要とするため使用しない。
+  const { data, error } = await supabase.rpc("save_my_player_profile", {
+    p_id: profileId, p_values: values, p_expected: expected,
+  });
   if (error) fail("プロフィールの更新に失敗しました", error);
-  if (!data || data.length !== 1 || (count !== null && count !== 1) || data[0].id !== profileId || data[0].linked_auth_user_id !== userId) {
+  const updated = Array.isArray(data) ? data.length === 1 ? data[0] : null : data;
+  if (!updated || updated.id !== profileId || updated.linked_auth_user_id !== userId || !updated.is_active) {
     fail("更新対象を確認できませんでした。別の画面で変更された可能性があります。プロフィールを再読み込みしてください");
   }
-  const { data: saved, error: readError } = await supabase.from("player_profiles").select(PLAYER_PROFILE_COLUMNS)
-    .eq("id", profileId).eq("linked_auth_user_id", userId).single();
-  if (readError || !saved || saved.id !== profileId || saved.linked_auth_user_id !== userId) fail("保存後のプロフィールを確認できませんでした。再読み込みして確認してください", readError);
+  const saved = (await fetchLinkedPlayerProfiles(supabase, userId))
+    .find((profile) => profile.id === profileId);
+  if (!saved || saved.linked_auth_user_id !== userId) {
+    fail("保存後のプロフィールを確認できませんでした。再読み込みして確認してください");
+  }
   if ((Object.keys(values) as (keyof ProfileValues)[]).some((field) => (saved[field] ?? "") !== (values[field] ?? ""))) {
     fail("保存後の内容が一致しません。再読み込みして確認してください");
   }
@@ -164,10 +172,8 @@ async function readManagedMember(supabase: SupabaseClient, expected: ClubMemberS
   const { data: admin, error: adminError } = await supabase.from("app_admins").select("id")
     .eq("profile_id", auth.user.id).eq("is_active", true).maybeSingle();
   if (adminError) fail("管理権限を確認できません", adminError);
-  const rows = await readProfileRows<ManagedClubMember>((start, end) => supabase.from("club_members")
-    .select("id,club_id,profile_id,player_profile_id,role,is_active,player_profiles(display_name,linked_auth_user_id,is_active)")
-    .eq("club_id", expected.club_id).order("id").range(start, end))
-    .catch(cause => fail("メンバーと管理権限の取得に失敗しました", cause instanceof Error ? cause.cause ?? cause : cause));
+  const rows = await readClubRoster(supabase, expected.club_id)
+    .catch(cause => fail("メンバーと管理権限の取得に失敗しました", cause));
   const profileOf = (row: ManagedClubMember) => Array.isArray(row.player_profiles) ? row.player_profiles[0] : row.player_profiles;
   const mine = rows.filter(row => row.is_active && (row.profile_id === auth.user!.id || (profileOf(row)?.is_active && profileOf(row)?.linked_auth_user_id === auth.user!.id)));
   const myRole = mine.some(row => row.role === "main_admin") ? "main_admin" : mine.some(row => row.role === "sub_admin") ? "sub_admin" : "member";

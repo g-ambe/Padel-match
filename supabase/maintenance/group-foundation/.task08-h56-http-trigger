@@ -1,0 +1,10 @@
+H56_REAL_SDK=1
+# Source schema-only read; real Auth and application SDK on synthetic local data.
+# Retry with sanitized SQL phase/line and permission classification.
+# Retry with managed default ACL equivalence gate; preserve app grants.
+# Compare exact function identities, definitions, owners and local execute ACL.
+# Reproduce exact relation ACL; compare full constraint records without collation order dependency.
+# Restore source column grants after table revokes; exact reviewed Instagram CHECK only on empty local table.
+# New approach: preserve restored CHECK, prove exact parsed terms/flags and actual valid/invalid inserts.
+# Fix source-confirmed OID JSON string vs integer comparison; separate catalog gates.
+# Narrow SQL expression parser (self-tests/source preflight) + actual CHECK insert probes; no raw node-tree equality.

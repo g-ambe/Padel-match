@@ -35,7 +35,7 @@ test('有効な同一履歴の個人・グループ・ペアの結果が改修�
       const b={individualRows:current.individual,individualMode:mode};
       assert.deepEqual(handler(groupPage,'rankedIndividuals',b)(),evaluate(legacySource(),'rankedIndividuals',b)());
     }
-    assert(db.calls.every(c=>c.method==='GET'));
+    assert(db.calls.every(c=>c.method==='GET'||(c.method==='POST'&&['get_club_stats_members','get_club_stats_player_names'].includes(c.table))));
   }
 });
 
@@ -197,12 +197,12 @@ test('1000試合以上・100イベント以上でも全履歴を取得し、旧�
 });
 
 test('取得失敗と空履歴を区別し、グループの古い戦績は残さない', async () => {
-  for(const table of ['events','club_members','event_participants','player_profiles','matches']) {
+  for(const table of ['events','get_club_stats_members','event_participants','get_club_stats_player_names','matches']) {
     const {tables}=fixture(), db=database(tables,{fail:c=>c.table===table});
     const state=await groupStats(db.s,false,{individual:['古い値'],pairs:['古い値'],events:['古い値']});
     assert.match(state.error,/取得できません/);
     assert.deepEqual(state.individual,[]);assert.deepEqual(state.pairs,[]);assert.deepEqual(state.events,[]);
-    assert(db.calls.every(c=>c.method==='GET'));
+    assert(db.calls.every(c=>c.method==='GET'||(c.method==='POST'&&['get_club_stats_members','get_club_stats_player_names'].includes(c.table))));
   }
   const {tables}=fixture();
   await assert.rejects(profileStats(database(tables,{fail:c=>c.table==='events'}).s),/確認できません/);

@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { createClient } = require('@supabase/supabase-js');
 // Nodeの直接TypeScript実行でも、Nextと同じ相対モジュールを解決する。
-require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./player-profiles','./permissions'].includes(specifier) ? specifier+'.ts' : specifier, context); } });
+require('node:module').registerHooks({ resolve(specifier, context, next) { return next(['./group-read','./player-profiles','./permissions'].includes(specifier) ? specifier+'.ts' : specifier, context); } });
 const {
   choosePlayerProfile, ensureAccountProfile, ensureLinkedPlayerProfile, fetchLinkedPlayerProfiles,
   fetchProfileUsage, saveLinkedPlayerProfile,
@@ -232,7 +232,7 @@ function membershipClient(options={}) {
   const manager = { id:managerId,club_id:groupId,profile_id:userId,player_profile_id:managerId,role:options.actorRole??'main_admin',is_active:options.actorActive??true,player_profiles:{display_name:'管理者',linked_auth_user_id:userId,is_active:true} };
   return client(call=>{
     if(call.table==='app_admins') return {data:options.superUser?[{id:'管理者ID'}]:[]};
-    if(call.table==='club_members' && call.method==='GET') return {data:[target,...(options.noMembership?[]:[manager])]};
+    if(call.table==='get_club_roster' && call.method==='POST') return {data:[target,...(options.noMembership?[]:[manager])]};
     if(call.method==='PATCH') {
       if(options.patch) return options.patch(call);
       return {data:[call.table==='player_profiles'?{id:detailId,display_name:call.body.display_name,linked_auth_user_id:null}:{...snapshot,...options.target,...call.body}],headers:{'Content-Range':'0-0/1'}};
@@ -249,7 +249,7 @@ test('連携済み選手も対象所属だけ退会・復帰でき、役職・�
     const patches=calls.filter(c=>c.method==='PATCH');assert.equal(patches.length,1);const call=patches[0];
     assert.equal(call.table,'club_members');assert.deepEqual(call.body,{is_active:active});
     for(const [key,value] of Object.entries({id:memberId,club_id:groupId,player_profile_id:detailId,role:'member',is_active:String(!active)})) assert.equal(call.url.searchParams.get(key),`eq.${value}`);
-    assert(!calls.some(c=>c.method==='POST'||c.method==='DELETE'||c.url.searchParams.get('select')?.split(',').includes('status')));
+    assert(!calls.some(c=>(c.method==='POST'&&c.table!=='get_club_roster')||c.method==='DELETE'||c.url.searchParams.get('select')?.split(',').includes('status')));
   }
 });
 for(const [name,response] of [
@@ -292,12 +292,10 @@ test('連携済み選手の役職変更は表示名・在籍状態・連携を�
 
 const { fetchActiveClubMemberParticipants } = require('../lib/event-participants.ts');
 const { getHistoricalGroupMatchTeams } = require('../lib/friendly-match-results.ts');
-test('新規イベント候補は所属のis_activeだけで取得し、旧状態列を要求しない',async()=>{
- const {supabase,calls}=client(call=>{
-   if(call.table==='club_members') {assert.equal(call.url.searchParams.get('is_active'),'eq.true');assert(!call.url.searchParams.has('status'));assert.equal(call.url.searchParams.get('select'),'player_profile_id,profile_id');return {data:[{player_profile_id:detailId,profile_id:null}]};}
-   return {data:[{id:detailId,display_name:'復帰した選手',is_active:true}]};
- });
- assert.deepEqual(await fetchActiveClubMemberParticipants(supabase,groupId),[{playerProfileId:detailId,displayName:'復帰した選手'}]);assert(calls.every(c=>c.method==='GET'));
+test('新規イベント候補を認可済みRPCで取得し、旧公開表へフォールバックしない',async()=>{
+ const {supabase,calls}=client(call=>{assert.equal(call.table,'get_club_selection_candidates');assert.deepEqual(call.body,{p_club_id:groupId});return{data:[{member_id:memberId,player_profile_id:detailId,display_name:'復帰した選手'}]};});
+ assert.deepEqual(await fetchActiveClubMemberParticipants(supabase,groupId),[{playerProfileId:detailId,displayName:'復帰した選手'}]);
+ assert.equal(calls.length,1);
 });
 test('退会者がいる過去の試合も4人の参加記録で成立判定し、残る在籍選手の試合を失わない',()=>{
  const players=[{participant_id:'退会したA',team:'A'},{participant_id:'在籍B',team:'A'},{participant_id:'在籍C',team:'B'},{participant_id:'在籍D',team:'B'}];
@@ -311,10 +309,10 @@ test('退会者がいる過去の試合も4人の参加記録で成立判定し�
 
 const { fetchHistoricalPlayerNames, historicalPlayerName } = require('../lib/event-participants.ts');
 test('退会者のチーム戦・公式戦の名前を在籍候補から切り離して読み、過去のスコア・参照を変更しない',async()=>{
- const {supabase,calls}=client(call=>{assert.equal(call.table,'player_profiles');return {data:[{id:detailId,display_name:'退会した本人の正式名'}]};});
- const names=await fetchHistoricalPlayerNames(supabase,[detailId,null,detailId]);
+ const {supabase,calls}=client(call=>{assert.equal(call.table,'get_event_player_names');assert.deepEqual(call.body,{p_event_id:'event-history'});return {data:[{id:detailId,display_name:'退会した本人の正式名',kind:'player'}]};});
+ const names=await fetchHistoricalPlayerNames(supabase,[detailId,null,detailId],{eventId:'event-history'});
  assert.equal(historicalPlayerName(detailId,null,names),'退会した本人の正式名');
  assert.equal(historicalPlayerName(detailId,'古い登録名',names),'退会した本人の正式名');
  assert.equal(historicalPlayerName(null,'イベントゲスト',names),'イベントゲスト');
- assert(calls.every(call=>call.method==='GET'));assert(!calls.some(call=>call.table==='club_members'));
+ assert(calls.every(call=>call.table==='get_event_player_names'));assert(!calls.some(call=>['club_members','player_profiles'].includes(call.table)));
 });

@@ -16,10 +16,22 @@ export type ProfileMergePreview = {
   review_token: string;
 };
 export type ProfileLinkRequest = {
-  id: string; club_id: string; source_player_profile_id: string; target_auth_user_id: string;
+  id: string; club_id: string; source_player_profile_id: string;
   source_display_name: string; club_name: string; status: LinkStatus; created_at: string; expires_at: string;
 };
-export type ProfileLinkDetail = Omit<ProfileLinkRequest, "source_display_name"> & Partial<ProfileMergePreview> & { is_recipient: boolean };
+type ProfileLinkDetailBase = {
+  id: string; club_id: string; club_name: string; status: LinkStatus; created_at: string; expires_at: string;
+};
+export type RecipientLinkName = {
+  group_display_name_suggestion: string;
+  group_display_name_current: string | null;
+  group_visibility: "public" | "private";
+};
+export type ProfileLinkDetail = ProfileLinkDetailBase & (
+  | ({ detail_scope: "recipient"; is_recipient: true } & Partial<ProfileMergePreview> & Partial<RecipientLinkName>)
+  | { detail_scope: "manager"; is_recipient: false; source_display_name: string | null;
+      group_membership: { role: string; is_active: boolean; created_at: string } | null }
+);
 export type AccountCandidate = { auth_user_id: string; display_name: string; identifier: string };
 
 export async function profileLinkRpc<T>(supabase: SupabaseClient, name: string, args: Record<string, unknown>): Promise<T> {
@@ -37,6 +49,50 @@ export async function requestPlayerProfileLink(supabase: SupabaseClient, clubId:
 }
 export async function reviewPlayerProfileLink(supabase: SupabaseClient, requestId: string, decision: "approved" | "rejected" | "cancelled", reviewToken?: string) {
   return profileLinkRpc<{ status: LinkStatus; merge_id?: string }>(supabase, "review_player_profile_link", { p_request_id: requestId, p_decision: decision, p_review_token: reviewToken ?? null });
+}
+export function hasRecipientLinkName(request: ProfileLinkDetail): request is ProfileLinkDetail & RecipientLinkName & { is_recipient: true; detail_scope: "recipient" } {
+  return request.is_recipient === true && request.detail_scope === "recipient" && request.status === "pending"
+    && typeof request.group_display_name_suggestion === "string"
+    && (request.group_display_name_current === null || typeof request.group_display_name_current === "string")
+    && (request.group_visibility === "public" || request.group_visibility === "private");
+}
+export class NamedProfileLinkError extends PlayerProfileError {
+  readonly code?: string;
+  constructor(message: string, code?: string) { super(message); this.code = code; }
+}
+export function isValidProfileLinkDisplayName(input: string) {
+  const name = input.trim();
+  return !!name && Array.from(name).length <= 120 && !/[\u0000-\u001f\u007f-\u009f]/u.test(name);
+}
+export type NamedProfileLinkApproval = { status: "approved"; merge_id: string; club_display_name: string; public_name_confirmed: boolean };
+export async function approveNamedPlayerProfileLink(supabase: SupabaseClient, request: ProfileLinkDetail,
+  input: { name: string; inheritanceConsent: boolean; publicConfirmation: boolean }): Promise<NamedProfileLinkApproval> {
+  if (!hasRecipientLinkName(request) || !request.target_profile_id || !request.review_token
+    || !Number.isFinite(Date.parse(request.expires_at)) || Date.parse(request.expires_at) <= Date.now()
+    || !input.inheritanceConsent) throw new NamedProfileLinkError("本人の有効な申請と引継ぎ内容を確認して同意してください", "42501");
+  const name = input.name.trim();
+  if (!isValidProfileLinkDisplayName(input.name)) {
+    throw new NamedProfileLinkError("グループ内表示名は制御文字を含めず120文字以内で入力してください", "22023");
+  }
+  const publicConfirmation = request.group_visibility === "public";
+  if (publicConfirmation && !input.publicConfirmation) throw new NamedProfileLinkError("公開グループへの表示を確認してください", "42501");
+  let result;
+  try {
+    result = await supabase.rpc("review_player_profile_link_named", {
+      p_request_id: request.id, p_review_token: request.review_token, p_club_display_name: name,
+      p_expected_club_display_name: request.group_display_name_current,
+      p_public_confirmation: publicConfirmation && input.publicConfirmation,
+    });
+  } catch { throw new NamedProfileLinkError("通信に失敗しました。入力と確認は保持しています。再送する前に再読み込みして申請状況を確認してください"); }
+  const { data, error } = result;
+  if (error) throw new NamedProfileLinkError(error.code === "PT409"
+    ? "仮登録名が更新されています。入力と確認は保持しています。再読み込みして内容を再確認してください"
+    : "承認できませんでした。入力と確認は保持しています。再読み込みして申請状況と引継ぎ内容を確認してください", error.code);
+  if (!data || data.status !== "approved" || typeof data.merge_id !== "string" || !data.merge_id
+    || data.club_display_name !== name || data.public_name_confirmed !== publicConfirmation) {
+    throw new NamedProfileLinkError("承認結果を確認できません。入力と確認は保持しています。再送せず再読み込みして申請状況を確認してください");
+  }
+  return data as NamedProfileLinkApproval;
 }
 export function effectiveJoinStatus(request: { status: LinkStatus; expires_at?: string | null; created_at: string }): LinkStatus {
   const expires = request.expires_at ? Date.parse(request.expires_at) : Date.parse(request.created_at) + 7 * 86400000;

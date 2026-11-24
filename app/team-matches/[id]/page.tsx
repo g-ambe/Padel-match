@@ -1,4 +1,5 @@
 "use client";
+import { GroupEventReturn } from "@/components/group-event-return";
 
 import { TeamMatchShortcut } from "@/components/team-match-shortcut";
 import { TeamRoundGenerator } from "@/components/team-round-generator";
@@ -21,6 +22,7 @@ import { EventResultRankings } from "@/components/event-result-rankings";
 import { EventResultHistory, ResultMatchCard } from "@/components/event-result-history";
 import { EventResultShare } from "@/components/event-result-share";
 import { TeamResultDetails } from "@/components/team-result-details";
+import { readEventCandidates } from "@/lib/group-read";
 import { fetchActiveClubMemberParticipants, fetchHistoricalPlayerNames, historicalPlayerName } from "@/lib/event-participants";
 import { createShareToken, getOfficialAccess, officialStatusLabel, type OfficialGroup } from "@/lib/official-matches";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -154,10 +156,8 @@ export default function FriendlyTeamMatchDetailPage() {
     if(sideIds.length){const result=await supabase.from("clubs").select("id,name").in("id",sideIds); if(result.error)setError("チームのグループ名を取得できませんでした");else setGroups(previous=>[...new Map([...previous,...(result.data??[]).map(g=>({...g,role:"member" as const}))].map(g=>[g.id,g])).values()]);}
     const loadedMembers: Record<TeamSideKey, MemberOption[]>={team_a:[],team_b:[]};
     for (const side of sideRows) if (side.club_id) {
-      const roster=await fetchActiveClubMemberParticipants(supabase, side.club_id);
-      const membership=await supabase.from("club_members").select("id,player_profile_id,profile_id").eq("club_id",side.club_id).eq("is_active",true);
-      if(membership.error)throw membership.error;
-      loadedMembers[side.side]=roster.map(m=>({...m,membershipId:membership.data?.find(cm=>(cm.player_profile_id??cm.profile_id)===m.playerProfileId)?.id}));
+      loadedMembers[side.side]=(await readEventCandidates(supabase,id,side.club_id)).map(m=>({playerProfileId:m.player_profile_id,displayName:m.display_name,membershipId:m.member_id}));
+
     }
     setMembers(loadedMembers);
     const { data:guestRows }=await supabase.from("event_team_guests").select("id,side,guest_name").eq("event_id",id).order("created_at", { ascending: true });
@@ -174,10 +174,10 @@ export default function FriendlyTeamMatchDetailPage() {
       const confirmed = previous.find(match => match.id === row.id);
       return { ...row, team_a_score: confirmed?.team_a_score ?? null, team_b_score: confirmed?.team_b_score ?? null, result: confirmed?.result ?? "undecided",pair_1_score:confirmed?.pair_1_score??null,pair_2_score:confirmed?.pair_2_score??null,pair_result:confirmed?.pair_result??null };
     }));
-    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,matchRows.flatMap(match=>[match.team_a_player1_profile_id,match.team_a_player2_profile_id,match.team_b_player1_profile_id,match.team_b_player2_profile_id]))); }
+    try { setHistoricalNames(await fetchHistoricalPlayerNames(supabase,matchRows.flatMap(match=>[match.team_a_player1_profile_id,match.team_a_player2_profile_id,match.team_b_player1_profile_id,match.team_b_player2_profile_id]),{eventId:id})); }
     catch { setError("過去の試合の選手名を取得できませんでした"); }
   };
-  useEffect(()=>{void load();},[id]);
+  useEffect(()=>{void load().catch(()=>setError("情報を取得できませんでした。再度読み込んでください"));},[id]);
   useEffect(() => {
     if (unsavedScoreCount) reloadAfterScores.current = true;
     else if (reloadAfterScores.current) { reloadAfterScores.current = false; void load().catch(() => setError("保存後の再読み込みに失敗しました")); }
@@ -319,6 +319,7 @@ export default function FriendlyTeamMatchDetailPage() {
     <Card title="開催操作"><div className="space-y-3 text-sm">{unsavedScoreCount>0&&<p role="status" className="text-xs text-amber-300">保存中・保存失敗のスコアが{unsavedScoreCount}件あります。保存完了・再試行後に終了できます。</p>}{event.status==="active"&&canManage&&<><select className="w-full rounded-xl bg-zinc-800 p-3" value={closeMode} onChange={(e)=>setCloseMode(e.target.value as any)}><option value="official">戦績に反映する</option><option value="record_only">記録用にする</option></select><button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" disabled={generationBusy||isClosingEvent||unsavedScoreCount>0} onClick={()=>void closeOrReopen("closed")}>フレンドリーチームマッチ終了</button></>}{event.status==="closed"&&<><p>フレンドリーチームマッチ終了済み（{event.stats_mode==="record_only"?"記録用":"戦績に反映する"}）</p>{canManage&&<button className="w-full rounded-xl bg-accent py-2 font-bold text-black" onClick={()=>void closeOrReopen("active")}>フレンドリーチームマッチ再開</button>}{canManage&&(showDelete?<div className="space-y-2 rounded-xl border border-red-500/60 p-3"><label className="flex gap-2 text-xs"><input type="checkbox" checked={deleteOk} onChange={(e)=>setDeleteOk(e.target.checked)}/>削除すると元に戻せません</label><button className="w-full rounded bg-red-600 py-2 font-bold" onClick={()=>void deleteEvent()}>フレンドリーチームマッチ削除</button></div>:<button className="w-full rounded-xl border border-red-500/70 py-2 font-bold text-red-200" onClick={()=>setShowDelete(true)}>フレンドリーチームマッチ削除</button>)}</>}</div></Card>
 </div></details>;
   return <main data-friendly-scoreboard className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 pb-20 text-zinc-100">
+      <GroupEventReturn />
     <TeamMatchShortcut enabled={tab==="matches"&&canManage&&event.status!=="closed"} buttons={[manualButton,randomButton]} onClick={()=>addArea.current?.scrollIntoView({block:"center",behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?"auto":"smooth"})}/>
     <EditableEventTitle label="開催" name={event.name} canEdit={canManage} isEditing={isEditingEventName} draft={eventNameDraft} onDraftChange={setEventNameDraft} onStartEdit={startEventNameEdit} onSave={()=>void saveEventName()} onCancel={cancelEventNameEdit} />
     <p className="text-xs text-zinc-400">{officialStatusLabel(event.status)} · フレンドリーチーム戦</p>

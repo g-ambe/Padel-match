@@ -297,7 +297,7 @@ IG_DEFINITION=r"CHECK (((instagram_username IS NULL) OR (((length(instagram_user
 # Preserve the restored constraint; prove the only reviewed equivalence.
 IG_CATALOG="""SELECT jsonb_build_object(
  'server_major',current_setting('server_version_num')::int/10000,
- 'tree',c.conbin::text,'expression',pg_get_expr(c.conbin,c.conrelid),
+ 'expression',pg_get_expr(c.conbin,c.conrelid),
  'flags',jsonb_build_array(c.contype,c.convalidated,c.connoinherit,c.conislocal,c.coninhcount,c.condeferrable,c.condeferred,c.conkey),
  'attribute',jsonb_build_array(a.attname,a.atttypid::int,a.attcollation::int))
  FROM pg_constraint c JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=c.conkey[1]
@@ -307,57 +307,82 @@ IG_CASES=[(None,True),("",False),("a",True),("_",True),("A9",True),("a.b",True),
  ("a..b",False),(".a",False),("a.",False),("a-b",False),("a b",False),("a\\b",False),
  ("a@b",False),("日本語",False),("a\nb",False),("a"*30,True),("a"*31,False),("a.b.c",True)]
 
-def check_tree(raw):
-    # Strict parser for the limited built-in CHECK node types of this
-    # single constraint. Preserve every token except parser locations and
-    # associative grouping of consecutive AND nodes; never normalize CONST.
-    require(isinstance(raw,str) and len(raw)<20000,"instagram_tree_shape")
-    tokens=re.findall(r"[{}()\[\]]|[^\s{}()\[\]]+",raw)
-    require(0<len(tokens)<4000,"instagram_tree_token_limit")
-    closes={"{":"}","(":")","[":"]"}
-    pos=0
-    def parse(depth=0):
-        nonlocal pos
-        require(depth<80 and pos<len(tokens),"instagram_tree_parse")
-        tok=tokens[pos];pos+=1
-        if tok not in closes:
-            require(tok not in closes.values(),"instagram_tree_unexpected_close")
-            return tok
-        children=[]
-        while pos<len(tokens) and tokens[pos]!=closes[tok]:
-            children.append(parse(depth+1))
-        require(pos<len(tokens),"instagram_tree_unclosed")
-        pos+=1
-        if tok!="{":
-            return (tok,tuple(children))
-        require(children and children[0] in ("BOOLEXPR","NULLTEST","VAR","OPEXPR","FUNCEXPR","CONST"),"instagram_tree_unknown_node")
-        tag=children[0];fields=[];i=1
-        while i<len(children):
-            field=children[i];i+=1
-            require(isinstance(field,str) and field.startswith(":") and i<len(children),"instagram_tree_unknown_field")
-            value=children[i];i+=1
-            # CONST :constvalue is a byte count followed by a bracketed array.
-            if field==":constvalue":
-                require(i<len(children) and isinstance(children[i],tuple) and children[i][0]=="[","instagram_const_bytes")
-                value=(value,children[i]);i+=1
-            if field==":location":
-                require(isinstance(value,str) and re.fullmatch(r"-?\d+",value),"instagram_tree_location")
-                continue
-            fields.append((field,value))
-        if tag=="BOOLEXPR" and dict(fields).get(":boolop")=="and":
-            args=dict(fields).get(":args")
-            require(isinstance(args,tuple) and args[0]=="(","instagram_tree_and_args")
-            flattened=[]
-            for child in args[1]:
-                if isinstance(child,tuple) and child[0]=="BOOLEXPR" and dict(child[1]).get(":boolop")=="and":
-                    require(set(dict(child[1]))=={":boolop",":args"},"instagram_tree_nested_and_fields")
-                    flattened.extend(dict(child[1])[":args"][1])
-                else: flattened.append(child)
-            fields=[(k,("(",tuple(flattened)) if k==":args" else v) for k,v in fields]
-        return (tag,tuple(fields))
-    result=parse()
-    require(pos==len(tokens),"instagram_tree_trailing_tokens")
+# pg_node_tree is an internal representation, not a stable SQL interchange
+# format. Validate the server-deparsed expression with a deliberately narrow
+# grammar: only the four reviewed atoms and AND/OR/parentheses are accepted.
+# No blanket whitespace, regex, literal or operator normalization.
+IG_PATTERN=r"^[A-Za-z0-9_](\.?[A-Za-z0-9_])*$"
+IG_SQL_TOKEN=re.compile(r"\s*(?:([Ee]'(?:\\.|''|[^'\\])*'|'(?:''|[^'])*')|([A-Za-z_][A-Za-z_0-9]*|\d+|::|>=|<=|~|\(|\)))")
+
+def instagram_expression(raw):
+    require(isinstance(raw,str) and len(raw)<2000,"instagram_expression_shape")
+    tokens=[];pos=0
+    while pos<len(raw):
+        if not raw[pos:].strip(): break
+        m=IG_SQL_TOKEN.match(raw,pos)
+        require(m is not None,"instagram_expression_unknown_token")
+        tok=m.group(1) or m.group(2).lower()
+        if m.group(1):
+            # Exactly the reviewed regex, in either standard string or
+            # explicitly escaped SQL literal notation; never decode arbitrary SQL.
+            standard="'"+IG_PATTERN+"'"
+            escaped="E'"+IG_PATTERN.replace("\\","\\\\")+"'"
+            require(tok==standard or tok==escaped or tok=="e"+escaped[1:],"instagram_regex_literal_diff")
+            tok=standard
+        tokens.append(tok);pos=m.end()
+    require(0<len(tokens)<200,"instagram_expression_token_count")
+    position=0
+    def take(expected):
+        nonlocal position
+        require(position<len(tokens) and tokens[position]==expected,"instagram_expression_expected_"+expected.replace("(","open").replace(")","close").replace("::","cast").replace(">=","ge").replace("<=","le").replace("~","regex"))
+        position+=1
+    def current():
+        return tokens[position] if position<len(tokens) else None
+    def atom():
+        if current()=="(":
+            take("(");node=expr();take(")");return node
+        if current()=="length":
+            take("length");take("(");take("instagram_username");take(")")
+            op=current()
+            require(op in (">=","<="),"instagram_length_operator")
+            take(op);take("1" if op==">=" else "30")
+            return "min" if op==">=" else "max"
+        take("instagram_username")
+        if current()=="is":
+            take("is");take("null");return "null"
+        take("~");take("'"+IG_PATTERN+"'");take("::");take("text")
+        return "regex"
+    def chain(op,next_level):
+        nodes=[next_level()]
+        while current()==op:
+            take(op);nodes.append(next_level())
+        if len(nodes)==1:return nodes[0]
+        out=[]
+        for node in nodes:
+            if isinstance(node,tuple) and node[0]==op:out.extend(node[1:])
+            else:out.append(node)
+        return (op,*out)
+    def conjunction():return chain("and",atom)
+    def expr():return chain("or",conjunction)
+    result=expr()
+    require(position==len(tokens),"instagram_expression_trailing")
     return result
+
+def instagram_parser_selftest():
+    original=IG_DEFINITION[6:]
+    flat=r"((instagram_username IS NULL) OR ((length(instagram_username) >= 1) AND (length(instagram_username) <= 30) AND (instagram_username ~ '^[A-Za-z0-9_](\.?[A-Za-z0-9_])*$'::text)))"
+    expected=("or","null",("and","min","max","regex"))
+    require(instagram_expression(original)==instagram_expression(flat)==expected,"instagram_parser_positive_selftest")
+    negative=(flat.replace(">= 1",">= 0"),flat.replace("<= 30","<= 31"),
+              flat.replace("AND","OR",1),flat.replace(r"\.?",".?"),
+              flat.replace("IS NULL","IS NOT NULL"),flat+" OR true")
+    for expression in negative:
+        try:
+            result=instagram_expression(expression)
+        except RuntimeError:
+            continue
+        require(result!=expected,"instagram_parser_negative_selftest")
+    print("H56 PASS: Instagram narrow SQL parser positive/negative self-tests",flush=True)
 
 def prove_instagram_equivalence(expected_rows,actual_rows,source):
     want=rows_by_identity(expected_rows,5,3,"source_constraint")
@@ -383,8 +408,10 @@ def prove_instagram_equivalence(expected_rows,actual_rows,source):
         require(catalog.get("attribute")==["instagram_username",25,100],
                 "instagram_constraint_attribute_diff_"+label)
     print("H56 PASS: Instagram source/local typed catalog metadata match",flush=True)
-    require(check_tree(source["tree"])==check_tree(local["tree"]),"instagram_parsed_expression_diff")
-    print("H56 PASS: Instagram CHECK parsed expression and flags match (AND grouping only)",flush=True)
+    expected=("or","null",("and","min","max","regex"))
+    require(instagram_expression(source["expression"])==expected,"instagram_source_logical_expression_diff")
+    require(instagram_expression(local["expression"])==expected,"instagram_local_logical_expression_diff")
+    print("H56 PASS: source/local server-deparsed CHECK logical expression, exact literals/operators and flags match",flush=True)
     # Exercise the actual restored table CHECK, copied by PostgreSQL to a
     # temporary table. No changes to the application relation or real rows.
     values=",".join("("+str(i)+","+("NULL" if value is None else b.literal(value))+"::text,"+("true" if accepted else "false")+")" for i,(value,accepted) in enumerate(IG_CASES))

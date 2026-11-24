@@ -90,6 +90,7 @@ def after_auth(url,key,actors):
     require([[x["version"],x["name"]] for x in history()]==[list(x) for x in pkg.BASELINE+pkg.RELEASE],"h61_final_history")
     print("H61 PASS: exact three-file package, 22 original+3 formal history rows, H56 SDK and H58 actual shared browser/HTTP",flush=True)
     print("H61 LIMITATION: synthetic local package rehearsal only; independent release review, latest backup, production target/deploy and approval remain required",flush=True)
+    return ids
 
 if __name__=="__main__":
     try:

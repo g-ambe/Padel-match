@@ -314,3 +314,8 @@
 - [#45316028583](https://github.com/g-ambe/Padel-match/actions/runs/45316028583) HEAD 9ebb278da2bddf6141ce859c6caffe06beeff45b：source/local PG17・typed catalog gate PASS、ACL再現成功。Instagram CHECKの `instagram_parsed_expression_diff` で停止、実INSERT/全fingerprint/SDK未到達。cleanup PASS。内部node差の具体fieldは未特定。
 - PG内部node-tree表現の完全比較を撤回。173 driver 9e0bd0784126c13d37d0a1305223924706ca39cb / f53e7b892874e2cf4f83d081a73043d9e352b672：source/localのpg_get_exprが返すCHECK式を4つの既知atom（IS NULL、length>=1、length<=30、厳密なregex literal）とAND/OR括弧だけを許す限定grammarで解析。優先順位と同種結合のグループ化を正規化し期待ASTに完全一致必須。未知token、違う定数/regex/演算子/論理式は停止。正常2表記と負例6パターンの自己テストをcapture/test前に実行し、source論理式もlocal起動前にゲート。PG17/flags/attribute照合と実CHECK複製temp表19件INSERT/ROLLBACK、他207制約/全ACL/RLS/その他fingerprintを維持。DB制約の変更なし。内部木差は未解明のため、同等性は新gateの結果で判断。
 - 再実行HEAD d2edcaad5a02f7014bfd700696e7402aa420ab0e。H56未完了、Draft #265 NO-GO。Prod/Stage書込み・Cloudflare/main/mergeなし。
+
+## 35. H56 SUCCESS・H57 実ブラウザ検証着手（2026-11-24）
+
+- [H56 #45316582803](https://github.com/g-ambe/Padel-match/actions/runs/45316582803) tested HEAD d2edcaad5a02f7014bfd700696e7402aa420ab0e、job 138184770656 SUCCESS。実Auth3役/RLS、schema restore、関数103・relation44・列386・index103・policy106・trigger33・constraint208、Instagram CHECK論理式/19ケース、Phase1＋atomic Phase2/H51/H52、実SDK15件・独立DB事後8件、cleanup全PASS。内部node tree/文字列表現差は既知4atom論理式と実CHECKで解消。実業務行・本番鍵のHTTP利用なし。
+- H57 scope: H56合成ローカルDBを再利用する専用runnerで、375px light/darkの実ブラウザログイン、公開/非公開グループの権限境界、本人連携の同意・承認、通常加入の申請/管理者承認とDB事後検証、OpenNext/Workersローカルpreviewを検証。旧モック応答とは区別。H56検証を弱めない。今回はapp仕様・migration変更なし、既存Draft #265のみ。共有イベント/復元競合/画像バイナリ/他機能回帰は別の残件として追跡。Prod/Stage書込み・main merge・Cloudflare deployなし、NO-GO維持。

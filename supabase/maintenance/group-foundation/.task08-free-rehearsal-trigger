@@ -2,4 +2,4 @@ H43_NO_COST_ISOLATED=1
 H45_REAL_GROUP_DATA=1
 H48_REAL_LEGACY_TEST=1
 H51_SAFE_FORWARD_FIX_TEST=1
-# H51: safe legacy approval guard, post-COMMIT data preserved, offline only.
+# H51 retry: missing private function OID query corrected; no hosted writes.

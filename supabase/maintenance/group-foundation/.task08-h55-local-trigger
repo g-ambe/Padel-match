@@ -1,0 +1,2 @@
+H55_LOCAL_AUTH=1
+# Synthetic local Supabase only; no hosted keys or deployment.

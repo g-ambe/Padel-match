@@ -199,3 +199,15 @@
 - 最新の**実全件バックアップ**に関するH49の古い記述を上書き：2026/11/22 09:20 JSTに[Actions #44966082064](https://github.com/g-ambe/Padel-match/actions/runs/44966082064)で**166表を暗号化取得・別job隔離復元・行/値/RLS/ACL照合すべてPASS**、非公開Draft Release ID454086112保管済み。ただし**今回のH50ではこの全件アーカイブをダウンロードしていない**。直近の本番変更を守るには実公開直前の再バックアップが必要。
 - **H50は局所的な破壊的復旧実証PASSだが、実本番無損失rollbackではない**。本番DB・Stage DB・Cloudflare/Worker/mainは変更せず、既存PR #265 Draft維持、Supabase有料環境を作成せず無料Runnerだけを使用。
 - **TASK-08リリース判定NO-GO継続**。次は旧/新Worker×旧/新DBの実HTTP互換と旧アプリの限定forward-fix、プライバシーの維持、Migration正式履歴・Cloudflare配信制御の確認。DB全体を過去snapshotへ戻すことを常用の切戻しとしない。
+
+## 19. H51：Phase2 COMMIT後の「データを巻き戻さない」旧連携承認セーフガード候補PASS（2026-11-24）
+
+詳細：[H51結果 `166_h51_safe_forward_fix_legacy_link_rehearsal_result.md`](166_h51_safe_forward_fix_legacy_link_rehearsal_result.md)／検証SQL[`164_h51_postcommit_safe_legacy_approval_guard_CANDIDATE.sql`](164_h51_postcommit_safe_legacy_approval_guard_CANDIDATE.sql)／隔離テスト[`165_h51_postcommit_no_loss_guard_rehearsal.py`](165_h51_postcommit_no_loss_guard_rehearsal.py)／[Actions #45300504350](https://github.com/g-ambe/Padel-match/actions/runs/45300504350) **SUCCESS**。
+
+- 既存H45/H48無料・ネットワーク切断PostgreSQLで、Prod READ ONLYの**6表151行限定列＋18表4,279行全元列**を復元し、Phase1 **6工程**→Phase2 **11工程**の独立COMMITまで再PASS。新しいコード経路をユーザー認可付き別名・公開同意を通らず旧Workerから呼び出せることが重要なリスク。
+- **旧`main`の本人連携画面**は旧`review_player_profile_link(...,'approved',review_token)`を呼び、**新仕様のグループ別表示名・公開の確認は行わない**。その旧RPCがPhase2にも残っているため、旧Worker単体rollbackでは**同意欠落の承認**が可能になり得る。実ブラウザでの悪用再現までは未実施。
+- **H51候補SQLは隔離用・本番未承認**：元のreview処理を非公開`profile_link_private`へ複製して直接EXECUTEを禁止、同意付きの`review_player_profile_link_named`だけを元処理へ内部接続。旧public`review_player_profile_link`は`approved`を**42501拒否**し、`rejected/cancelled`のコード経路は元処理へ委譲。匿名`club_members`全表SELECTは再GRANTしない。
+- **実測PASS**：認証済み旧`approved`拒否、匿名review拒否、内部元実装のanon/authenticated直接呼出し不可、旧`rejected`を既存approved申請で呼んでも状態維持、新namedの内部接続・EXECUTE権限、既存24表元データハッシュ/ACL/RLS/Migration件数不変、Phase2後に隔離DBへ追加COMMITしたマーカー残存。**破壊的なsnapshot復元は実施していない**。
+- 初回[#45300126925](https://github.com/g-ambe/Padel-match/actions/runs/45300126925)はテストコードで未存在privileged関数を文字列からOID解決しようとしてPostgres`42883`、H51 SQL実行前にSTOP。null安全な`to_regprocedure`へ変更後に再実行[#45300504350](https://github.com/g-ambe/Padel-match/actions/runs/45300504350)で**全工程SUCCESS**。
+- **本番GOは引き続きNO-GO**。現在の本番実申請3件は全てapprovedにつき、**新named正常承認／本来のpending拒否・取消のE2Eは未実施**。旧Workerの連携承認は意図的に利用不可のまま、旧管理者画面DTOも一部一致しない。ブラウザ/実JWT/PostgREST/Cloudflare Worker全導線と本人同意新規pending fixtureの実証が別ゲート。正式SQLの組込み・同意を省く旧承認経路の閉鎖タイミングは公開前に審査。
+- **Prod/StageへはDDL/DMLせず、Cloudflare/main/PR mergeなし、無料Runnerのみ。** 既存PR #265 Draft維持。Github Project項目更新は未実施、Issue #264／親 #215への実績コメントと本台帳で記録。

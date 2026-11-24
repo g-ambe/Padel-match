@@ -235,3 +235,10 @@
 - 切替前に新Workerのビルドを成功させ、必要に応じて短時間のメンテナンス/対象操作停止を設計する。DB適用後は直ちに新Workerを配信し、配信成功・実バージョン・DB履歴・スモーク結果を確認する。失敗時は安全な操作停止・forward-fixを優先。旧Workerへの単純rollbackや破壊的な全件DB巻戻しを標準復旧にしない。
 - 最新の全件外部バックアップと復元、R2の扱い、正式Migration履歴/二重適用防止、main自動deploy制御、明示的な本番承認は引き続き必要。H54の次工程は新アプリと新DBの実HTTP・ブラウザ検証に必要な環境・契約の整理。H53の並行操作等の未検証項目は別途リスクに応じて評価する。
 - **今回の方針承認は検証範囲の変更であり、本番SQL適用・配信・main mergeの許可ではない。** 本番NO-GO、PR #265 Draftを維持する。今回の変更は進捗台帳のみ。
+
+## 23. H54：安全な一括切替リハーサルと新アプリCI（2026-11-24、結果確認中）
+
+- [170 H54 driver](170_h54_atomic_cutover_rehearsal.py) を追加。Phase1 COMMIT後、Phase2 145＋H51 164＋H52 168＋隔離用履歴を一つのtransactionで処理し、直前故障（SQLSTATE 22012）、Phase1への復帰、正常COMMIT、重複拒否、H52/H53の再試験を要求。[DB run #45308564260](https://github.com/g-ambe/Padel-match/actions/runs/45308564260) tested HEAD 1cd17708fc17822f4ebc76013edb88779126462e。Python compile成功、DB runの完了ログは未確認。隔離専用2099履歴・markerは正式Migrationではない。
+- 新アプリ回帰16ファイル＋TypeScript＋OpenNext build専用CI追加（dummy localhostのみ、Prod/Stage credentialなし、deployなし）。[初回 #45308698957](https://github.com/g-ambe/Padel-match/actions/runs/45308698957) tested HEAD def66b2b258077f6acfda649905e6d6785682aae：66/66 PASS、TypeScript PASS、OpenNextは /bin/sh: bun: not found でFAIL（Nextビルド開始前）。固定Bun PATHのCIのみ修正 115b452a4ceb、[retry #45308838062](https://github.com/g-ambe/Padel-match/actions/runs/45308838062) tested HEAD 10b448a4701f8db980dba8e7d6e4d478b5ee22cf、完了未確認。
+- [171 新アプリ×新DB実Auth/HTTP受入計画](171_h54_new_app_new_db_http_acceptance_plan.md) を追加。実データ入り隔離DBをHTTP公開しない。実Auth/HTTP・SDK・ブラウザは別の合成データ専用ローカルSupabaseで確認する設計、既存Stageの構造差/未検証範囲とA1〜A10受入条件・Codex担当を記録。環境の構築・実HTTP受入は未実施。
+- 次：両runのログとcleanup確認、失敗時は原因別に修正。新アプリ×新DBの合成環境実Auth/HTTP・画面試験（Codex担当とSQL担当分離）へ。正式Migration/履歴整合、リリース順序/バックアップ・復元・本番承認は残る。NO-GO、PR #265 Draft維持。Prod/Stage書込み、Cloudflare変更、main merge、追加有料環境なし。

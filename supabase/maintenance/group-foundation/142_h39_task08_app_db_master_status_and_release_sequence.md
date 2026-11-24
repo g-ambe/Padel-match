@@ -372,3 +372,10 @@
 - H60は実画像bytes＋ローカルR2エミュレーションであり、本番R2・実端末画像アップロードUI・認証済み全機能の実ブラウザ網羅は未検証。本番GOの承認ではない。
 - 次工程H61候補：正式Migrationパッケージ（Phase1→atomic Phase2/H51/H52→新Worker→共有確認→H12/H35後続遮断）、テスト専用marker/2099履歴除去、実本番履歴/依存/ACL/RLS/自動配信・現行Worker復帰点のREAD ONLY再照合、独立レビュー・隔離適用と停止/前進修正手順の確定。正式候補と検証証跡の同等性を確認。新旧長期互換は対象外だが切替時のセキュリティは維持。最新暗号化backup/復元・R2保全・本番承認・適用・配信後確認は残件。
 - Draft #265 NO-GO、本番/Stage書込み・Cloudflare deploy・main mergeなし。Projectフィールド同期未確認。
+
+## 45. H61 正式手動Migration候補・適用順確定、隔離検証開始（2026-11-24）
+
+- Prod READ ONLY：履歴22件version/name前回一致、履歴表version PK/nullable statements,name,created_by,idempotency_key(UNIQUE),rollback、postgres、Phase1/2未適用、匿名名簿SELECT/旧click3 RPC有効、last-main guard、player_profiles FK17件。Cloudflare READ ONLY：現役Worker #389 ID051e062c-05ba-40a8-a015-690038832b52、直前#388 ID8455ee9b-fd5e-4f43-8503-4746764e1953、build trigger GET成功0件。main自動配信の旧記録との差はH62 dashboard/経路確認必須、配信なし。
+- [178 compiler](178_h61_release_package.py) 56090d3、元6SQL blob固定、オフラインで3SQL＋SHA256 manifest生成。version 20261124044001 task08_prod_phase1_additive / 20261124044002 task08_prod_phase2_atomic (H51/H52同transaction) / 20261124044003 task08_prod_share_anon_close (新Worker正規共有確認後)。既存22件と段階ごとの厳密history gate、同時適用防止lock、DDL＋実SQL segments履歴1件のatomic commit。H52 marker条件を実H51 named/旧承認/anon ACL契約へ置換、H12合成token照合SELECTのみ除去、2099/marker/合成token無し。過去のmigrationファイルは変更しない。管理手動パッケージでありdb push禁止。正式適用は未承認。
+- 173 optional release_runner（85dbb87）、175 optional close_runner（f9430f0）、179 exact package rehearsal（a4e3af5）、workflow 168e381。[180 runbook](180_h61_production_release_runbook.md) a36cdde。H61 [#45328528428](https://github.com/g-ambe/Padel-match/actions/runs/45328528428) tested HEAD 2d354c24506646499a6abbb567d8b1a0e32c24ba、実行開始。隔離本番schema＋合成Authで順序違い拒否、各3段階の末尾障害注入/履歴ACL rollback/正常commit/repeat拒否、H56 SDK・H58正規共有前後を実施予定。結果未確定。H54実データ保全は別証跡。
+- H62残件：独立Codexレビュー、最新全件暗号化backup/独立restore、R2実ファイル保全・配信経路/固定build/停止窓・本番承認。H63 DB→新Worker即時→正規共有→SQL3→利用再開。SQL2確定後は旧Worker単純rollbackや広いACL再付与禁止、停止継続/限定forward-fix、過去全DB復元は追加承認必要。Draft #265 NO-GO、本番/Stage書込み・Cloudflare deploy・main mergeなし。Projectフィールド同期未確認。

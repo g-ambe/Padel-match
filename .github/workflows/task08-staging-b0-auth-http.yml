@@ -193,6 +193,7 @@ jobs:
           python3 -B -m py_compile supabase/maintenance/group-foundation/155_h46_real_membership_role_rollback.py
           python3 -B -m py_compile supabase/maintenance/group-foundation/159_h48_real_legacy_data_preservation.py
           python3 -B -m py_compile supabase/maintenance/group-foundation/162_h50_post_commit_rollback_rehearsal.py
+          python3 -B -m py_compile supabase/maintenance/group-foundation/165_h51_postcommit_no_loss_guard_rehearsal.py
 
       - name: Install existing pinned and verified Supabase CLI
         run: python3 -B supabase/maintenance/event-fixed-pairs/cloud_backup.py install-cli
@@ -220,6 +221,9 @@ jobs:
             fi
             if grep -qx 'H50_POSTCOMMIT_ROLLBACK=1' supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger; then
               export TASK08_H50_ROLLBACK_TEST=1
+            fi
+            if grep -qx 'H51_SAFE_FORWARD_FIX_TEST=1' supabase/maintenance/group-foundation/.task08-free-rehearsal-trigger; then
+              export TASK08_H51_SAFE_FORWARD_FIX_TEST=1
             fi
             python3 -B supabase/maintenance/group-foundation/153_h45_real_group_data_migration_rehearsal.py
           else

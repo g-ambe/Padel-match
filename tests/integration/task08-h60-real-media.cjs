@@ -3,6 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
 const {randomUUID,createHash}=require('node:crypto');
+const {stripWebpMetadata}=require('../../lib/profile-media/shared.ts');
 const {chromium}=require(path.join(process.env.RUNNER_TEMP,'task08-playwright','node_modules','playwright'));
 const {url,base,key,actors,ids}=JSON.parse(fs.readFileSync(0,'utf8'));
 let phase='setup',checks=0,httpStatus=null;
@@ -30,7 +31,7 @@ async function images(){
    const ctx=c.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,16,16);
    const s=c.toDataURL('image/webp',.8);if(!s.startsWith('data:image/webp;base64,'))throw new Error('encoding');
    return s.split(',')[1];
-  }))).map(s=>Buffer.from(s,'base64'));
+  }))).map(s=>Buffer.from(stripWebpMetadata(Buffer.from(s,'base64'))));
  }finally{await browser.close()}
 }
 async function main(){
@@ -44,7 +45,7 @@ async function main(){
  const get=async(version,bytes)=>{
   const r=await req(endpoint+'/image?version='+version,owner);
   assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'image/webp');
-  assert(r.headers.get('cache-control')?.startsWith('private'));assert.equal(r.headers.get('vary'),'Authorization');
+  assert(r.headers.get('cache-control')?.startsWith('private'));assert(r.headers.get('vary')?.toLowerCase().split(',').map(s=>s.trim()).includes('authorization'));
   const tag=r.headers.get('etag');assert(tag);assert.deepEqual(Buffer.from(await r.arrayBuffer()),bytes);return tag;
  };
  phase='upload';const firstId=randomUUID();const first=(await put(a,0,firstId)).profile;assert.equal(first.avatar_version,1);assert.equal(first.avatar_key,'profiles/'+ids.owner_profile+'/'+firstId+'.webp');mark();

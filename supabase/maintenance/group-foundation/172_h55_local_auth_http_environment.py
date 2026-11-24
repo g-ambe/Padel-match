@@ -66,7 +66,7 @@ def request(url,path,key,token=None,body=None):
         try: return e.code,json.loads(e.read())
         except (ValueError,UnicodeError): return e.code,None
 
-def main():
+def main(after_auth=None):
     require(os.environ.get("GITHUB_ACTIONS")=="true" and
             os.environ.get("GITHUB_REPOSITORY")=="g-ambe/Padel-match" and
             os.environ.get("GITHUB_REF")=="refs/heads/codex/task-08-group-foundation",
@@ -134,6 +134,7 @@ NOTIFY pgrst,'reload schema';
 COMMIT;
 """)
     actors=[]
+    credentials=[]
     for role in ("owner","recipient","outsider"):
         email="h55-"+role+"-"+secrets.token_hex(4)+"@example.com"
         password=secrets.token_urlsafe(24)
@@ -148,6 +149,7 @@ COMMIT;
         status,value=request(url,"/rest/v1/rpc/h55_whoami",key,token,body={})
         require(status==200 and value==uid,"jwt_auth_uid_mismatch_"+role)
         actors.append((uid,token))
+        credentials.append({'role':role,'uid':uid,'email':email,'password':password})
         print("H55 PASS: real signup/password JWT/getUser/PostgREST identity "+role,flush=True)
     owner,owner_token=actors[0]
     outsider,outsider_token=actors[2]
@@ -168,6 +170,8 @@ COMMIT;
     require(status==401,"invalid_jwt_not_denied")
     print("H55 PASS: RLS own row, cross-account read/write denial, anonymous and invalid JWT",flush=True)
     print("H55 LIMITATION: local infrastructure sentinel only; app schema/RPC/UI not tested",flush=True)
+    if after_auth is not None:
+        after_auth(url,key,credentials)
 
 if __name__=="__main__":
     try:

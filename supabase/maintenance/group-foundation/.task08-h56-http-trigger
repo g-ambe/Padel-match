@@ -1,3 +1,4 @@
 H56_REAL_SDK=1
 # Source schema-only read; real Auth and application SDK on synthetic local data.
 # Retry with sanitized SQL phase/line and permission classification.
+# Retry with managed default ACL equivalence gate; preserve app grants.

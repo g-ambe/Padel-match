@@ -84,3 +84,15 @@
 - Supabase Database Backups：<https://supabase.com/docs/guides/platform/backups>
 - Supabase Free plan backups：<https://supabase.com/kb/faqs/platform/free-plan-backups>
 - Cloudflare Worker rollback：<https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/>
+
+---
+
+## H50・2026-11-24の進捗（H49時点の判定を更新）
+
+本ファイルの「最新バックアップ未取得」は**当時の記述**。**2026-11-22 09:20 JST取得の166表全件暗号化バックアップと独立restore検証は[Actions #44966082064](https://github.com/g-ambe/Padel-match/actions/runs/44966082064)でPASS**。GitHub Draft Release ID454086112に暗号化・非公開保管済み。11/24の本番運用データ保全のためには引き続きリリース直前再取得が必要。
+
+さらに[H50 #45297128444](https://github.com/g-ambe/Padel-match/actions/runs/45297128444)で、実際の本番構造＋業務24表（6表限定列/18表全列）を使用してPhase1→Phase2をCOMMITし、隔離DBの**破壊的な旧schema+元データへの復元・旧RPC/権限/Migration履歴照合をPASS**した。後続の試験用行は復元で消えることも確認。
+
+**重要**：これは**全166表の11/22暗号化アーカイブを今回H50で復元した**という意味でも、**本番で後続の試合・得点を失わない切り戻しが実現した**という意味でもない。Phase2後に旧匿名membership参照が拒否され、本人連携RPC関数が変更されることを実証したため、**旧Workerへの単純切替は危険**。無損失forward-fix/旧Worker＋新DBの実HTTP互換テストは未完了。**本番GOは引き続きNO-GO**。
+
+詳細：[H50結果](163_h50_post_commit_rollback_rehearsal_result.md)。

@@ -11,7 +11,7 @@
 - SHA256（01）：`7ff436793d1cfab29e6cfff51f6aad3d0452fdcf02b1a76fcc3c9f5d84cc4cec`
 - SHA256（02）：`c58d8b7de3e4540486f578b295a705609797a41c2dadd0708a6fbde6a93f4dc6`
 
-0048/0049の実DDLと実際のproof関数、0054の実member関数を使った合成PGliteで構造・正負例を確認した。本番カタログは正本コメントのGPT読み取り調査を参照し、今回新たにProd/Stageへ接続・適用していない。正式Migrationの採番/確定は独立レビュー後。`supabase db push`は使わず、01/02を連続適用しない。
+0048/0049の実DDLと実際のproof関数、0054の実member関数を使った合成PGliteで構造・正負例を確認した。本番カタログは正本コメントのGPT読み取り調査を参照し、今回新たにProd/Stageへ接続・適用していない。追加の独立DB契約確認後、02と同一バイトの正式ファイル`20261124104619_group_member_avatar_read.sql`を固定した（未適用）。`supabase db push`は使わず、01/02/正式ファイルを連続適用しない。
 
 既存の表/列/RLS/ACL・画像変更RPC・R2構成は変更しない。新規RPCはpostgres/空search_path/SECURITY DEFINER、authenticated＋既存Worker proofのみ。所属判定に管理者・スーパー管理者の例外を追加しない。対象の有効な連携、private所有者、現在のactive objectとの一致が必要。
 
@@ -40,10 +40,10 @@
 
 コマンド：`node --test tests/group-member-avatar-api.test.cjs tests/group-member-avatar-session.test.cjs tests/group-member-avatar-db.test.cjs tests/profile-media-api.test.cjs tests/profile-avatar-position.test.cjs tests/profile-avatar-position-db.test.cjs`。ブラウザは`tests/browser/group-member-avatars.cjs`をローカルNext・既存のChromiumで実行。既存の無関係な全件テストは再実行しない。
 
-試験の区別：PGliteはSET ROLE/合成claims、API単体は依存注入、ブラウザは合成Auth/REST応答。**実Supabase Auth/PostgREST＋実Worker＋クラウドR2を通した新APIの統合試験、物理iPhone、本番実画像は未検証**。既存の過去PASSや本単体試験をその代わりとはしない。
+初回試験の区別：PGliteはSET ROLE/合成claims、API単体は依存注入、ブラウザは合成Auth/REST応答。追加の[最終限定検証](FINAL_VALIDATION.md)では、実ローカルAuth/PostgREST/OpenNext Worker/R2バインディングの17項目とDB事後確認が成功した。**クラウドR2そのもの、物理iPhone、本番実画像は未検証**。ローカル成功をクラウド環境の成功とはしない。
 
 ## リリース・残件
 
-Draft維持。独立DB/APIレビュー、必要な実Auth/HTTP統合確認、正式Migration確定、本番適用/配信の明示承認が残る。承認後は追加RPCを先に適用してからアプリを配信し、実画面を確認する。候補未適用の環境では新APIはfail closedとなり標準アイコンへ戻る。
+Draft維持。SQL 02の独立DB契約確認・ローカル実Auth/HTTP統合と正式Migrationファイル固定は完了。最新本番前提の照合、適用パッケージの最終承認、クラウドR2/実機確認、本番適用/配信の明示承認が残る。承認後は追加RPCを先に適用してからアプリを配信し、実画面を確認する。未適用環境では新APIはfail closedとなり標準アイコンへ戻る。適用・停止・復旧の具体的な手順は[最終限定検証](FINAL_VALIDATION.md#4-正式適用手順承認前今回実行しない)を参照。
 
 新API停止/未使用を確認した後の撤回対象は新RPC `public.get_group_member_avatar_for_worker(uuid,uuid,text)`だけ。CASCADEや既存画像API/RLSの緩和はしない。今回、本番/StageへのSQL・データ変更、R2書込み、設定変更、mainマージ、デプロイは行わない。

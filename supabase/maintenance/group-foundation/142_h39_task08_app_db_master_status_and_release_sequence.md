@@ -249,3 +249,10 @@
 - [新アプリretry #45308838062](https://github.com/g-ambe/Padel-match/actions/runs/45308838062) tested HEAD 10b448a4701f8db980dba8e7d6e4d478b5ee22cf：66 tests、66 PASS、fail/skip 0、TypeScript PASS、Next compile PASS、OpenNext worker.js生成、Worker/assets BUILD_ID一致PASS。固定Bun PATH修正のみで初回CI環境障害を解消。dummy localhostでbuildのみ、実配信なし。両run以降のHEAD b15f4eb23cd07e014aa21857fb1f97dfc7a9df39 は台帳更新のみ。
 - **H54 SQL/新アプリCI部分PASS。実Auth/HTTP/ブラウザ受入は未実施**。次は171計画に従い、合成データ専用ローカル環境で新アプリと新DBをつなぐ受入検証。アプリ実装/試験はCodex担当、SQL/DB契約と独立安全審査はChatGPT担当。正式Migration履歴と原子性、最新バックアップ・復元、配信制御と明示本番承認も残る。
 - Prod/Stage書込み、Cloudflare変更、main merge、追加有料環境なし。PR #265 Draft／本番NO-GO維持。Projectフィールド未更新。
+
+## 25. H55：合成専用ローカルSupabaseの実Auth/PostgREST環境ゲート（2026-11-24）
+
+- H54 SQL/アプリCI PASSを受け、171計画の次工程へ。ProdのMigration履歴をREAD ONLYで再確認し22件（0047〜0053＋手動セキュリティ15件）。旧SQL全件の番号順再生は本番相当性を保証しないため、アプリschema再構築は過去の実適用定義/ACLと照合して進める。
+- [172 H55 probe](172_h55_local_auth_http_environment.py) と専用workflow `.github/workflows/task08-h55-local-auth.yml` を追加。既存checksum検証済みCLI v3.0.0、新規runner/一時ディレクトリ/loopback Docker network、合成3アカウント。実signup/password sign-in/getUser/JWT→PostgREST auth.uid()照合、合成sentinelテーブルの自己行insert/select・第三者read/write拒否・anon拒否・改ざんJWT拒否。管理者SQLは合成fixtureのみ、公開用keyでHTTP実行、終了時stack/volume/network/一時dir削除。実データ入りLocalRestoreをネットワークに接続しない。Prod/Stage鍵・データ・Cloudflare認証は渡さない。
+- [H55 Actions #45310943180](https://github.com/g-ambe/Padel-match/actions/runs/45310943180)、tested HEAD b35a0035670ff08d35477065c9073fa73caff58c、起動確認・結果未確定。今回は環境ゲートのみ。H55 PASS後は実アプリschema/RPC/ACL/FKの合成環境構築・H52/H53の実HTTP COMMIT・新アプリSDK/375px画面受入へ。正式Migration確定・本番適用とは別。
+- Prod/Stage書込み、Cloudflare変更、main merge、追加有料環境なし。既存Draft #265、NO-GO維持。Projectフィールド未更新。

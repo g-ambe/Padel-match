@@ -47,6 +47,33 @@ FINGERPRINT=f"""SELECT jsonb_build_object(
  'indexes',(SELECT coalesce(jsonb_agg(to_jsonb(i) ORDER BY schemaname,tablename,indexname),'[]'::jsonb) FROM pg_indexes i WHERE schemaname IN {S})
 )"""
 
+# Managed defaults belong to the Supabase platform, not the application.
+# Compare the existing local managed defaults instead of trying to ALTER a
+# role that postgres cannot administer. No membership or privilege escalation.
+MANAGED_DEFAULTS="""SELECT coalesce(jsonb_agg(jsonb_build_array(n.nspname,d.defaclobjtype,
+ (SELECT coalesce(jsonb_agg(jsonb_build_array(a.grantee::regrole::text,a.privilege_type,a.is_grantable)
+  ORDER BY a.grantee::regrole::text,a.privilege_type,a.is_grantable),'[]'::jsonb)
+  FROM aclexplode(d.defaclacl) a)) ORDER BY n.nspname,d.defaclobjtype),'[]'::jsonb)
+ FROM pg_default_acl d JOIN pg_namespace n ON n.oid=d.defaclnamespace
+ WHERE pg_get_userbyid(d.defaclrole)='supabase_admin' AND n.nspname='public'"""
+MANAGED_DEFAULT_LINE=re.compile(r"^ALTER DEFAULT PRIVILEGES FOR ROLE (?:supabase_admin|\"supabase_admin\") IN SCHEMA (?:public|\"public\") GRANT (?:ALL(?: PRIVILEGES)?|[A-Z, ]+) ON (?:TABLES|SEQUENCES|FUNCTIONS) TO (?:postgres|anon|authenticated|service_role);[ \t]*$",re.I)
+
+def preserve_managed_defaults(rendered,expected):
+    # Only this exact reviewed class of app-dump statements can be omitted.
+    # No CREATE/ALTER/GRANT for app objects or postgres defaults is filtered.
+    local=query(MANAGED_DEFAULTS,"local_managed_default_acl")
+    require(local==expected and len(expected)==3,"managed_default_acl_diff")
+    lines=rendered.splitlines(keepends=True)
+    kept=[];count=0
+    for line in lines:
+        if MANAGED_DEFAULT_LINE.fullmatch(line.rstrip("\r\n")):
+            count+=1
+        else:
+            kept.append(line)
+    require(count>0,"managed_default_acl_dump_statements_missing")
+    print("H56 PASS: existing managed supabase_admin default ACL matches source; skip "+str(count)+" redundant managed-only statements",flush=True)
+    return "".join(kept)
+
 def trusted():
     require(os.getenv("GITHUB_ACTIONS")=="true" and os.getenv("GITHUB_REPOSITORY")=="g-ambe/Padel-match" and os.getenv("GITHUB_REF")=="refs/heads/codex/task-08-group-foundation","trusted_runner_required")
     require(ROOT.parent==Path(os.environ["RUNNER_TEMP"]),"runner_temp_required")
@@ -71,8 +98,10 @@ def capture():
         catalog=snap.query(h44.remote_schema_catalog_query())
         require(catalog["legacy_fixed_pairs"] and catalog["legacy_media"] and not catalog["new_shared_rpc"],"source_baseline_changed")
         fingerprint=snap.query(FINGERPRINT)
+        managed_defaults=snap.query(MANAGED_DEFAULTS)
+        require(len(managed_defaults)==3,"source_managed_default_acl_review_required")
         history=snap.query("SELECT coalesce(json_agg(json_build_object('version',version,'name',name) ORDER BY version),'[]'::json) FROM supabase_migrations.schema_migrations")
-        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog}))
+        (ROOT/"metadata.json").write_text(json.dumps({"fingerprint":fingerprint,"history":history,"catalog":catalog,"managed_defaults":managed_defaults}))
         snap.dump(["--schema-only","--format=custom","--no-comments","--no-security-labels","--no-publications","--no-subscriptions"]+["--schema="+x for x in SCHEMAS],ROOT/"app-schema.dump")
     print("H56 PASS: source app schema only captured; no managed Auth/Storage or real rows",flush=True)
 
@@ -97,6 +126,8 @@ def local_sql(s,phase):
             (r"must be (?:a )?superuser","superuser_required"),
             (r"permission denied to (?:create|alter)","ddl_permission"),
             (r"permission denied to set role","role_permission"),
+            (r"permission denied to change default privileges","default_acl_permission"),
+            (r"must be member of role","role_membership_required"),
             (r"grantor must","grantor_permission"),
             (r"permission denied","other_permission")):
             if re.search(pattern,r.stderr,re.I):
@@ -117,6 +148,8 @@ def local_sql(s,phase):
                             schema=name
                             break
                     break
+        if 0<line<=len(s.splitlines()) and re.search(r"^\s*ALTER DEFAULT PRIVILEGES FOR ROLE (?:\"?supabase_admin\"?)\b",s.splitlines()[line-1],re.I):
+            category="ALTER_MANAGED_DEFAULT_PRIVILEGES"
         require(False,phase+"_line_"+str(line)+"_state_"+state+"_"+reason+"_"+category+"_"+schema)
     return r.stdout
 
@@ -133,6 +166,7 @@ def restore_and_test(url,key,credentials):
     rendered=b.run(b.DOCKER+["run","--rm","--interactive","--network","none",b.probe.POSTGRES_IMAGE,"pg_restore","--schema-only","--no-owner","--no-comments","--file","-"],phase="H56_schema_render_failed",data=(ROOT/"app-schema.dump").read_bytes(),timeout=300).decode()
     rendered=re.sub(r"(?m)^CREATE SCHEMA public;[ \t]*$","",rendered)
     require(not re.search(r"(?mi)^(CREATE (?:SCHEMA|TABLE) (?:auth|storage|vault)\b|CREATE (?:PUBLICATION|SUBSCRIPTION|SERVER|USER MAPPING)\b)",rendered),"unexpected_schema_archive_content")
+    rendered=preserve_managed_defaults(rendered,metadata["managed_defaults"])
     print("H56: restore schema-only archive into local app schemas",flush=True)
     local_sql(rendered,"schema_restore")
     actual=query(FINGERPRINT)

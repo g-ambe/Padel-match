@@ -212,6 +212,7 @@ def main() -> None:
     root.mkdir(mode=0o700, exist_ok=False)
     h48 = None
     h50 = None
+    h51 = None
     h50_baseline = None
     legacy_data = None
     legacy_cols = None
@@ -230,6 +231,14 @@ def main() -> None:
                 "H50_module_not_present")
         h50 = importlib.util.module_from_spec(module_spec)
         module_spec.loader.exec_module(h50)
+    if os.environ.get("TASK08_H51_SAFE_FORWARD_FIX_TEST") == "1":
+        require(h48 is not None, "H51_requires_H48_full_legacy")
+        module_spec = importlib.util.spec_from_file_location(
+            "task08_h51", HERE / "165_h51_postcommit_no_loss_guard_rehearsal.py")
+        require(module_spec is not None and module_spec.loader is not None,
+                "H51_module_not_present")
+        h51 = importlib.util.module_from_spec(module_spec)
+        module_spec.loader.exec_module(h51)
     try:
         ca = b.probe.custom_ca_file()
         require(ca is not None, "H45_CA_missing")
@@ -309,6 +318,11 @@ def main() -> None:
                 "H45_repeat_application_prevention_failed")
         print("H45 ALL PASS: real club/membership subset survived Phase1 + Phase2;"
               " no Prod/Stage writes", flush=True)
+        if h51 is not None:
+            require(h48_baseline is not None and h48_integrity is not None,
+                    "H51_baseline_missing")
+            h51.run(target,data,legacy_data,legacy_cols,h48_baseline,
+                    h48_integrity,require,b,h44,sys.modules[__name__],h48)
         if h50 is not None:
             require(h50_baseline is not None and h48_baseline is not None
                     and h48_integrity is not None, "H50_baseline_missing")

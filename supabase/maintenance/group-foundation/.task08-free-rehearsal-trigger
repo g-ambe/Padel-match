@@ -1,4 +1,5 @@
 H43_NO_COST_ISOLATED=1
 H45_REAL_GROUP_DATA=1
 H48_REAL_LEGACY_TEST=1
-# H48 second attempt: corrected optional module import scope.
+H50_POSTCOMMIT_ROLLBACK=1
+# H50: isolated only; Phase2 COMMIT, old client deny, destructive rollback test.

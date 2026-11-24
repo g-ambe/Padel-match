@@ -348,3 +348,9 @@
 
 - [H58 #45322761561](https://github.com/g-ambe/Padel-match/actions/runs/45322761561) tested HEAD d96bf2f923b676125e4906ee7cefd032aa32e2b5、job 138204971734 SUCCESS。H55/H56全ゲート再PASS、H34合成fixture再現、TypeScript/OpenNext build ID/local Worker起動PASS。匿名HTTP/375px共有画面の遮断前10、既存H12/H35遮断候補のlocal適用後13、共有OFF後1の計24判定PASS。独立DB click3表の件数各0→2→4→4、対象scope一致、referrer NULL。無効/別種token・旧匿名click RPC・7表直接GET拒否、正規token導線維持、共有OFF後click no-op、cleanup PASS。
 - 合成ローカルのみ。実利用token、実YouTube再生、実機、認証済み全イベント回帰、チーム対決等の全形態は今回対象外。匿名遮断候補の正式本番適用は未実施。次工程H59候補は復元後編集拒否・同時承認/名前変更等の競合と、既存結果の非破壊検証。R2バイナリ・全回帰・正式migration/backup/releaseは残件。Draft #265 NO-GO、Prod/Stage書込み・Cloudflare deploy・main mergeなし。
+
+## 41. H59 復元・同時操作の実HTTP/DB安全性検証開始（2026-11-24）
+
+- TASK-08-03 / #264、parent #215、Draft #265同branch。H56成功基盤再利用。`176_h59_restore_and_concurrency.py`（0e0f6fe）・`.github/workflows/task08-h59-restore.yml`（fbc3135）。本番schema-only READ ONLY capture以外は隔離local、合成Auth・通常試合4人/戦績fixtureのみ。既存app・復元SQL・migration本体変更なし。
+- 試合得点変更後の旧承認token拒否・全関連行digest不変。実HTTP2接続を同じadvisory lockの待ち状態に置き、本人二重承認で1成功/1拒否・監査1件・得点/試合/選手枠等不変を確認予定。既存04_restore_reviewed_merge.sqlを監査ID1件挿入のみでROLLBACK試行、合成local限定で末尾COMMITに変更して実復元、元プロフィール/所属/参加行と履歴の完全照合、別統合/本人media維持、再復元拒否。同一CASから実HTTP2本の表示名変更、club row lock待ちを実測し1成功/1 HTTP409、実本人編集後の復元拒否・関連16表digest不変を確認予定。全競合/旧監査/実業務行の復元を保証するものではない。
+- [H59 #45325329728](https://github.com/g-ambe/Padel-match/actions/runs/45325329728)、tested HEAD f03674166b79d6821b478cd1287261d5dccd577e、実行中。未完了。失敗時はphase/SQLSTATE/実競合観測を確認し原因特定、無条件retry禁止。H57/H58成功記録維持。Prod/Stage書込み・Cloudflare deploy・main mergeなし、追加有料環境なし。Projectフィールド同期未確認。

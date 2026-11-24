@@ -296,3 +296,9 @@
 - PostgreSQL 17 REVOKE仕様（https://www.postgresql.org/docs/17/sql-revoke.html）によりtable REVOKEは対応するcolumn ACLも取り消す。Prod READ ONLYで実column ACL付与者postgres、既知role、grant optionなしを確認。Instagram CHECKの本番定義・validated=true・正規表現バックスラッシュ1文字を読み取り、0048定義と照合。
 - 173 driver ed057432bf979245b45ae6eb21a264b097acde09：relation ACL後にcolumn ACL完全再現（構造値一致、付与者/権限/role限定）、source/local比較時standard_conforming_strings=on。制約は対象1件のみ・本番定義がレビュー済み文字列と完全一致・元も先もvalidated・空の合成localテーブルであることを必須にして再構築し、全208件を完全照合。その他の差分は停止。制約削除による恒久緩和なし。今回の修正はlocal restoreだけ。
 - 再実行HEAD b98d31d54c8e598145c513949d4fd05d5e85b53c。結果未確定。次はcolumn/constraint/full fingerprintとPhase1/2/SDK/DB事後確認。復元差分がなお残るなら現方式を停止してH54検証済み隔離schema構築方式を土台にした別経路を検討し、同じ原因の盲目的retry禁止。PR #265 Draft/NO-GO、Prod/Stage書込み・Cloudflare/main/mergeなし。
+
+## 32. H56 CHECK再構築FAIL、定義文字列ではなく解析木・実制約の同等性証明へ変更（2026-11-24）
+
+- [#45314506577](https://github.com/g-ambe/Padel-match/actions/runs/45314506577) HEAD b98d31d54c8e598145c513949d4fd05d5e85b53c：restore/H55/managed defaults、関数余分53・table余分454削除、column60追加完了。単一Instagram CHECKの再構築後も `instagram_check_exact_reproduction_failed`。全fingerprint最終PASS・SDK未到達。cleanup PASS。
+- 以前のCHECK DROP/ADD方式を撤回。Prod READ ONLYでPG17.6、conbin、conkey=3、validated、属性型text/default collationを確認。sourceの構文木は0048のBETWEEN由来の入れ子AND（length >=1、<=30）とregexのAND。pg_get_constraintdefの再パースによるAND平坦化が有力仮説。PostgreSQL 17 pg_constraint docs参照。173 driver 5247eef4ff9ae6fdaa699ad87b109c8637ffc71f：復元済み制約をそのまま保持。source/local PG17・制約flags・対象属性・内部構文木を照合し、限定されたnode型の全field/CONST値/演算子・順序を保持、parser locationと同じANDの入れ子構造のみ正規化。一致した場合のみ単一CHECKの表示文字列差を同等と扱う。実テーブルのCHECKをLIKE INCLUDING CONSTRAINTSで複製したローカルtemp tableへの19件の実INSERTで許可/拒否、対象制約名を確認しROLLBACK。他207制約と全ACL/RLS/他fingerprintは厳密比較。実際の制約を落とさない。source/local解析木不一致、未知node、動作差は停止。
+- 再実行HEAD f1e87a7d2e5c6af22bf264eceacf06a903001c6a。H56未完了。従来の同じSQL文字列再構築の反復を止め、意味と動作の証明に切り替えた。Prod/Stage書込み・Cloudflare/main/mergeなし、Draft #265 NO-GO。

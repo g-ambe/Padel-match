@@ -35,7 +35,7 @@ BEGIN
  OR (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE name='task08_prod_phase2_atomic')<>1
  THEN RAISE EXCEPTION 'H52_media_candidate_requires_isolated_post_H51'; END IF;
 
- SELECT count(*) INTO v_fk_count
+ SELECT CASE WHEN count(*)=3 AND count(DISTINCT t.relname)=3 THEN 3 ELSE 0 END INTO v_fk_count
  FROM pg_constraint c
  JOIN pg_class t ON t.oid=c.conrelid
  JOIN pg_namespace n ON n.oid=t.relnamespace

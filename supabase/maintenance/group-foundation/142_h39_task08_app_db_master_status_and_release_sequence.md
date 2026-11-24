@@ -188,3 +188,14 @@
 - PR branchは`main`より**469コミットahead/1 behind**、main側の1コミットは`AGENTS.md`のタスク管理/本番承認/検証ルール拡充。現在のPR branchのAGENTS.mdは旧版。これを取り込み、最新PR HEADのCI/Cloudflare互換性を再検証する。
 - Issue #262メール招待、#241同一グループメンバーだけの写真表示、#264公開直近開催の一部要件が未実装。Phase1/2限界とTASK-08全体未完了を区別する。
 - **本番Migration/Worker/main/PR mergeは未実施**。GO条件：最新本番全件外部バックアップ＋隔離復元成功、Phase2 COMMIT**後**の逆/forward-fixテストPASS、旧/新Worker×旧/新DBの互換テスト、Migration履歴正式採番・再実行防止、Cloudflare自動deploy制御、最新mainルール/PR HEAD CI、安全な手順とユーザーの本番GO。
+
+## 18. H50：本番の実データによるPhase2 COMMIT後の切り戻しリハーサル（2026-11-24）
+
+詳細：[H50結果 `163_h50_post_commit_rollback_rehearsal_result.md`](163_h50_post_commit_rollback_rehearsal_result.md)／[Actions #45297128444](https://github.com/g-ambe/Padel-match/actions/runs/45297128444) **SUCCESS**。
+
+- 11/24最新READ ONLYの本番DB定義をネットワーク隔離Docker Postgres17に復元し、既存H45グループ関係**6表151行・限定列**＋H48通常/チーム/公式試合・固定ペア/プロフィール画像/施設等**18表4,279行・全元列**を導入。Phase1 6工程COMMIT→Phase2 11工程COMMITを再実行し、全列/元列データと権限・公開名簿14名（linked同意待ち4名、未連携10名）をPASS。
+- **Phase2 COMMIT後**、旧anonの`club_members`直接SELECTが実際に拒否されること、本人連携詳細RPCの関数定義が旧版と異なることを確認。**旧Cloudflare Workerだけ戻してもDB契約は戻らない**。匿名への`club_members`全表SELECTを再GRANTする危険な互換化は実施しない。
+- 隔離DBに後続の試験用書込みをCOMMIT→**元のschema.dump＋24表の取込済み本番実データから破壊的に再構築**して、旧ACL・RPC関数定義・Migration台帳（22件）・データ照合をPASS。追加した後続レコードは復旧で**消滅**した。**戻せるが後続正常データを失い得る**ことを実証。
+- 最新の**実全件バックアップ**に関するH49の古い記述を上書き：2026/11/22 09:20 JSTに[Actions #44966082064](https://github.com/g-ambe/Padel-match/actions/runs/44966082064)で**166表を暗号化取得・別job隔離復元・行/値/RLS/ACL照合すべてPASS**、非公開Draft Release ID454086112保管済み。ただし**今回のH50ではこの全件アーカイブをダウンロードしていない**。直近の本番変更を守るには実公開直前の再バックアップが必要。
+- **H50は局所的な破壊的復旧実証PASSだが、実本番無損失rollbackではない**。本番DB・Stage DB・Cloudflare/Worker/mainは変更せず、既存PR #265 Draft維持、Supabase有料環境を作成せず無料Runnerだけを使用。
+- **TASK-08リリース判定NO-GO継続**。次は旧/新Worker×旧/新DBの実HTTP互換と旧アプリの限定forward-fix、プライバシーの維持、Migration正式履歴・Cloudflare配信制御の確認。DB全体を過去snapshotへ戻すことを常用の切戻しとしない。

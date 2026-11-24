@@ -5,3 +5,4 @@ H51_SAFE_FORWARD_FIX_TEST=1
 H52_PENDING_LINK_TEST=1
 # H52 synthetic pending fixture and rollback; no hosted writes.
 # H52 retry: sanitized failing SQL statement diagnostics only.
+# H52: test reviewed 0048 FK compatibility, guarded source references and canonical media retention.

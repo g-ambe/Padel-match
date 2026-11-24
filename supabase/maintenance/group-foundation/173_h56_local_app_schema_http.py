@@ -299,7 +299,7 @@ IG_CATALOG="""SELECT jsonb_build_object(
  'server_major',current_setting('server_version_num')::int/10000,
  'tree',c.conbin::text,'expression',pg_get_expr(c.conbin,c.conrelid),
  'flags',jsonb_build_array(c.contype,c.convalidated,c.connoinherit,c.conislocal,c.coninhcount,c.condeferrable,c.condeferred,c.conkey),
- 'attribute',jsonb_build_array(a.attname,a.atttypid,a.attcollation))
+ 'attribute',jsonb_build_array(a.attname,a.atttypid::int,a.attcollation::int))
  FROM pg_constraint c JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=c.conkey[1]
  WHERE c.conrelid='public.player_profile_private'::regclass
  AND c.conname='player_profile_private_instagram_username_check'"""
@@ -370,10 +370,19 @@ def prove_instagram_equivalence(expected_rows,actual_rows,source):
     require(want[IG_KEY][3:]==[IG_DEFINITION,True] and got[IG_KEY][4] is True,
             "instagram_source_contract_changed")
     local=query(IG_CATALOG,"instagram_local_catalog")
-    require(source["server_major"]==local["server_major"]==17
-            and source["flags"]==local["flags"]==["c",True,False,True,0,False,False,[3]]
-            and source["attribute"]==local["attribute"]==["instagram_username",25,100],
-            "instagram_constraint_catalog_diff")
+    # OID values are rendered as JSON strings by PostgreSQL unless
+    # explicitly cast to int. Capture uses the same typed query on both sides.
+    for label,catalog in (("source",source),("local",local)):
+        require(isinstance(catalog,dict),"instagram_catalog_shape_"+label)
+        major=catalog.get("server_major")
+        require(type(major) is int,"instagram_server_major_type_"+label)
+        print("H56 Instagram "+label+" PostgreSQL major="+str(major),flush=True)
+        require(major==17,"instagram_server_major_diff_"+label)
+        require(catalog.get("flags")==["c",True,False,True,0,False,False,[3]],
+                "instagram_constraint_flags_diff_"+label)
+        require(catalog.get("attribute")==["instagram_username",25,100],
+                "instagram_constraint_attribute_diff_"+label)
+    print("H56 PASS: Instagram source/local typed catalog metadata match",flush=True)
     require(check_tree(source["tree"])==check_tree(local["tree"]),"instagram_parsed_expression_diff")
     print("H56 PASS: Instagram CHECK parsed expression and flags match (AND grouping only)",flush=True)
     # Exercise the actual restored table CHECK, copied by PostgreSQL to a

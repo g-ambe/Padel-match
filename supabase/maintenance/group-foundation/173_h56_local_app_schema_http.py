@@ -490,6 +490,8 @@ def capture():
         column_acl_review=snap.query(COLUMN_ACL_REVIEW)
         instagram_catalog=snap.query(IG_CATALOG)
         require(isinstance(instagram_catalog,dict),"source_instagram_catalog_missing")
+        require(instagram_expression(instagram_catalog["expression"])==("or","null",("and","min","max","regex")),"source_instagram_logical_expression_diff")
+        print("H56 PASS: source CHECK logical expression reviewed before local startup",flush=True)
         require(column_acl_review["unexpected_grant"]==0,"source_column_acl_review_required")
         require(relation_acl_review["unexpected_owner_or_grantor"]==0,"source_relation_acl_review_required")
         require(function_acl_review["unexpected_owner_or_grantor"]==0,"source_function_acl_review_required")
@@ -656,6 +658,7 @@ def seed(credentials):
 if __name__=="__main__":
     try:
         trusted()
+        instagram_parser_selftest()
         if sys.argv[1:]==["capture"]: capture()
         elif sys.argv[1:]==["test"]:
             require(not os.getenv("SUPABASE_DB_URL"),"hosted_credential_forbidden")

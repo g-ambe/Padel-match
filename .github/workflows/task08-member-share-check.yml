@@ -1,0 +1,37 @@
+# Targeted checks only; no hosted credentials or deployment.
+name: TASK-08 member sharing permission checks
+on:
+  pull_request:
+    paths:
+      - 'supabase/maintenance/event-member-controls/member-share/**'
+      - 'tests/member-share-permission.test.cjs'
+      - '.github/workflows/task08-member-share-check.yml'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: synthetic-only-not-a-hosted-key
+      NEXT_TELEMETRY_DISABLED: '1'
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Locked dependency install
+        run: |
+          npm install --prefix "$RUNNER_TEMP/member-share-bun" --no-package-lock --no-audit --no-fund bun@1.2.15
+          "$RUNNER_TEMP/member-share-bun/node_modules/.bin/bun" install --frozen-lockfile --ignore-scripts
+          echo "$RUNNER_TEMP/member-share-bun/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Targeted SQL and sharing regression
+        run: node --test tests/member-share-permission.test.cjs tests/match-share.test.cjs tests/shared-event-rpc-release.test.cjs tests/shared-event-page-rpc.test.cjs
+      - name: TypeScript
+        run: node node_modules/typescript/bin/tsc --noEmit
+      - name: OpenNext build (no deploy)
+        run: npm run cf:build

@@ -321,7 +321,7 @@ export default function EventDetailPage() {
       const roles = new Set(memberRoles.map((x: any) => x.role));
       allowOperateEvent = allowOperateEvent || (memberRoles.length > 0 && ["auto", "manual"].includes(event.event_mode ?? "auto"));
       allowViewVideoClickCounts = allowViewVideoClickCounts || roles.has("main_admin");
-      allowManageShare = allowManageShare || roles.has("main_admin") || roles.has("sub_admin");
+      allowManageShare = allowManageShare || roles.has("main_admin") || roles.has("sub_admin") || (roles.has("member") && ["auto", "manual"].includes(event.event_mode ?? "auto"));
       allowManageEventVideos = allowManageEventVideos || roles.has("main_admin") || roles.has("sub_admin");
       allowCopyShare = allowManageShare || roles.has("member");
     }
@@ -586,9 +586,9 @@ export default function EventDetailPage() {
       return setError("この操作を行う権限がありません");
     }
     const token = generateShareToken();
-    const { error: e } = await supabase.from("events").update({ share_enabled: true, share_token: token, share_token_updated_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed").eq("is_deleted", false);
-    if (e) {
-      console.error("共有リンクの更新に失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: e.message, code: e.code, details: e.details, hint: e.hint });
+    const { data: updated, error: e } = await supabase.from("events").update({ share_enabled: true, share_token: token, share_token_updated_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed").eq("is_deleted", false).select("id").maybeSingle();
+    if (e || !updated) {
+      console.error("共有リンクの更新に失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: e?.message ?? "更新対象なし", code: e?.code, details: e?.details, hint: e?.hint });
       return setError(rotate ? "共有リンクの再発行に失敗しました" : "共有リンクの作成に失敗しました");
     }
     setShareEnabled(true);
@@ -612,8 +612,8 @@ export default function EventDetailPage() {
     const supabase = getSupabaseClient();
     if (!supabase) { logShareContext("共有停止を中止しました: Supabaseクライアントなし"); return setError("Supabaseクライアントを初期化できませんでした"); }
     if (!canManageShare) { logShareContext("共有停止を中止しました: 権限不足"); return setError("この操作を行う権限がありません"); }
-    const { error: e } = await supabase.from("events").update({ share_enabled: false, share_token: null, share_token_updated_at: new Date().toISOString() }).eq("id", eventId);
-    if (e) { console.error("共有停止に失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: e.message, code: e.code, details: e.details, hint: e.hint }); return setError("共有停止に失敗しました"); }
+    const { data: updated, error: e } = await supabase.from("events").update({ share_enabled: false, share_token: null, share_token_updated_at: new Date().toISOString() }).eq("id", eventId).eq("status", "closed").eq("is_deleted", false).select("id").maybeSingle();
+    if (e || !updated) { console.error("共有停止に失敗しました", { eventId, eventMode, isClubIdNull: eventClubId === null, status: eventStatus, canShare: canManageShare, canManage: canManageShare, message: e?.message ?? "更新対象なし", code: e?.code, details: e?.details, hint: e?.hint }); return setError("共有停止に失敗しました"); }
     setShareEnabled(false); setShareToken(null); setMessage("共有を停止しました");
   };
   const copyShareLink = async () => {

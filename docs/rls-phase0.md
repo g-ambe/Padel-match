@@ -1,5 +1,8 @@
 # RLS Phase 0：影響調査と段階適用計画
 
+> 2026-11-24の追加確定仕様：終了済み・未削除の通常フレンドリー（自動・手動）に限り、在籍中の一般メンバーにも共有開始・停止・URL再発行・コピーを許可する。その他の管理権限、チーム・公式共有、非公開情報の保護は維持する。詳細は [共有権限の追加仕様](../supabase/maintenance/event-member-controls/member-share/README.md) と [Issue #264](https://github.com/g-ambe/Padel-match/issues/264#issuecomment-7127045869) を参照。以下の旧記録は当時の判断・履歴として維持する。
+
+
 調査日：2026-10-30（JST）。対象：g-ambe/Padel-match、main `0350eed479959989516c2b9bb11b44ebf323aebe`。
 本番：padel-hub / `ntczrmvffmpjzilfebyi`。本番ではREAD ONLYトランザクションによるメタデータ参照と件数集計のみ実施。DDL・DML・権限変更・ユーザー偽装テストは未実施。ステージングは利用していない。
 

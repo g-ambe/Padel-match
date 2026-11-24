@@ -305,8 +305,21 @@ def main() -> None:
                        h48_integrity,require,sys.modules[__name__],"after_phase1")
         require(h44.gate(target)["phase2_eligible"], "H45_phase2_gate_not_ready")
         print("H45: Phase1 real rows PASS; Phase2 migration begins", flush=True)
-        h44.isolated(target, h44.PHASE2.read_text())
-        h44.register(target, "task08_prod_phase2_atomic", "20990101010002")
+        atomic_h54 = 'H54_ATOMIC_CUTOVER_TEST=1' in (HERE/'.task08-free-rehearsal-trigger').read_text().splitlines()
+        if atomic_h54:
+            require(h48 is not None and h51 is not None and h50 is None,
+                    "H54_requires_H48_H51_without_H50")
+            require(h48_baseline is not None and h48_integrity is not None,
+                    "H54_legacy_baseline_missing")
+            spec=importlib.util.spec_from_file_location("task08_h54", HERE/"170_h54_atomic_cutover_rehearsal.py")
+            require(spec is not None and spec.loader is not None,"H54_module_missing")
+            h54=importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(h54)
+            h54.run(target,b,h44,sys.modules[__name__],h48,h51,data,legacy_data,
+                    legacy_cols,h48_baseline,h48_integrity,require)
+        else:
+            h44.isolated(target, h44.PHASE2.read_text())
+            h44.register(target, "task08_prod_phase2_atomic", "20990101010002")
         check_late(target, data, baseline_hash, counts)
         if h48 is not None:
             h48.verify(target,b,legacy_data,legacy_cols,h48_baseline,
@@ -322,7 +335,7 @@ def main() -> None:
             require(h48_baseline is not None and h48_integrity is not None,
                     "H51_baseline_missing")
             h51.run(target,data,legacy_data,legacy_cols,h48_baseline,
-                    h48_integrity,require,b,h44,sys.modules[__name__],h48)
+                    h48_integrity,require,b,h44,sys.modules[__name__],h48,atomic_preapplied=atomic_h54)
         if h50 is not None:
             require(h50_baseline is not None and h48_baseline is not None
                     and h48_integrity is not None, "H50_baseline_missing")

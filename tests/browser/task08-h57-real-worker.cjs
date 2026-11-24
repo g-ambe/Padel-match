@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {chromium}=require(path.join(process.env.RUNNER_TEMP,'task08-playwright','node_modules','playwright'));
 const {url,base,actors,ids}=JSON.parse(fs.readFileSync(0,'utf8'));
-let phase='setup',checks=0;
+let phase='setup',checks=0,joinStatus=null;
 const mark=(name)=>{checks++;};
 const tabs=p=>p.getByRole('tablist',{name:'グループ詳細'});
 const rows=p=>p.locator('[data-member-id]');
@@ -149,8 +149,22 @@ async function main(){
   await owner.getByRole('dialog',{name:'グループの操作',exact:true}).getByRole('button',{name:'加入申請',exact:true}).click();
   const list=owner.getByRole('dialog',{name:'加入申請',exact:true});
   await list.getByRole('button',{name:'承認',exact:true}).waitFor();
-  await rpcClick(owner,'review_profile_join_request',list.getByRole('button',{name:'承認',exact:true}),b=>assert.equal(b.p_decision,'approved'));
-  await owner.getByText('承認しました',{exact:true}).waitFor();mark(phase);
+  phase='join_approve_rpc';
+  const response=owner.waitForResponse(r=>r.url()===url+'/rest/v1/rpc/review_profile_join_request'&&r.request().method()==='POST');
+  const [approvalResponse]=await Promise.all([response,list.getByRole('button',{name:'承認',exact:true}).click()]);
+  joinStatus=approvalResponse.status();
+  assert(approvalResponse.ok(),'join approval HTTP');
+  const approvalBody=await approvalResponse.json();
+  assert.equal(approvalBody.status,'approved');
+  assert.equal(approvalResponse.request().postDataJSON().p_decision,'approved');
+  phase='join_approve_feedback';
+  // The actual group page renders the message both behind and inside its
+  // modal. A page-wide getByText() is a strict-mode ambiguity.
+  await list.getByText('承認しました',{exact:true}).waitFor();
+  phase='join_approve_status';
+  await list.getByText('承認済み / 希望メンバー：正規プロフィールで加入',{exact:true}).waitFor();
+  assert.equal(await list.getByRole('button',{name:'承認',exact:true}).count(),0);
+  mark('join_approve');
   phase='join_readback';
   await openGroup(outsider,'join');
   assert.deepEqual(await tabs(outsider).getByRole('tab').allTextContents(),['概要','メンバー','戦績']);
@@ -164,4 +178,7 @@ async function main(){
   return {ok:true,checks};
  }finally{await browser.close();}
 }
-main().then(r=>console.log(JSON.stringify(r))).catch(()=>console.log(JSON.stringify({ok:false,phase,checks})));
+main().then(r=>console.log(JSON.stringify(r))).catch(e=>{
+ const errorKind=e?.name==='TimeoutError'?'timeout':e?.name==='AssertionError'?'assertion':String(e?.message??'').includes('strict mode violation')?'ambiguous_locator':'other';
+ console.log(JSON.stringify({ok:false,phase,checks,errorKind,joinStatus}));
+});

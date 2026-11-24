@@ -5,7 +5,7 @@ BEGIN;
 SET LOCAL lock_timeout='5s';
 SET LOCAL statement_timeout='80s';
 DO $setup$
-DECLARE a uuid;b uuid;c uuid;ap uuid;cp uuid;pub uuid;priv uuid;
+DECLARE a uuid;b uuid;c uuid;ap uuid;bp uuid;cp uuid;pub uuid;priv uuid; media_request uuid; media_key text;
  sm1 uuid;sm2 uuid;sm3 uuid;p1 uuid;p2 uuid;p3 uuid; cancel_club uuid; sm4 uuid; p4 uuid; u uuid; mail text;
 BEGIN
  IF current_user<>'postgres'
@@ -30,6 +30,24 @@ BEGIN
   END IF;
  END LOOP;
  SELECT id INTO STRICT ap FROM public.player_profiles WHERE linked_auth_user_id=a AND is_active;
+ SELECT id INTO STRICT bp FROM public.player_profiles WHERE linked_auth_user_id=b AND is_active;
+ -- Synthetic canonical target has private settings and a fake local metadata
+ -- object/operation (no real R2 object, no network). They must remain intact.
+ media_request:=gen_random_uuid();
+ media_key:='profiles/'||bp::text||'/'||media_request::text||'.webp';
+ INSERT INTO public.profile_media_objects(object_key,profile_id,request_id,state)
+ VALUES(media_key,bp,media_request,'active');
+ INSERT INTO public.profile_media_operations(request_id,actor_id,profile_id,kind,status,object_key,expected_version,committed_at)
+ VALUES(media_request,b,bp,'upload','committed',media_key,0,now());
+ INSERT INTO public.player_profile_private(profile_id,owner_id,instagram_username,instagram_version,avatar_version,avatar_key)
+ VALUES(bp,b,'h52_synthetic',1,1,media_key)
+ ON CONFLICT(profile_id) DO UPDATE SET owner_id=excluded.owner_id,instagram_username=excluded.instagram_username,
+ instagram_version=excluded.instagram_version,avatar_version=excluded.avatar_version,avatar_key=excluded.avatar_key;
+ PERFORM set_config('h52.target_profile',bp::text,true);
+ PERFORM set_config('h52.target_media_digest',md5(jsonb_build_array(
+  (SELECT to_jsonb(t) FROM public.player_profile_private t WHERE profile_id=bp),
+  (SELECT to_jsonb(t) FROM public.profile_media_objects t WHERE profile_id=bp),
+  (SELECT to_jsonb(t) FROM public.profile_media_operations t WHERE profile_id=bp))::text),true);
  SELECT id INTO STRICT cp FROM public.player_profiles WHERE linked_auth_user_id=c AND is_active;
  INSERT INTO public.clubs(name,owner_id,is_active,visibility)
  VALUES('TASK08-H52-RB-PUBLIC',a,true,'public') RETURNING id INTO pub;
@@ -73,6 +91,22 @@ BEGIN
  PERFORM set_config('h52.private_source',p2::text,true);
  PERFORM set_config('h52.legacy_source',p3::text,true);
 END $setup$;
+
+-- Unknown new references must still fail closed. This relation is disposable
+-- and empty; it is dropped before the normal pending-flow tests.
+CREATE TABLE public.h52_unreviewed_reference_probe(profile_id uuid REFERENCES public.player_profiles(id));
+DO $unknown_fk$
+DECLARE denied boolean:=false;
+BEGIN
+ BEGIN
+  PERFORM profile_link_private.check_reference_schema();
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN
+  denied:=position('未確認の外部キーがあります' IN SQLERRM)>0;
+ END;
+ IF NOT denied THEN RAISE EXCEPTION 'H52 unknown FK was not rejected'; END IF;
+ PERFORM set_config('h52.unknown_fk_denied','true',true);
+END $unknown_fk$;
+DROP TABLE public.h52_unreviewed_reference_probe;
 
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',current_setting('h52.owner'),true);
@@ -159,7 +193,8 @@ BEGIN
   PERFORM public.review_player_profile_link_named(
    current_setting('h52.public_req')::uuid,'obsolete-preview-token',
    'H52 Chosen Public Alias','H52 Existing Public Alias',true);
- EXCEPTION WHEN SQLSTATE 'P0001' THEN denied:=true;
+ EXCEPTION WHEN SQLSTATE 'P0001' THEN
+  denied:=position('確認後に内容が変更されています' IN SQLERRM)>0;
  END;
  IF NOT denied THEN RAISE EXCEPTION 'H52 obsolete token accepted'; END IF;
  PERFORM set_config('h52.token_rejected','true',true);
@@ -226,10 +261,81 @@ BEGIN
  IF NOT denied THEN RAISE EXCEPTION 'H52 old approval unexpectedly allowed'; END IF;
  d:=public.get_player_profile_link_request(current_setting('h52.legacy_req')::uuid);
  IF d->>'status' IS DISTINCT FROM 'pending' THEN RAISE EXCEPTION 'H52 legacy denied request no longer pending'; END IF;
- r:=public.review_player_profile_link(current_setting('h52.legacy_req')::uuid,'rejected',NULL);
- IF r->>'status' IS DISTINCT FROM 'rejected' THEN RAISE EXCEPTION 'H52 legitimate pending rejection failed'; END IF;
  PERFORM set_config('h52.legacy_denied','true',true);
 END $legacy_approval$;
+
+-- Each reviewed private/media FK must be rejected when it points at the
+-- provisional source. Seed only a synthetic row and remove it after its
+-- negative check. No production row or actual media object is touched.
+SET LOCAL ROLE postgres;
+INSERT INTO public.player_profile_private(profile_id)
+VALUES(current_setting('h52.legacy_source')::uuid);
+SET LOCAL ROLE authenticated;
+DO $source_private$
+DECLARE d jsonb; denied boolean:=false;
+BEGIN
+ d:=public.get_player_profile_link_request(current_setting('h52.legacy_req')::uuid);
+ BEGIN
+  PERFORM public.review_player_profile_link_named(current_setting('h52.legacy_req')::uuid,
+   d->>'review_token','H52 Source Media Must Not Transfer',d->>'group_display_name_current',true);
+ EXCEPTION WHEN SQLSTATE '42501' THEN
+  denied:=position('H52 source private/media references require separate review' IN SQLERRM)>0;
+ END;
+ IF NOT denied THEN RAISE EXCEPTION 'H52 source private row not blocked'; END IF;
+ IF public.get_player_profile_link_request(current_setting('h52.legacy_req')::uuid)->>'status' IS DISTINCT FROM 'pending'
+ THEN RAISE EXCEPTION 'H52 source private denial changed pending'; END IF;
+ PERFORM set_config('h52.source_private_denied','true',true);
+END $source_private$;
+SET LOCAL ROLE postgres;
+DELETE FROM public.player_profile_private WHERE profile_id=current_setting('h52.legacy_source')::uuid;
+INSERT INTO public.profile_media_objects(object_key,profile_id,request_id,state)
+VALUES('profiles/'||current_setting('h52.legacy_source')||'/'||gen_random_uuid()::text||'.webp',
+ current_setting('h52.legacy_source')::uuid,gen_random_uuid(),'garbage');
+SET LOCAL ROLE authenticated;
+DO $source_object$
+DECLARE d jsonb; denied boolean:=false;
+BEGIN
+ d:=public.get_player_profile_link_request(current_setting('h52.legacy_req')::uuid);
+ BEGIN
+  PERFORM public.review_player_profile_link_named(current_setting('h52.legacy_req')::uuid,
+   d->>'review_token','H52 Source Media Must Not Transfer',d->>'group_display_name_current',true);
+ EXCEPTION WHEN SQLSTATE '42501' THEN
+  denied:=position('H52 source private/media references require separate review' IN SQLERRM)>0;
+ END;
+ IF NOT denied THEN RAISE EXCEPTION 'H52 source object not blocked'; END IF;
+ IF public.get_player_profile_link_request(current_setting('h52.legacy_req')::uuid)->>'status' IS DISTINCT FROM 'pending'
+ THEN RAISE EXCEPTION 'H52 source object denial changed pending'; END IF;
+ PERFORM set_config('h52.source_object_denied','true',true);
+END $source_object$;
+SET LOCAL ROLE postgres;
+DELETE FROM public.profile_media_objects WHERE profile_id=current_setting('h52.legacy_source')::uuid;
+INSERT INTO public.profile_media_operations(request_id,actor_id,profile_id,kind,status,expected_version)
+VALUES(gen_random_uuid(),current_setting('h52.outsider')::uuid,current_setting('h52.legacy_source')::uuid,'delete','aborted',0);
+SET LOCAL ROLE authenticated;
+DO $source_operation$
+DECLARE d jsonb; denied boolean:=false;
+BEGIN
+ d:=public.get_player_profile_link_request(current_setting('h52.legacy_req')::uuid);
+ BEGIN
+  PERFORM public.review_player_profile_link_named(current_setting('h52.legacy_req')::uuid,
+   d->>'review_token','H52 Source Media Must Not Transfer',d->>'group_display_name_current',true);
+ EXCEPTION WHEN SQLSTATE '42501' THEN
+  denied:=position('H52 source private/media references require separate review' IN SQLERRM)>0;
+ END;
+ IF NOT denied THEN RAISE EXCEPTION 'H52 source operation not blocked'; END IF;
+ IF public.get_player_profile_link_request(current_setting('h52.legacy_req')::uuid)->>'status' IS DISTINCT FROM 'pending'
+ THEN RAISE EXCEPTION 'H52 source operation denial changed pending'; END IF;
+ PERFORM set_config('h52.source_operation_denied','true',true);
+END $source_operation$;
+SET LOCAL ROLE postgres;
+DELETE FROM public.profile_media_operations WHERE profile_id=current_setting('h52.legacy_source')::uuid;
+SET LOCAL ROLE authenticated;
+DO $valid_reject$
+DECLARE r jsonb;
+BEGIN
+ r:=public.review_player_profile_link(current_setting('h52.legacy_req')::uuid,'rejected',NULL);
+ IF r->>'status' IS DISTINCT FROM 'rejected' THEN RAISE EXCEPTION 'H52 legitimate pending rejection failed'; END IF;
+END $valid_reject$;
 
 -- A non-manager cannot cancel, even the recipient. Original authorization
 -- uses a generic raise exception (P0001); require that exact reason.
@@ -266,6 +372,14 @@ RESET ROLE;
 
 SELECT jsonb_build_object(
 'rollback_only',true,
+'unknown_fk_denied',current_setting('h52.unknown_fk_denied',true)='true',
+'source_private_denied',current_setting('h52.source_private_denied',true)='true',
+'source_object_denied',current_setting('h52.source_object_denied',true)='true',
+'source_operation_denied',current_setting('h52.source_operation_denied',true)='true',
+'canonical_target_media_unchanged',current_setting('h52.target_media_digest')=md5(jsonb_build_array(
+ (SELECT to_jsonb(t) FROM public.player_profile_private t WHERE profile_id=current_setting('h52.target_profile')::uuid),
+ (SELECT to_jsonb(t) FROM public.profile_media_objects t WHERE profile_id=current_setting('h52.target_profile')::uuid),
+ (SELECT to_jsonb(t) FROM public.profile_media_operations t WHERE profile_id=current_setting('h52.target_profile')::uuid))::text),
 'legacy_approval_denied',current_setting('h52.legacy_denied',true)='true',
 'pending_rejected_cancelled',(SELECT count(*)=2 FROM public.player_profile_link_requests WHERE (id=current_setting('h52.legacy_req')::uuid AND status='rejected') OR (id=current_setting('h52.cancel_req')::uuid AND status='cancelled')),
 'no_merge_reject_cancel',(SELECT count(*)=0 FROM public.player_profile_merges WHERE link_request_id IN(current_setting('h52.legacy_req')::uuid,current_setting('h52.cancel_req')::uuid)),

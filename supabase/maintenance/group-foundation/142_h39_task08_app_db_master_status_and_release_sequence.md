@@ -256,3 +256,12 @@
 - [172 H55 probe](172_h55_local_auth_http_environment.py) と専用workflow `.github/workflows/task08-h55-local-auth.yml` を追加。既存checksum検証済みCLI v3.0.0、新規runner/一時ディレクトリ/loopback Docker network、合成3アカウント。実signup/password sign-in/getUser/JWT→PostgREST auth.uid()照合、合成sentinelテーブルの自己行insert/select・第三者read/write拒否・anon拒否・改ざんJWT拒否。管理者SQLは合成fixtureのみ、公開用keyでHTTP実行、終了時stack/volume/network/一時dir削除。実データ入りLocalRestoreをネットワークに接続しない。Prod/Stage鍵・データ・Cloudflare認証は渡さない。
 - [H55 Actions #45310943180](https://github.com/g-ambe/Padel-match/actions/runs/45310943180)、tested HEAD b35a0035670ff08d35477065c9073fa73caff58c、起動確認・結果未確定。今回は環境ゲートのみ。H55 PASS後は実アプリschema/RPC/ACL/FKの合成環境構築・H52/H53の実HTTP COMMIT・新アプリSDK/375px画面受入へ。正式Migration確定・本番適用とは別。
 - Prod/Stage書込み、Cloudflare変更、main merge、追加有料環境なし。既存Draft #265、NO-GO維持。Projectフィールド未更新。
+
+## 26. H55 PASS、H56 新アプリSDK × 新DB実通信試験（2026-11-24）
+
+- [H55 #45310943180](https://github.com/g-ambe/Padel-match/actions/runs/45310943180) HEAD b35a0035670ff08d35477065c9073fa73caff58c：実Auth signup/password/getUser/JWT→PostgREST 3役、RLS自己行・他人拒否、anon/改ざんJWT拒否、loopback、cleanup全PASS。sentinel環境のみ。
+- ユーザーより検証環境で実データを使用してよい旨の確認あり。従来のネットワーク切断済み実データ保全試験は継続可能。必要最小限のデータ、隔離、ログ非出力を維持。今回H56は実データコピーが不要なためschema-only＋合成ログイン/fixtureを採用。Prod/Stageの書込みや本番配信の許可ではない。
+- [173 H56 driver](173_h56_local_app_schema_http.py)、tests/integration/task08-h56-real-sdk.cjs、専用workflowを追加。Prod READ ONLYでpublic＋11 app private schemasの定義のみ抽出し、Auth/Storage/バックアップschema・データ行・認証情報を除外。外部通信/秘密値参照の関数パターン、managed Auth trigger、foreign tableを事前ゲート。ローカル実AuthはH55そのまま、schema-only TOC検査、関数/ACL/RLS/列/FK/trigger/view/index fingerprint照合、全アプリ表空を確認後のみH54と同じ一括切替候補を適用。
+- アプリの既存SDK helperを変更せず、実Auth3役、公開人数・最小directory・権限境界、連携管理者DTO、第三者拒否、公開同意/CAS/stale token、公開・非公開named承認、旧承認拒否/拒否操作、通常加入の正常・負例、再読込の15判定と、独立DB事後8判定を実行する構成。R2実バイナリ、仮メンバー加入引継ぎ・復元/並行操作、共有イベント、ブラウザ/Worker previewはこのrunでは未検証。
+- [H56 #45311812905](https://github.com/g-ambe/Padel-match/actions/runs/45311812905)、tested HEAD 6d963725cbc05bebd119b2e148f2ca6e0efbd0b4、実行開始確認。結果未確定。次はrunのschema parity/SDK/DB照合/cleanupログ確認。正式Migration、リリース手順、最新バックアップ、明示承認は残る。
+- Prod/Stage書込み・Cloudflare/main/merge・追加有料環境なし。既存Draft #265、NO-GO維持。Projectフィールド未更新。

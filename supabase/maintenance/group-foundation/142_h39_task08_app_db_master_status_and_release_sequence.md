@@ -289,3 +289,10 @@
 - [#45313631928](https://github.com/g-ambe/Padel-match/actions/runs/45313631928) HEAD a69bcec66cd899bde9a06597cc8df8a1e260fac7：schema restore PASS、103関数のidentity/definition/owner差0、ACL差42関数。localのみ余分なEXECUTE 53件削除、追加0、関数fingerprint103件PASS。列386、index103、policy106、trigger33、view0 PASS。relation44、constraint208は件数一致だがfingerprint FAIL、SDK未到達。cleanup PASS。
 - Prod READ ONLYでrelation ACL所有者/付与者postgres、既知role、grant optionなし、未検証constraintなしを確認。173 driver d4358e563065662349d2b46135f5d5b0354e9a4cでrelation構造/ACL分離・既知role/権限/所有者の確認・合成localだけsource ACLへの厳密な差分再現、全recordを順序に依存しないmultisetで比較（定義/検証済み状態等の値は一切省かない）。constraint差残存時はidentityと差の種類を記録して停止。原因はまだ仮説、制約の変更や削除はしない。
 - 再実行HEAD a32f8a9b62746d0763f690a136f5a2e024326ed5。次はrelation/constraint parity、Phase1/2、SDK/DB事後検証・cleanup確認。H56未完了、PR #265 Draft/NO-GO維持、Prod/Stage書込み、Cloudflare/main/mergeなし。再度構造差が残る場合は診断に基づき復元方式を見直し、盲目的に同じrunを繰り返さない。
+
+## 31. H56 テーブルACL一致、列ACLと単一CHECK差分（2026-11-24）
+
+- [#45314086047](https://github.com/g-ambe/Padel-match/actions/runs/45314086047) HEAD a32f8a9b62746d0763f690a136f5a2e024326ed5：関数103/103 PASS（余分EXECUTE53削除）、relation44/44 PASS（40件の余分ACL454削除）、index103/policy106/trigger33 PASS。column386はtable REVOKE後に差分。constraint208はidentity欠落/追加なし、`public.player_profile_private.player_profile_private_instagram_username_check` 定義1件差。SDK未到達、cleanup PASS。
+- PostgreSQL 17 REVOKE仕様（https://www.postgresql.org/docs/17/sql-revoke.html）によりtable REVOKEは対応するcolumn ACLも取り消す。Prod READ ONLYで実column ACL付与者postgres、既知role、grant optionなしを確認。Instagram CHECKの本番定義・validated=true・正規表現バックスラッシュ1文字を読み取り、0048定義と照合。
+- 173 driver ed057432bf979245b45ae6eb21a264b097acde09：relation ACL後にcolumn ACL完全再現（構造値一致、付与者/権限/role限定）、source/local比較時standard_conforming_strings=on。制約は対象1件のみ・本番定義がレビュー済み文字列と完全一致・元も先もvalidated・空の合成localテーブルであることを必須にして再構築し、全208件を完全照合。その他の差分は停止。制約削除による恒久緩和なし。今回の修正はlocal restoreだけ。
+- 再実行HEAD b98d31d54c8e598145c513949d4fd05d5e85b53c。結果未確定。次はcolumn/constraint/full fingerprintとPhase1/2/SDK/DB事後確認。復元差分がなお残るなら現方式を停止してH54検証済み隔離schema構築方式を土台にした別経路を検討し、同じ原因の盲目的retry禁止。PR #265 Draft/NO-GO、Prod/Stage書込み・Cloudflare/main/mergeなし。

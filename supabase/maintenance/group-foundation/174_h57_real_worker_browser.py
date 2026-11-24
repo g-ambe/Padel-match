@@ -93,10 +93,14 @@ def browser_test(url,key,actors,ids):
             payload=json.dumps({"url":url,"base":ORIGIN,"actors":actors,"ids":ids})
             raw=h55.run(["node",str(REPO/"tests/browser/task08-h57-real-worker.cjs")],"h57_browser",data=payload,cwd=REPO,timeout=240)
             report=json.loads(raw)
-            allowed=("setup","login_owner","login_recipient","login_outsider","public_boundary","private_boundary","manager_view","third_party","public_approval","private_approval","public_readback","member_readback","join_submit","join_approve","join_readback","finish")
+            allowed=("setup","login_owner","login_recipient","login_outsider","public_boundary","private_boundary","manager_view","third_party","public_approval","private_approval","public_readback","member_readback","join_submit","join_approve","join_approve_rpc","join_approve_feedback","join_approve_status","join_readback","finish")
             stage=report.get("phase")
             if report.get("ok") is not True:
-                require(False,"h57_browser_failed_"+(stage if stage in allowed else "unknown")+"_checks_"+str(int(report.get("checks",0))))
+                kind=report.get("errorKind")
+                kind=kind if kind in ("timeout","assertion","ambiguous_locator","other") else "unknown"
+                status=report.get("joinStatus")
+                status=str(status) if type(status) is int and 100<=status<=599 else "none"
+                require(False,"h57_browser_failed_"+(stage if stage in allowed else "unknown")+"_checks_"+str(int(report.get("checks",0)))+"_kind_"+kind+"_join_http_"+status)
             require(report.get("checks")==14,"h57_browser_report_failed")
             print("H57 PASS: 14 real 375px light/dark Worker browser assertions; no API mocks",flush=True)
         finally:

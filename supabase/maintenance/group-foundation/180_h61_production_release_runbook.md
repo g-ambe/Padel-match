@@ -57,3 +57,9 @@ H61はSQL適用リハーサルのみ。H63は本番の対象・秘密情報・�
 ## 5. H61検証
 
 179 driverはH56の本番schema-only captureと合成Authを再利用し、**生成した3本そのもの**を隔離DBに適用。順序違い拒否、各SQL末尾への失敗注入と履歴/スキーマ/ACL不変、正常commit/同版再実行拒否、H56実SDK、H58実Worker共有をSQL3前後に検証。生成ファイルSHA256をログに記録し、データは記録しない。実業務行を使った移行保全はH54証跡（24表4430行）、H57–60は別の合成E2E証跡。H61実行結果は台帳へ追記する。独立レビュー・H62の最新バックアップ/R2保全/配信経路確認は引き続き必須。
+
+## 6. H62-1/2 更新（2026-11-24、検証中）
+
+- 独立レビュー181のC1について、ユーザーは過剰な権限制限を望まないため、今回の新alias公開同意・非公開名簿を迂回する `club_members` のSELECTポリシーだけ修正する。183 candidateを178 generatorのPhase2内（H51/H52後、COMMIT前）へ追加。既存group_read_private.member判定を使用、同グループ所属/本人過去所属/superを維持。既存の公開player_profiles、他表のRLS、書き込みACL、アプリは変更しない。Phase1/3はH61のバイト一致をテスト、旧Phase2ハッシュは履歴証跡のみで本番候補として使用しない。184の実Auth/REST・正規共有リハーサル結果と新Phase2 SHA256が確定するまで適用しない。H62の独立再レビューはこの限定差分のみ。
+- **配信経路確認済み**：Cloudflare OpenAPI上 `external_script_id` はWorker名ではなくsystem-generated tag。従来の名前指定0件は誤った識別子によるもの。正しいWorker tag 721e16eab9964bb88725f379ad9eb542 で GET 成功、trigger 1件 `Deploy default branch`（c3ce5a69-770a-4e50-a46c-477d31fb824e、削除なし）、GitHub g-ambe/Padel-match、branch main、paths * / 除外なし、root /、build `npm run cf:build`、deploy `npx wrangler deploy`。build token設定存在、NEXT_PUBLIC_SUPABASE_URL/ANON_KEY存在、URLは本番projectに一致（値は記録しない）。現役389、ASSETS/PROFILE_IMAGES/PROFILE_MEDIA_COMMIT_SECRET/PROFILE_MEDIA_RATE_LIMITER存在。設定変更なし、実配信成功やtokenの書込権限は未実測。
+- H63は承認・最新バックアップ/簡易R2保全・固定SHA確認後、SQL1→SQL2→既存PRのmainマージで自動配信→対象merge SHAのCloudflare build成功と実Worker version確認→新アプリ/共有の代表確認→SQL3の順。配信失敗時は新DBの安全な状態を維持し、同じ新コードのCloudflare再ビルド/再配信（必要なら承認済みWrangler経路）で前進修正。旧Worker単独復帰や権限緩和はしない。main mergeをSQLより先に行わない。

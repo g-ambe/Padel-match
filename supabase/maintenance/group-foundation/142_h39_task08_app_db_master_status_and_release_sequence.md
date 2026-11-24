@@ -319,3 +319,9 @@
 
 - [H56 #45316582803](https://github.com/g-ambe/Padel-match/actions/runs/45316582803) tested HEAD d2edcaad5a02f7014bfd700696e7402aa420ab0e、job 138184770656 SUCCESS。実Auth3役/RLS、schema restore、関数103・relation44・列386・index103・policy106・trigger33・constraint208、Instagram CHECK論理式/19ケース、Phase1＋atomic Phase2/H51/H52、実SDK15件・独立DB事後8件、cleanup全PASS。内部node tree/文字列表現差は既知4atom論理式と実CHECKで解消。実業務行・本番鍵のHTTP利用なし。
 - H57 scope: H56合成ローカルDBを再利用する専用runnerで、375px light/darkの実ブラウザログイン、公開/非公開グループの権限境界、本人連携の同意・承認、通常加入の申請/管理者承認とDB事後検証、OpenNext/Workersローカルpreviewを検証。旧モック応答とは区別。H56検証を弱めない。今回はapp仕様・migration変更なし、既存Draft #265のみ。共有イベント/復元競合/画像バイナリ/他機能回帰は別の残件として追跡。Prod/Stage書込み・main merge・Cloudflare deployなし、NO-GO維持。
+
+## 36. H57 実ブラウザ・Worker検証開始（2026-11-24）
+
+- H56の全ゲートを維持したまま成功fixture IDのみ返却（877fa47）。[174 H57 driver](174_h57_real_worker_browser.py)（bcc9263）、`tests/browser/task08-h57-real-worker.cjs`（9455e51/3c1d873）、`.github/workflows/task08-h57-real-worker.yml`（80be035）。現行UI/SQLの変更なし。ownerによる実RPCで承認用fixture準備、375px Chromiumの実ログイン3役・公開/非公開境界・管理者/第三者・公開/非公開同意承認・再読込・通常加入申請/管理者承認の14判定、DB独立8判定を予定。既存のNext/OpenNext build ID照合、ローカルWrangler/R2のみ、Auth/Data APIモックなし・ブラウザ外部通信遮断。実業務行なし、schema-only capture以外は本番認証情報なし。
+- [H57 #45317451172](https://github.com/g-ambe/Padel-match/actions/runs/45317451172)、tested HEAD 5b0326b60b2f2b2d3764118c9b4e3a81cc15e4db、実行開始確認。結果未確定。H56成功証跡は§35のまま。次はH57 build/Worker/ブラウザ14・DB8/cleanupの実ログ確認。失敗時は段階と実応答/原因を特定してから修正、盲目的retry禁止。
+- 共有イベント3種・復元編集/競合・R2実バイナリ・全回帰・正式Migration/最終バックアップ/本番承認は別ゲート。Draft #265、NO-GO維持。Prod/Stage書込み、Cloudflare deploy、main merge、追加有料環境なし。Projectフィールド未同期。

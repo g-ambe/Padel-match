@@ -325,3 +325,9 @@
 - H56の全ゲートを維持したまま成功fixture IDのみ返却（877fa47）。[174 H57 driver](174_h57_real_worker_browser.py)（bcc9263）、`tests/browser/task08-h57-real-worker.cjs`（9455e51/3c1d873）、`.github/workflows/task08-h57-real-worker.yml`（80be035）。現行UI/SQLの変更なし。ownerによる実RPCで承認用fixture準備、375px Chromiumの実ログイン3役・公開/非公開境界・管理者/第三者・公開/非公開同意承認・再読込・通常加入申請/管理者承認の14判定、DB独立8判定を予定。既存のNext/OpenNext build ID照合、ローカルWrangler/R2のみ、Auth/Data APIモックなし・ブラウザ外部通信遮断。実業務行なし、schema-only capture以外は本番認証情報なし。
 - [H57 #45317451172](https://github.com/g-ambe/Padel-match/actions/runs/45317451172)、tested HEAD 5b0326b60b2f2b2d3764118c9b4e3a81cc15e4db、実行開始確認。結果未確定。H56成功証跡は§35のまま。次はH57 build/Worker/ブラウザ14・DB8/cleanupの実ログ確認。失敗時は段階と実応答/原因を特定してから修正、盲目的retry禁止。
 - 共有イベント3種・復元編集/競合・R2実バイナリ・全回帰・正式Migration/最終バックアップ/本番承認は別ゲート。Draft #265、NO-GO維持。Prod/Stage書込み、Cloudflare deploy、main merge、追加有料環境なし。Projectフィールド未同期。
+
+## 37. H57 初回ブラウザ12/14 PASS、加入承認の診断修正（2026-11-24）
+
+- [H57 #45317451172](https://github.com/g-ambe/Padel-match/actions/runs/45317451172) tested HEAD 5b0326b60b2f2b2d3764118c9b4e3a81cc15e4db、job 138187604891 FAIL。H56全ゲート/SDK15/DB8再PASS、H57 owner RPC fixture・TypeScript・OpenNext build ID・local Worker起動PASS。ブラウザ12/14到達（3ログイン、公開/非公開境界、管理者/第三者、公開/非公開承認、公開/会員readback、加入申請）。`h57_browser_failed_join_approve_checks_12` で停止。承認HTTP/commit状態はログ不足で未確定。加入readback・H57独立DB8未到達。cleanup PASS。
+- 現行 `app/groups/[id]/page.tsx` のメッセージはmainとAppDialog内の両方に描画される。旧testのpage-wide `getByText('承認しました',{exact:true})` はstrict-mode ambiguityとなり得る（実エラー詳細未記録のため仮説）。H56同一RPCの成功証跡あり。テストのみ001f432/0a552f9で修正：承認HTTP status/response.status=approved/decision、active modal内の成功文言、承認済み一覧状態・承認button消失を確認。失敗phase/分類/HTTP statusのみ安全ログに追加。app/migration/権限変更なし。
+- [H57 retry #45320034451](https://github.com/g-ambe/Padel-match/actions/runs/45320034451) tested HEAD aada44f65efb1137a6f8663ed295bf2c7793177a、実行開始確認、結果未確定。次は実行ログで全14/DB8・cleanupを確認。Draft #265 NO-GO、Prod/Stage書込み、Cloudflare deploy、main mergeなし。

@@ -204,6 +204,7 @@ export default function LoginPage() {
           {signupMode && <input aria-label="表示名" autoComplete="nickname" className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" placeholder="表示名" value={displayName} onChange={e => setDisplayName(e.target.value)} />}
           <input aria-label="メールアドレス" inputMode="email" autoComplete="email" className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" placeholder="メールアドレス" value={email} onChange={e => setEmail(e.target.value)} />
           <input aria-label="パスワード" autoComplete={signupMode ? "new-password" : "current-password"} className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" type="password" placeholder="パスワード" value={password} onChange={e => setPassword(e.target.value)} />
+          {!signupMode && <Link href="/auth/forgot-password" className="block min-h-11 py-3 text-right text-sm text-emerald-400">パスワードを忘れた方</Link>}
           {signupMode && <input aria-label="パスワード確認" autoComplete="new-password" className="min-h-11 w-full rounded-xl bg-zinc-800 px-3 py-2" type="password" placeholder="パスワード確認" value={passwordConfirm} onChange={e => setPasswordConfirm(e.target.value)} />}
           {signupMode && <label className="flex items-start gap-3 text-xs leading-6 text-zinc-300">
             <input type="checkbox" className="mt-1.5 shrink-0" checked={agreed} disabled={loading || signupFinished} onChange={event => changeConsent(event.target.checked)} />

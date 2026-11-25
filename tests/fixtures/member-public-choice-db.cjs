@@ -3,7 +3,8 @@
 const fs=require('node:fs'),path=require('node:path');
 const root=path.resolve(__dirname,'../..');
 const {fixedPairDatabase}=require('./fixed-pair-db.cjs');
-async function memberPublicDatabase(apply=true,providedDb){
+async function memberPublicDatabase(apply=true,providedDb,candidate="01_chatgpt_candidate.sql"){
+ if(!["01_chatgpt_candidate.sql","03_lock_order_candidate.sql"].includes(candidate))throw Error("Unknown public-choice candidate");
  const f=await fixedPairDatabase(true,providedDb),d=f.db;
  try{
  for(const n of ['0044_friendly_team_attendance.sql','0045_friendly_team_random_rounds.sql','0046_user_preferences_tutorial_status.sql','0047_event_result_video.sql','0048_private_profile_media.sql','0049_profile_avatar_position.sql','0050_private_profile_home_court.sql','0051_shared_home_facility.sql','0054_group_read_interfaces.sql','0055_group_read_consumer_support.sql']){await d.exec(fs.readFileSync(root+'/supabase/migrations/'+n,'utf8'));}
@@ -17,7 +18,7 @@ async function memberPublicDatabase(apply=true,providedDb){
  await d.exec("create table public.h51_postcutover_data_preservation(marker text);insert into public.h51_postcutover_data_preservation values('retained');");
  await d.exec(fs.readFileSync(root+'/supabase/maintenance/group-foundation/168_h52_media_reference_guard_CANDIDATE.sql','utf8'));
  await d.exec('drop table public.h51_postcutover_data_preservation');
- if(apply)await d.exec(fs.readFileSync(root+'/supabase/maintenance/group-member-public-choice/01_chatgpt_candidate.sql','utf8'));
+ if(apply)await d.exec(fs.readFileSync(root+'/supabase/maintenance/group-member-public-choice/'+candidate,'utf8'));
  return f;
  }catch(e){await d.close();throw e;}
 }

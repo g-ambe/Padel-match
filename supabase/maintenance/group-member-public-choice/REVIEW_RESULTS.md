@@ -1,5 +1,7 @@
 # TASK-08-03 / #264 — Codex implementation and independent SQL review
 
+> 2026-11-25 follow-up: candidate 03 resolves the lock-order finding in the original reproduction scenario. See [REVIEW_03_RESULTS.md](REVIEW_03_RESULTS.md) for actual PostgreSQL apply, timeout rollback and scoped SQL results. The report below preserves candidate 01 history; production release approval remains separate.
+
 2026-11-25. Branch: `codex/task-08-member-public-choice`.
 Requirements/candidate HEAD: `9a56d46aa41cf0c7bb1be4bbe6141829e7c50408`.
 Main checked at start and before PR: `19592bc79a94fe64ed52903ca317cad7fb025ec6`.

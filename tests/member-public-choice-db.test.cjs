@@ -1,8 +1,10 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {memberPublicDatabase}=require('./fixtures/member-public-choice-db.cjs');
-const sql=fs.readFileSync(path.join(__dirname,'../supabase/maintenance/group-member-public-choice/01_chatgpt_candidate.sql'),'utf8');
+const candidate=process.env.MEMBER_PUBLIC_TEST_CANDIDATE||'01_chatgpt_candidate.sql';
+if(!['01_chatgpt_candidate.sql','03_lock_order_candidate.sql'].includes(candidate))throw Error('Unknown public-choice candidate');
+const sql=fs.readFileSync(path.join(__dirname,'../supabase/maintenance/group-member-public-choice',candidate),'utf8');
 test('unchanged candidate: initialization, self-only CAS/OFF, legacy refusal and ACL boundary (synthetic SQL)',async t=>{
- const f=await memberPublicDatabase(false),d=f.db,id=f.id;
+ const f=await memberPublicDatabase(false,undefined,candidate),d=f.db,id=f.id;
  const member=async n=>(await d.query('select * from club_members where club_id=$1 and player_profile_id=$2',[id(600),id(100+n)])).rows[0];
  try{
  await d.exec(`update clubs set visibility='public' where id='${id(600)}';`);
@@ -64,7 +66,7 @@ test('unchanged candidate: initialization, self-only CAS/OFF, legacy refusal and
  }finally{await d.close();}
 });
 test('named join OFF approval and recipient OFF merge preserve choice and audit snapshot',async t=>{
- const f=await memberPublicDatabase(),d=f.db,id=f.id;
+ const f=await memberPublicDatabase(true,undefined,candidate),d=f.db,id=f.id;
  try{
   await d.exec(`update clubs set visibility='public' where id='${id(600)}'`);
   await f.as(4);const req=await f.rpc('submit_public_club_claim_named',[id(600),null,null,null,'公開しない名前',false]);
@@ -80,7 +82,7 @@ test('named join OFF approval and recipient OFF merge preserve choice and audit 
  }finally{await d.close();}
 });
 test('restore candidate permits only added NULL key, rejects subsequent OFF/alias changes; default ROLLBACK preserved',async()=>{
- const f=await memberPublicDatabase(false),d=f.db,id=f.id;
+ const f=await memberPublicDatabase(false,undefined,candidate),d=f.db,id=f.id;
  const restoreSource=fs.readFileSync(path.join(__dirname,'../supabase/maintenance/group-member-public-choice/02_restore_compat_candidate.sql'),'utf8');
  try{
   await d.query('insert into player_profiles(id,display_name) values($1,$2)',[id(220),'旧仮名']);

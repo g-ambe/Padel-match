@@ -6,7 +6,19 @@ export type LineupSnapshot = {
  event_id: string; round_id: string; round_number: number; revision: number; event_revision: number; status: string; blocked_reason: string | null;
  eligible: string[]; people: { id: string; name: string; status: string }[];
  cards: { id: string; court_number: number; players: RoundCard['players']; completed: boolean; result: { id:string;score_a:number;score_b:number;winner_team:string }[] }[];
+ lineup_protection_version?: number; protected_participant_ids?: string[];
 };
+// Only lineup editing requires this DTO. Score/delete keep the unmodified snapshot.
+export function readLineupProtection(snapshot: {lineup_protection_version?:unknown;protected_participant_ids?:unknown;people:{id:string}[];blocked_reason?:string|null}) {
+ const ids=snapshot.protected_participant_ids,known=new Set(snapshot.people.map(p=>p.id));
+ if(snapshot.lineup_protection_version!==1||!Array.isArray(ids)||ids.some((id,i)=>typeof id!=='string'||!/^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/.test(id)||!known.has(id)||(i>0&&ids[i-1]>=id))) {
+  return {protectedParticipantIds:[] as string[],blockedReason:'固定ペアの保護情報を確認できません。閉じて再読み込みしてください。'};
+ }
+ return {protectedParticipantIds:[...ids] as string[],blockedReason:snapshot.blocked_reason??null};
+}
+export function assertMovableLineupPlayers(protectedIds:readonly string[],outgoing:string,incoming?:string) {
+ if(protectedIds.includes(outgoing)||(incoming!==undefined&&protectedIds.includes(incoming)))throw new Error('固定ペアの選手は変更できません');
+}
 const message = (error: { code?: string; message?: string } | null, fallback: string) => error?.code === 'PGRST202' ? 'DB更新が未適用です。管理者に確認してください。' : error?.message || fallback;
 export async function readLineupVersions(s: SupabaseClient, eventId: string): Promise<LineupVersions> {
  const { data, error } = await s.rpc('get_friendly_lineup_versions', { p_event_id: eventId });
@@ -22,12 +34,15 @@ export function createLineupCommit(s: SupabaseClient, snapshot: LineupSnapshot) 
  snapshot = structuredClone(snapshot);
  let pending: { cards: string; id: string } | null = null;
  return async (cards: RoundCard[]) => {
+  const protection=readLineupProtection(snapshot);
+  if(protection.blockedReason)throw new Error(protection.blockedReason);
   const payload = cards.map(c => ({ id:c.id, players:c.players.map(p => ({ participant_id:p.participant_id, team:p.team })) }));
   const serialized = JSON.stringify(payload);
   if (pending && pending.cards !== serialized) throw new Error('保存結果が不明のため変更内容を変えずに再試行してください。');
   pending ??= { cards: serialized, id: crypto.randomUUID() };
   const { data, error } = await s.rpc('replace_friendly_round_lineup', { p_event_id:snapshot.event_id, p_round_id:snapshot.round_id, p_expected:snapshot, p_cards:payload, p_request_id:pending.id });
   if (error || data?.request_id !== pending.id || data.snapshot?.round_id !== snapshot.round_id) throw new Error(message(error, '保存結果を確認できません。同じ内容で再試行してください。'));
+  // An idempotent result recorded by the old DB may not contain the new DTO.
   return data.snapshot as LineupSnapshot;
  };
 }

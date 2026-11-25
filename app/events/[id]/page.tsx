@@ -11,7 +11,7 @@ import { ScoreInput } from "@/components/score-input";
 import { useScoreSaves } from "@/components/score-save-provider";
 import { AppDialog } from "@/components/app-dialog";
 import { RoundLineupEditor, type LineupEditorData } from "@/components/round-lineup-editor";
-import { readLineupVersions, readRoundLineup, createLineupCommit, createFriendlyScoreCommit, createFriendlyDeleteCommit, canonicalPlayers, type LineupVersions } from "@/lib/round-lineup";
+import { readLineupProtection, readLineupVersions, readRoundLineup, createLineupCommit, createFriendlyScoreCommit, createFriendlyDeleteCommit, canonicalPlayers, type LineupVersions } from "@/lib/round-lineup";
 import { guestLineupSnapshot, guestRoundEligibility, roundCards, saveGuestRoundLineup, type RoundCard } from "@/lib/guest-round-lineup";
 import { FriendlyMatchCards } from "@/components/friendly-match-cards";
 import { readRoundMode, rememberRoundMode } from "@/lib/friendly-round-mode-selection";
@@ -941,7 +941,8 @@ export default function EventDetailPage() {
       } else {
         const db=getSupabaseClient();if(!db||!match.round_id)throw new Error("Roundの情報を確認できません。");
         const snapshot=await readRoundLineup(db,eventId,match.round_id);
-        setLineupEditor({target:match.id,data:{round:snapshot.round_number,cards:snapshot.cards.map(c=>({...c,result:c.result.length?c.result:null})),people:snapshot.people,eligible:snapshot.eligible,blocked_reason:snapshot.blocked_reason},save:createLineupCommit(db,snapshot)});
+        const protection=readLineupProtection(snapshot);
+        setLineupEditor({target:match.id,data:{round:snapshot.round_number,cards:snapshot.cards.map(c=>({...c,result:c.result.length?c.result:null})),people:snapshot.people,eligible:snapshot.eligible,blocked_reason:protection.blockedReason,protectedParticipantIds:protection.protectedParticipantIds},save:createLineupCommit(db,snapshot)});
       }
     } catch(cause) {boardOperation.current=null;setError(cause instanceof Error?cause.message:"メンバー変更を開けませんでした。");}
     finally {setLineupLoading(false);}

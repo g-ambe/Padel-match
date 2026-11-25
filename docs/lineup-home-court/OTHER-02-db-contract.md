@@ -1,5 +1,7 @@
 # OTHER-02 / #267：非固定選手入替のDB契約引継ぎ
 
+> 先行実装時点の記録です。その後の候補受領・独立レビュー・アプリ対応・新しい検証結果は [最新レビュー](../../supabase/maintenance/lineup-home-court/REVIEW.md) を参照してください。
+
 2026-11-25 JST。調査基点：main `065ade4b0c579ea47eb0452a85a0f17cb651abb2`。
 正本：[#267コメント7148176143](https://github.com/g-ambe/Padel-match/issues/267#issuecomment-7148176143)。
 

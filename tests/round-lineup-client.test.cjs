@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-const {createFriendlyScoreCommit,createFriendlyDeleteCommit,createLineupCommit}=require('../lib/round-lineup.ts');
+const {createFriendlyScoreCommit,createFriendlyDeleteCommit,createLineupCommit,readLineupProtection,assertMovableLineupPlayers}=require('../lib/round-lineup.ts');
 const {createScoreSaveQueue}=require('../lib/score-save-queue.ts');
 const {saveGuestRoundLineup,guestLineupSnapshot,roundCards,swapRoundPlayers}=require('../lib/guest-round-lineup.ts');
 const poll=async fn=>{while(!fn())await new Promise(r=>setTimeout(r,1));};
@@ -12,7 +12,7 @@ test('キュー再試行は元の構成・版数・結果期待値・操作IDを
  fail=false;queue.retry('e#m');await poll(()=>!queue.has('e#m'));assert.deepEqual(calls[2],calls[0]);
 });
 test('入替の応答喪失後は同じ要求だけを再送し、本人の操作で新しく開くまでは内容を変えない',async()=>{
- const calls=[];let lost=true;const snapshot={event_id:'e',round_id:'r',cards:[],people:[],eligible:[]};
+ const calls=[];let lost=true;const snapshot={event_id:'e',round_id:'r',cards:[],people:[],eligible:[],lineup_protection_version:1,protected_participant_ids:[]};
  const db={rpc:async(n,b)=>{calls.push(structuredClone(b));return lost?{error:{message:'応答喪失'}}:{data:{request_id:b.p_request_id,snapshot},error:null};}};
  const send=createLineupCommit(db,snapshot),cards=[{id:'m',players:[{participant_id:'p',team:'A'}]}];await assert.rejects(send(cards),/応答喪失/);await assert.rejects(send([]),/結果が不明/);lost=false;await send(cards);assert.deepEqual(calls[0],calls[1]);
 });
@@ -28,4 +28,23 @@ test('削除の応答喪失後もRound期待値・要求IDを保持し、確認�
  const db={rpc:async(n,b)=>{calls.push({n,b:structuredClone(b)});if(n==='get_friendly_round_lineup')return{data:structuredClone(snapshot)};return lost?{error:{message:'応答喪失'}}:{data:{request_id:b.p_request_id,match_id:b.p_match_id,deleted:true}};}};
  const send=createFriendlyDeleteCommit(db,'e',match);await assert.rejects(send(),/応答喪失/);snapshot.revision=1;lost=false;await send();assert.deepEqual(calls[1],calls[2]);assert.equal(calls.filter(c=>c.n==='get_friendly_round_lineup').length,1);
  snapshot.revision=0;snapshot.cards[0].completed=true;snapshot.cards[0].result=[{id:'s',score_a:0,score_b:0,winner_team:'draw'}];await assert.rejects(createFriendlyDeleteCommit(db,'e',match)(),/変更されています/);assert.equal(calls.filter(c=>c.n==='delete_friendly_match').length,2);
+});
+
+const u=n=>'30000000-0000-4000-8000-'+String(n).padStart(12,'0');
+test('入替だけが保護DTOの版・UUID・重複・順番・参加者整合を検証してfail closed',async()=>{
+ const valid={lineup_protection_version:1,protected_participant_ids:[u(1),u(2)],people:[{id:u(1)},{id:u(2)}],blocked_reason:null};
+ assert.deepEqual(readLineupProtection(valid),{protectedParticipantIds:[u(1),u(2)],blockedReason:null});
+ for(const delta of [{lineup_protection_version:undefined},{lineup_protection_version:2},{lineup_protection_version:'1'},{protected_participant_ids:undefined},{protected_participant_ids:null},{protected_participant_ids:'bad'},{protected_participant_ids:['not-uuid']},{protected_participant_ids:[null]},{protected_participant_ids:[u(1),u(1)]},{protected_participant_ids:[u(2),u(1)]},{protected_participant_ids:[u(3)]}]){
+  const snapshot={...valid,...delta,event_id:'e',round_id:'r',cards:[],eligible:[]};assert.match(readLineupProtection(snapshot).blockedReason,/再読み込み/);
+  let calls=0;await assert.rejects(createLineupCommit({rpc:async()=>{calls++;}},snapshot)([]),/再読み込み/);assert.equal(calls,0);
+ }
+ assert.equal(readLineupProtection({...valid,blocked_reason:'生成履歴不明'}).blockedReason,'生成履歴不明');
+ assert.deepEqual(readLineupProtection({...valid,protected_participant_ids:[]}).protectedParticipantIds,[]);
+});
+test('固定の出場/休憩をswapでも拒否し、非固定は既存操作へ渡す',()=>{
+ const protectedIds=[u(1),u(2)];assert.throws(()=>assertMovableLineupPlayers(protectedIds,u(1)),/固定ペア/);assert.throws(()=>assertMovableLineupPlayers(protectedIds,u(3),u(2)),/固定ペア/);assert.doesNotThrow(()=>assertMovableLineupPlayers(protectedIds,u(3),u(4)));
+});
+test('成功済み操作IDの再送結果に新DTOがなくても成功扱いを維持する',async()=>{
+ const snapshot={event_id:'e',round_id:'r',cards:[],people:[],eligible:[],lineup_protection_version:1,protected_participant_ids:[]};const historical={round_id:'r',revision:1};
+ const send=createLineupCommit({rpc:async(n,b)=>({data:{request_id:b.p_request_id,snapshot:historical}})},snapshot);assert.deepEqual(await send([]),historical);
 });

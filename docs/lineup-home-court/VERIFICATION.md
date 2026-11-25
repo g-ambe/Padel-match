@@ -1,5 +1,7 @@
 # OTHER-02 / TASK-01-21 限定検証・引継ぎ
 
+> 先行実装時点の記録です。その後の候補受領・独立レビュー・アプリ対応・新しい検証結果は [最新レビュー](../../supabase/maintenance/lineup-home-court/REVIEW.md) を参照してください。
+
 2026-11-25 JST。基点main `065ade4b0c579ea47eb0452a85a0f17cb651abb2`。
 ブランチ：`codex/lineup-home-court-selection`。本番/Stage書込み・Migration変更/適用・マージ・配信なし。
 

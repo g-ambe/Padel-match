@@ -15,9 +15,9 @@ test('raw保存値をそのままCASへ渡し、非公開ではpublic trueを送
  assert.equal(sent.p_expected_club_display_name,'  保存済み名  ');assert.equal(sent.p_public_confirmation,false);
  await approveNamedPlayerProfileLink(client(async(_,a)=>success(a)),raw,{...input,publicConfirmation:false});
 });
-test('公開確認と本人引継ぎの両方が必須、欠ければRPCを呼ばない',async()=>{
+test('本人引継ぎ同意と公開選択の型が必須',async()=>{
  let n=0;const db=client(async()=>{n++;});
- for(const delta of [{inheritanceConsent:false},{publicConfirmation:false}])await assert.rejects(approveNamedPlayerProfileLink(db,request,{...input,...delta}));
+ for(const delta of [{inheritanceConsent:false},{publicConfirmation:null}])await assert.rejects(approveNamedPlayerProfileLink(db,request,{...input,...delta}));
  assert.equal(n,0);
 });
 test('管理者・期限切れ・完了・旧DTO・本人未作成・tokenなしではnamed承認しない',async()=>{
@@ -53,3 +53,5 @@ test('拒否・取消・旧承認ヘルパー互換は旧RPCを使用',async()=>
  for(const decision of ['rejected','cancelled','approved'])await reviewPlayerProfileLink(db,'req',decision,decision==='cancelled'?undefined:'token');
  assert.deepEqual(calls,['rejected','cancelled','approved'].map(d=>['review_player_profile_link',{p_request_id:'req',p_decision:d,p_review_token:d==='cancelled'?null:'token'}]));
 });
+
+test('公開OFFの本人承認を許可し、戻り値もfalseと照合する',async()=>{let sent;await approveNamedPlayerProfileLink(client(async(_,a)=>{sent=a;return success(a)}),request,{...input,publicConfirmation:false});assert.equal(sent.p_public_confirmation,false);});

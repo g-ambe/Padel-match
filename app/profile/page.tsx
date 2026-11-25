@@ -1,5 +1,6 @@
 "use client";
 
+import { GroupActionIcon } from "@/components/group-action-icon";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ProfileMediaPanel } from "@/components/profile-media-panel";
@@ -251,7 +252,7 @@ export default function ProfilePage() {
       </ProfileMediaPanel>
       <Card title="総合戦績">
         {loading ? <p className="text-sm text-zinc-300">読み込み中...</p> : stats ? (
-          <div className="space-y-2 text-sm"><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-xs text-zinc-400">勝率</p><strong className="text-2xl text-accent">{stats.winRate.toFixed(1)}%</strong></div><div><p className="text-xs text-zinc-400">試合数</p><strong className="text-2xl">{stats.matches}</strong></div><div><p className="text-xs text-zinc-400">勝利数</p><strong className="text-2xl">{stats.wins}</strong></div></div><button type="button" className="flex min-h-11 w-full items-center justify-end gap-1 text-xs text-zinc-400 hover:underline" onClick={()=>setStatsOpen(true)}>戦績の詳細 <span aria-hidden="true">›</span></button></div>
+          <div className="space-y-2 text-sm"><div className="grid grid-cols-3 gap-2 text-center"><div><p className="text-xs text-zinc-400">勝率</p><strong className="text-2xl text-accent">{stats.winRate.toFixed(1)}%</strong></div><div><p className="text-xs text-zinc-400">試合数</p><strong className="text-2xl">{stats.matches}</strong></div><div><p className="text-xs text-zinc-400">勝利数</p><strong className="text-2xl">{stats.wins}</strong></div></div><button type="button" className="flex min-h-11 w-full items-center justify-end gap-1 text-xs text-zinc-400 hover:underline" onClick={()=>setStatsOpen(true)}>戦績の詳細 <GroupActionIcon name="right"/></button></div>
         ) : <p className="text-sm text-zinc-400">戦績を読み込めていません</p>}
       </Card>
       <AppDialog open={statsOpen} title="総合戦績の詳細" onClose={()=>setStatsOpen(false)}><div className="min-h-0 overflow-y-auto p-4">{stats&&<dl className="divide-y divide-zinc-700 text-sm">{[["試合数",`${stats.matches} 試合`],["勝利数",`${stats.wins} 勝`],["勝率",`${stats.winRate.toFixed(1)}%`],["平均得点",stats.avgScored.toFixed(1)],["平均失点",stats.avgConceded.toFixed(1)]].map(([label,value])=><div key={label} className="flex min-h-11 items-center justify-between gap-3"><dt className="text-zinc-400">{label}</dt><dd className="font-semibold">{value}</dd></div>)}</dl>}<button type="button" className="mt-3 min-h-11 w-full rounded-xl border border-zinc-600 text-sm" onClick={()=>setStatsOpen(false)}>閉じる</button></div></AppDialog>
@@ -261,7 +262,7 @@ export default function ProfilePage() {
         <div className="min-h-0 overflow-y-auto overscroll-contain p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         {profileId&&<button ref={photoButton} type="button" disabled={!media.state.profile||profiles.length!==1} className="mb-4 flex min-h-20 w-full items-center gap-3 rounded-xl bg-zinc-800/40 p-3 text-left disabled:opacity-40" onClick={()=>setPhotoView(true)}>
           <ProfileAvatar image={media.state.image} name={draft.display_name} position={avatarPosition(media.state.profile)} className="h-14 w-14"/>
-          <span className="min-w-0 flex-1"><strong className="text-sm">プロフィール写真</strong><span className="mt-1 block text-xs text-zinc-400">タップして写真・表示位置を編集</span></span><span aria-hidden="true" className="text-zinc-400">›</span>
+          <span className="min-w-0 flex-1"><strong className="text-sm">プロフィール写真</strong><span className="mt-1 block text-xs text-zinc-400">タップして写真・表示位置を編集</span></span><GroupActionIcon name="right" className="text-zinc-400"/>
         </button>}
         {profiles.length>1&&<p role="alert" className="mb-3 text-xs text-amber-300">複数の有効な連携プロフィールがあるため、写真・Instagram・ホームコートの変更には正規プロフィールの確認が必要です。</p>}
         <form onSubmit={e=>{e.preventDefault();if(profileId)void saveProfile();else void createProfile();}}><fieldset disabled={saving} className="space-y-3 text-sm">

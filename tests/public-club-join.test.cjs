@@ -20,7 +20,7 @@ test('本人申請は公開referenceと対応するpreview tokenを使用し、�
 });
 test('公開確認・有効な名前・ログイン・公開グループ・未所属・未申請をRPC前に検証',async()=>{
  let n=0;const db=client(async()=>{n++;return{data:requestId}});
- for(const delta of [{publicConfirmation:false},{name:''},{name:' '},{name:'x'.repeat(121)},{name:'a\nb'}])await assert.rejects(submitNamedPublicJoin(db,context,candidates,{...draft,...delta}));
+ for(const delta of [{publicConfirmation:null},{name:''},{name:' '},{name:'x'.repeat(121)},{name:'a\nb'}])await assert.rejects(submitNamedPublicJoin(db,context,candidates,{...draft,...delta}));
  for(const delta of [{userId:null},{visibility:'private'},{isMember:true},{hasPendingRequest:true},{clubId:''}])await assert.rejects(submitNamedPublicJoin(db,{...context,...delta},candidates,draft));
  assert.equal(n,0);
  await submitNamedPublicJoin(db,context,candidates,{...draft,name:'🎾'.repeat(120)});assert.equal(n,1);
@@ -53,4 +53,8 @@ test('42501・旧token/期限切れ・参照競合・RPC未適用・通信断で
 });
 test('不明な結果を送信成功扱いしない',async()=>{
  for(const data of [null,{},[],true,'not-a-request-id'])await assert.rejects(submitNamedPublicJoin(client(async()=>({data})),context,candidates,draft),/送信結果/);
+});
+
+test('公開OFFでもnamed gatewayへfalseを送り、本人引継ぎ同意は省略しない',async()=>{
+ let sent;await submitNamedPublicJoin(client(async(_,a)=>{sent=a;return{data:requestId}}),context,candidates,{...draft,publicConfirmation:false});assert.equal(sent.p_public_confirmation,false);
 });

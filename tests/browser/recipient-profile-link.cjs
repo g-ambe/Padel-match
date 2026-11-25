@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),{chromium}=require('playwright');
 const {navigationFixture,user,clubA,id}=require('../fixtures/navigation-app.cjs');
 const base=process.env.RECIPIENT_LINK_TEST_URL||'http://127.0.0.1:3070',remote='http://127.0.0.1:54321';
 const inheritance='この仮登録選手が自分であり、表示された所属・戦績を引き継ぐことに同意します';
-const publication='承認後、この表示名が公開グループのメンバー一覧に表示されます';
+const publication='承認後、グループ内表示名を未所属者にも公開する（OFFでも連携できます）';
 const detail=()=>({id:id(800),club_id:clubA,club_name:'申請元グループA',status:'pending',created_at:'2026-11-20T00:00:00Z',expires_at:'2099-01-01T00:00:00Z',detail_scope:'recipient',is_recipient:true,
  source:{id:id(801),display_name:'仮登録の本人名',bio:null,play_level:null,dominant_hand:null,preferred_position:null,activity_area:null,is_active:true,linked_auth_user_id:null,created_at:'2026-01-01'},
  target_profile_id:id(802),target_display_name:'正規本人名',memberships:[{id:id(803),club_name:'引継ぎ対象グループ',role:'member',status:'active',is_active:true,created_at:'2026-01-01'}],participant_count:3,match_count:4,result_count:4,team_match_count:1,official_match_count:0,review_token:'token-1',group_display_name_suggestion:'グループの仮名',group_display_name_current:null,group_visibility:'public'});
@@ -55,7 +55,7 @@ const detail=()=>({id:id(800),club_id:clubA,club_name:'申請元グループA',s
   const ready=async()=>{await name().fill('本人が選んだ別名');await agree().check();await publicCheck().check();};
   const kept=async()=>{assert.equal(await name().inputValue(),'本人が選んだ別名');assert(await agree().isChecked());assert(await publicCheck().isChecked());};
   await open();assert.equal(await name().inputValue(),'グループの仮名');assert(await approve().isDisabled());
-  await name().fill('本人が選んだ別名');await publicCheck().check();assert(await approve().isDisabled());await publicCheck().uncheck();await agree().check();assert(await approve().isDisabled());await publicCheck().check();assert(await approve().isEnabled());
+  await name().fill('本人が選んだ別名');await publicCheck().check();assert(await approve().isDisabled());await publicCheck().uncheck();await agree().check();assert(await approve().isEnabled());await publicCheck().check();assert(await approve().isEnabled());
   assert((await approve().boundingBox()).height>=44);assert(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   for(const el of [name(),agree(),publicCheck(),approve(),reload()]){
    const b=await el.boundingBox();assert(b.x>=0&&b.x+b.width<=375,'Control stays inside mobile width');
@@ -73,7 +73,7 @@ const detail=()=>({id:id(800),club_id:clubA,club_name:'申請元グループA',s
   // Explicit reload with a new CAS/token keeps name but requires consent for new content.
   record={...record,group_display_name_current:'更新後の保存名',review_token:'token-2'};
   await reload().click();await p.getByText('最新の内容を読み込みました。入力名は保持しています。引継ぎ内容と公開設定を再確認してください',{exact:true}).waitFor();
-  assert.equal(await name().inputValue(),'本人が選んだ別名');assert(!(await agree().isChecked()));assert(!(await publicCheck().isChecked()));assert(await approve().isDisabled());
+  assert.equal(await name().inputValue(),'本人が選んだ別名');assert(!(await agree().isChecked()));assert(await publicCheck().isChecked());assert(await approve().isDisabled());
   await agree().check();await publicCheck().check();hold=true;const n=count();await approve().click();await p.waitForTimeout(100);assert.equal(count(),n+1);assert(await approve().isDisabled());hold=false;release();await p.getByText('連携が完了しました',{exact:true}).waitFor();assert.equal(await name().count(),0);
   assert.deepEqual(calls.filter(c=>c.name==='review_player_profile_link_named').at(-1).body,{p_request_id:id(800),p_review_token:'token-2',p_club_display_name:'本人が選んだ別名',p_expected_club_display_name:'更新後の保存名',p_public_confirmation:true});
   // Commit may have succeeded even if response is lost: no retry; recover by GET.

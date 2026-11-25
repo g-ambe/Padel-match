@@ -13,14 +13,14 @@ export function PublicClubJoinDialog({ context, candidates, onClose, onSubmitted
   const inputId = useId(), inFlight = useRef(false), mounted = useRef(true);
   const [reference, setReference] = useState("");
   const [name, setName] = useState(""), [message, setMessage] = useState("");
-  const [publicConfirmation, setPublicConfirmation] = useState(false), [inheritanceConsent, setInheritanceConsent] = useState(false);
+  const [publicConfirmation, setPublicConfirmation] = useState(true), [inheritanceConsent, setInheritanceConsent] = useState(false);
   const [preview, setPreview] = useState<BoundClaimPreview | null>(null), [revision, setRevision] = useState(0);
   const [previewLoading, setPreviewLoading] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const selected = candidates.find(candidate => candidate.reference === reference && candidate.is_unlinked);
   useEffect(() => {
     let active = true;
-    setPreview(null); setInheritanceConsent(false); setPublicConfirmation(false); setError("");
+    setPreview(null); setInheritanceConsent(false); setError("");
     if (!reference) { setPreviewLoading(false); return; }
     setPreviewLoading(true);
     const db = getSupabaseClient();
@@ -33,7 +33,7 @@ export function PublicClubJoinDialog({ context, candidates, onClose, onSubmitted
   }, [context.clubId, reference, revision, selected]);
   const currentPreview = preview?.clubId === context.clubId && preview.reference === reference ? preview.value : null;
   const needsPreview = !!reference;
-  const disabled = busy || previewLoading || !name.trim() || !publicConfirmation || !context.userId
+  const disabled = busy || previewLoading || !name.trim() || !context.userId
     || context.isMember || context.hasPendingRequest || context.visibility !== "public"
     || (needsPreview && (!selected || !currentPreview?.has_target || !inheritanceConsent));
   const submit = async () => {
@@ -53,7 +53,7 @@ export function PublicClubJoinDialog({ context, candidates, onClose, onSubmitted
         <select id={`${inputId}-member`} disabled={busy} value={reference} className="min-h-11 w-full rounded-xl bg-zinc-800 p-3" onChange={event => {
           const next = event.target.value;
           setReference(next); setName(candidates.find(candidate => candidate.reference === next && candidate.is_unlinked)?.display_name ?? "");
-          setPreview(null); setInheritanceConsent(false); setPublicConfirmation(false); setError("");
+          setPreview(null); setInheritanceConsent(false); setError("");
         }}><option value="">選択しない（正規プロフィールで加入）</option>
           {candidates.filter(candidate => candidate.is_unlinked).map(candidate => <option key={candidate.reference} value={candidate.reference}>{candidate.display_name}</option>)}
         </select></div>
@@ -69,13 +69,13 @@ export function PublicClubJoinDialog({ context, candidates, onClose, onSubmitted
         <input id={`${inputId}-name`} value={name} disabled={busy} autoComplete="off" className="min-h-11 w-full rounded-xl bg-zinc-800 p-3" onChange={event => setName(event.target.value)} />
         <p className="mt-1 text-xs text-zinc-400">120文字以内。このグループだけで使う名前です。本人プロフィール名は変更しません。</p></div>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={publicConfirmation} disabled={busy} onChange={event => setPublicConfirmation(event.target.checked)} />
-        <span>承認後この表示名がメンバー一覧に表示されます</span></label>
+        <span>承認後、グループ内表示名を未所属者にも公開する（OFFでも申請できます）</span></label>
       <div><label htmlFor={`${inputId}-message`} className="mb-2 block text-sm">メッセージ（任意）</label>
         <textarea id={`${inputId}-message`} value={message} disabled={busy} className="w-full rounded-xl bg-zinc-800 p-3" onChange={event => setMessage(event.target.value)} /></div>
       <p className="text-xs text-zinc-400">正規プロフィールが未作成の場合は、<Link href="/profile" className="underline">プロフィール画面</Link>で作成してください。申請は7日で期限切れになります。承認されるまでは希望の表示名を公開しません。</p>
       {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
       {needsPreview && (error || !currentPreview) && !previewLoading && <button type="button" disabled={busy} className="min-h-11 rounded-xl border border-zinc-500 px-3 text-sm" onClick={() => {
-        setPreview(null); setInheritanceConsent(false); setPublicConfirmation(false); setRevision(value => value + 1);
+        setPreview(null); setInheritanceConsent(false); setRevision(value => value + 1);
       }}>引き継ぐ内容を再確認</button>}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" disabled={busy} className="min-h-11 rounded-xl border border-zinc-500 p-3" onClick={onClose}>キャンセル</button>

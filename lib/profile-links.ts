@@ -74,8 +74,8 @@ export async function approveNamedPlayerProfileLink(supabase: SupabaseClient, re
   if (!isValidProfileLinkDisplayName(input.name)) {
     throw new NamedProfileLinkError("グループ内表示名は制御文字を含めず120文字以内で入力してください", "22023");
   }
-  const publicConfirmation = request.group_visibility === "public";
-  if (publicConfirmation && !input.publicConfirmation) throw new NamedProfileLinkError("公開グループへの表示を確認してください", "42501");
+  const publicConfirmation = request.group_visibility === "public" && input.publicConfirmation;
+  if (typeof input.publicConfirmation !== "boolean") throw new NamedProfileLinkError("公開設定を選択してください", "22023");
   let result;
   try {
     result = await supabase.rpc("review_player_profile_link_named", {

@@ -1,4 +1,5 @@
 "use client";
+import { MatchBrand } from "@/components/match-brand";
 import { GroupEventReturn } from "@/components/group-event-return";
 
 import Link from "next/link";
@@ -333,7 +334,8 @@ export default function OfficialMatchDetailPage() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
       <GroupEventReturn />
-      <h1 className="pr-14 text-xl font-bold sm:pr-0">オフィシャルチームマッチ詳細</h1>
+      <MatchBrand/>
+    <h1 className="pr-14 text-xl font-bold sm:pr-0">オフィシャルチームマッチ詳細</h1>
       {error && <p className="rounded-xl border border-red-500/60 bg-red-950/40 p-3 text-sm text-red-200">{error}</p>}
       {notice && <p className="rounded-xl border border-emerald-500/60 bg-emerald-950/40 p-3 text-sm text-emerald-200">{notice}</p>}
       <Card title={event.title}>

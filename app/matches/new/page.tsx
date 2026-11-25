@@ -1,5 +1,6 @@
 "use client";
 
+import { MatchBrand } from "@/components/match-brand";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { EventFormatCards } from "@/components/event-format-cards";
@@ -26,8 +27,9 @@ export default function NewMatchPage() {
   }, []);
   if (!ready) return <main className="mx-auto max-w-md p-4"><p role="status">作成できるイベント形式を確認中…</p></main>;
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
+    <MatchBrand/>
     <h1 className="pr-14 text-xl font-bold">イベント形式を選択</h1><p className="text-sm text-zinc-300">形式を選んで、開催情報を入力します。</p>
     <EventFormatCards group={group} guest={guest}/>
-    <Link href="/home" className="min-h-11 p-3 text-center text-sm underline">試合トップへ戻る</Link>
+    <Link href="/home" className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-center text-sm">試合トップへ戻る</Link>
   </main>;
 }

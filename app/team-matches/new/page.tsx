@@ -1,5 +1,6 @@
 "use client";
 
+import { MatchBrand } from "@/components/match-brand";
 import { AppDialog } from "@/components/app-dialog";
 import { readTeamGroups } from "@/lib/team-groups";
 import { recentFirstGroups } from "@/lib/recent-event-groups";
@@ -182,9 +183,10 @@ export default function NewFriendlyTeamMatchPage() {
   const inputClass = "mt-1 min-h-11 w-full rounded-xl border border-zinc-700 bg-zinc-800 p-3 text-white";
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4 text-zinc-100">
     <button type="button" disabled={busy || !ready} className="min-h-11 self-start text-sm text-zinc-400 underline" onClick={()=>{if(groupReturn.saveForNavigation())router.push("/matches/new");}}>イベント形式へ戻る</button>
-    <h1 className="text-xl font-bold">フレンドリーチームマッチ</h1>
+    <MatchBrand/>
+    <h1 className="text-xl font-bold">TEAM MATCH</h1>
     <ActionButton onClick={()=>setWizardOpen(true)}>新しいチーム戦を作成</ActionButton>
-    <AppDialog open={wizardOpen} title="チーム戦を作成" busy={busy} onClose={()=>setWizardOpen(false)}>
+    <AppDialog open={wizardOpen} title="TEAM MATCHを作成" busy={busy} onClose={()=>setWizardOpen(false)}>
       <form onSubmit={createEvent} className="flex min-h-0 flex-col">
         <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain p-4">
           <ol aria-label="作成ステップ" className="grid grid-cols-4 gap-1 text-center text-[11px]">{["基本情報","チームA","チームB","確認"].map((label,index)=><li key={label} aria-current={step===index+1?"step":undefined} className={`border-b-2 pb-2 ${step===index+1?"border-accent text-accent":"border-zinc-700 text-zinc-400"}`}>{index+1}. {label}</li>)}</ol>

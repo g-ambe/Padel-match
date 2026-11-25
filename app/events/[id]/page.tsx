@@ -1,4 +1,5 @@
 "use client";
+import { MatchBrand } from "@/components/match-brand";
 import { GroupEventReturn } from "@/components/group-event-return";
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -1767,7 +1768,7 @@ function EditableEventTitle({ statusLabel, label, name, canEdit, isEditing, draf
   }
   return (
     <div className="flex items-start gap-2 pr-14 sm:pr-0">
-      <div className="min-w-0 flex-1"><h1 aria-label={`${label}：${name}`} title={name} className="line-clamp-2 break-words text-lg font-bold leading-6">{name}</h1>{statusLabel && <p className="text-[11px] leading-3 text-zinc-400">{statusLabel}</p>}</div>
+      <div className="min-w-0 flex-1"><MatchBrand/><h1 aria-label={`${label}：${name}`} title={name} className="line-clamp-2 break-words text-lg font-bold leading-6">{name}</h1>{statusLabel && <p className="text-[11px] leading-3 text-zinc-400">{statusLabel}</p>}</div>
       {canEdit && <button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}
     </div>
   );

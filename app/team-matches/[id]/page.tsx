@@ -1,4 +1,5 @@
 "use client";
+import { MatchBrand } from "@/components/match-brand";
 import { GroupEventReturn } from "@/components/group-event-return";
 
 import { TeamMatchShortcut } from "@/components/team-match-shortcut";
@@ -401,5 +402,5 @@ function MatchFormView({knownNames,teamNames,onAddGuest,showScore=true,saveKey,d
 
 function EditableEventTitle({ label, name, canEdit, isEditing, draft, onDraftChange, onStartEdit, onSave, onCancel }: { label: string; name: string; canEdit: boolean; isEditing: boolean; draft: string; onDraftChange: (value: string) => void; onStartEdit: () => void; onSave: () => void; onCancel: () => void }) {
   if (isEditing) return <div className="space-y-2 pr-14 sm:pr-0"><label className="text-xs font-semibold text-zinc-400">{label}</label><input className="w-full rounded-xl border border-zinc-600 bg-zinc-900 px-3 py-3 text-lg font-bold text-zinc-100 outline-none focus:border-accent" value={draft} onChange={(e)=>onDraftChange(e.target.value)} maxLength={80} autoFocus/><div className="grid grid-cols-2 gap-2"><button type="button" className="rounded-xl bg-accent py-2 text-sm font-bold text-black" onClick={onSave}>保存</button><button type="button" className="rounded-xl border border-zinc-500 py-2 text-sm text-zinc-100" onClick={onCancel}>キャンセル</button></div></div>;
-  return <div className="flex items-start gap-2 pr-14 sm:pr-0"><h1 className="min-w-0 flex-1 break-words text-xl font-bold">{label}：{name}</h1>{canEdit&&<button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}</div>;
+  return <div><MatchBrand/><div className="flex items-start gap-2 pr-14 sm:pr-0"><h1 className="min-w-0 flex-1 break-words text-xl font-bold">{label}：{name}</h1>{canEdit&&<button type="button" className="min-h-10 min-w-10 rounded-full bg-zinc-800/80 px-3 text-zinc-200 transition hover:bg-zinc-700 active:bg-zinc-600" onClick={onStartEdit} aria-label="イベント名を編集" title="イベント名を編集">✎</button>}</div></div>;
 }

@@ -1,3 +1,6 @@
+-- ChatGPT candidate 02, TASK-08-03 / #264. ISOLATED REVIEW ONLY.
+-- Proposed replacement for 04_restore_reviewed_merge.sql after review.
+-- Never execute on production without separate authorization; final ROLLBACK retained.
 -- 自動実行禁止。最新バックアップ取得・本人/管理者の確認後、監査IDを1件だけ明示する。
 -- 通常画面からの誤統合取消は実装しない。末尾はROLLBACKのまま試す。
 begin;
@@ -18,6 +21,18 @@ begin
   if not exists (select 1 from profile_link_private.merge_changes where merge_id=m.id) then raise exception '変更前後の監査がありません。自動的には復旧できません'; end if;
   for change in select * from profile_link_private.merge_changes where merge_id=m.id loop
     execute format('select to_jsonb(t) from %I.%I t where id=$1',change.source_schema,change.source_table) into current_row using change.row_id;
+    -- Only normalize the newly added NULL key when BOTH historical
+    -- snapshots predate that column. No existing fields are ignored.
+    -- Any actual later public choice (including OFF) must still block restore.
+    if change.source_schema='public'
+       and change.source_table in ('club_members','join_requests','player_profile_link_requests')
+       and jsonb_typeof(change.before_row)='object'
+       and jsonb_typeof(change.after_row)='object'
+       and not (change.before_row ? 'club_name_public_choice')
+       and not (change.after_row ? 'club_name_public_choice')
+       and current_row->'club_name_public_choice'='null'::jsonb then
+      current_row := current_row - 'club_name_public_choice';
+    end if;
     if current_row is distinct from change.after_row then raise exception '統合後に %.% の行 % が編集・削除されています。新しい情報を上書きせず中止します',change.source_schema,change.source_table,change.row_id; end if;
   end loop;
   -- 元プロフィールを先に戻し、当時の参照・役職・状態・日時を変更前JSONから復元する。

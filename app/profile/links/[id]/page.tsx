@@ -14,7 +14,7 @@ export default function ProfileLinkPage() {
   const requestRef = useRef<ProfileLinkDetail | null>(null), draftInitialized = useRef(false);
   const [request, setRequest] = useState<ProfileLinkDetail | null>(null);
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
-  const [consent, setConsent] = useState(false), [publicConfirmation, setPublicConfirmation] = useState(false);
+  const [consent, setConsent] = useState(false), [publicConfirmation, setPublicConfirmation] = useState(true);
   const [name, setName] = useState("");
   const [error, setError] = useState(""), [message, setMessage] = useState("");
   const load = async () => {
@@ -27,14 +27,14 @@ export default function ProfileLinkPage() {
       if (version !== generation.current || ticket !== loadSequence.current) return;
       if (hasRecipientLinkName(next)) {
         if (!draftInitialized.current) {
-          setName(next.group_display_name_suggestion); setConsent(false); setPublicConfirmation(false); draftInitialized.current = true;
+          setName(next.group_display_name_suggestion); setConsent(false); setPublicConfirmation(true); draftInitialized.current = true;
         } else {
           const previous = requestRef.current;
           if (!previous || !hasRecipientLinkName(previous) || previous.review_token !== next.review_token
             || previous.group_display_name_current !== next.group_display_name_current || previous.group_visibility !== next.group_visibility) {
             // A manual reload may reveal different consent content. Retain the edited name,
             // but do not approve a new token with acknowledgements for an old snapshot.
-            setConsent(false); setPublicConfirmation(false);
+            setConsent(false);
             setMessage("最新の内容を読み込みました。入力名は保持しています。引継ぎ内容と公開設定を再確認してください");
           }
         }
@@ -46,14 +46,14 @@ export default function ProfileLinkPage() {
   };
   useEffect(() => {
     generation.current++; inFlight.current = false; requestRef.current = null; draftInitialized.current = false;
-    setRequest(null); setName(""); setConsent(false); setPublicConfirmation(false); setBusy(false); setMessage("");
+    setRequest(null); setName(""); setConsent(false); setPublicConfirmation(true); setBusy(false); setMessage("");
     void load();
     return () => { generation.current++; };
   }, [id]);
   const namedRecipient = request !== null && hasRecipientLinkName(request);
   const canApprove = namedRecipient && !!request.target_profile_id && !!request.review_token && isValidProfileLinkDisplayName(name)
     && Date.parse(request.expires_at) > Date.now()
-    && consent && (request.group_visibility !== "public" || publicConfirmation);
+    && consent;
   const review = async (decision: "approved" | "rejected" | "cancelled") => {
     const s = getSupabaseClient();
     if (!s || busy || loading || inFlight.current || !request || (!request.is_recipient && decision !== "cancelled") || (decision === "approved" && !canApprove)) return;
@@ -86,7 +86,7 @@ export default function ProfileLinkPage() {
               <input id={fieldId} value={name} disabled={disabled} autoComplete="off" className="min-h-11 w-full rounded-xl bg-zinc-800 p-3" onChange={e => setName(e.target.value)} />
               <p className="mt-1 text-xs text-zinc-400">120文字以内。このグループだけの名前です。本人プロフィール名は変更しません。</p></div>
             {!namedRecipient && <p className="text-sm text-red-400">表示名の確認情報を取得できません。再読み込みしてDBの適用状態を確認してください。</p>}
-            {request.group_visibility === "public" && <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={publicConfirmation} disabled={disabled} onChange={e => setPublicConfirmation(e.target.checked)} /><span>承認後、この表示名が公開グループのメンバー一覧に表示されます</span></label>}
+            {request.group_visibility === "public" && <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={publicConfirmation} disabled={disabled} onChange={e => setPublicConfirmation(e.target.checked)} /><span>承認後、グループ内表示名を未所属者にも公開する（OFFでも連携できます）</span></label>}
             {request.group_visibility === "private" && <p className="text-xs text-zinc-400">非公開グループでは公開確認を登録しません。</p>}
             <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={consent} disabled={disabled} onChange={e => setConsent(e.target.checked)} /><span>この仮登録選手が自分であり、表示された所属・戦績を引き継ぐことに同意します</span></label>
             <div className="flex gap-2"><button disabled={disabled || !canApprove} className="min-h-11 w-1/2 rounded-xl bg-accent py-3 text-black disabled:bg-zinc-600" onClick={() => void review("approved")}>承認</button><button disabled={disabled} className="min-h-11 w-1/2 rounded-xl border border-zinc-500 py-3" onClick={() => void review("rejected")}>拒否</button></div>

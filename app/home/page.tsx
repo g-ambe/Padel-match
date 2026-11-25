@@ -1,5 +1,6 @@
 "use client";
 
+import { MatchBrand } from "@/components/match-brand";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -74,8 +75,8 @@ export default function HomePage() {
   const createHref = `/matches/new${group !== "all" && group !== "none" ? `?group=${encodeURIComponent(group)}` : ""}`;
 
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 p-4">
-    <header className="min-h-11 pr-14"><p className="text-xs font-semibold tracking-wider text-accent">PADEL MATCH</p><h1 className="text-2xl font-bold">試合</h1></header>
-    <div className="space-y-2 text-sm"><div className="flex items-center justify-between gap-3"><label htmlFor="match-group-filter" className="font-semibold">表示対象グループ</label>{!guest && ownerId && <Link href="/groups" className="flex min-h-11 items-center text-accent underline">グループ管理</Link>}</div><select id="match-group-filter" aria-label="表示対象グループ" className="min-h-12 w-full rounded-xl border border-zinc-700 bg-card p-3" value={group} onChange={event => { setGroup(event.target.value); setExpanded(false); if (ownerId) { try { saveMatchGroupFilter(sessionStorage, ownerId, event.target.value); } catch { /* 表示は維持する。 */ } } }}>
+    <header className="min-h-11 pr-14"><MatchBrand/><h1 className="text-2xl font-bold">試合</h1></header>
+    <div className="space-y-2 text-sm"><div className="flex items-center justify-between gap-3"><label htmlFor="match-group-filter" className="font-semibold">表示対象グループ</label></div><select id="match-group-filter" aria-label="表示対象グループ" className="min-h-12 w-full rounded-xl border border-zinc-700 bg-card p-3" value={group} onChange={event => { setGroup(event.target.value); setExpanded(false); if (ownerId) { try { saveMatchGroupFilter(sessionStorage, ownerId, event.target.value); } catch { /* 表示は維持する。 */ } } }}>
       <option value="all">すべての閲覧可能な試合</option><option value="none">グループなし</option>{groups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
     </select></div>
     {guest && <p className="rounded-xl border border-amber-500/50 p-3 text-sm text-amber-300">ゲストの試合はこのブラウザに一時保存されます。通常の画面移動では削除されません。</p>}

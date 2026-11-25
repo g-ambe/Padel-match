@@ -1,5 +1,6 @@
 "use client";
 
+import { MatchBrand } from "@/components/match-brand";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui";
@@ -207,7 +208,8 @@ export function FriendlyEventCreate() {
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
       <button type="button" disabled={loading || !ready} className="min-h-11 self-start text-sm text-zinc-400 underline" onClick={()=>{if(groupReturn.saveForNavigation())router.push(`/matches/new${selectedGroupId?`?group=${encodeURIComponent(selectedGroupId)}`:""}`);}}>イベント形式へ戻る</button>
-      <h1 className="pr-14 text-xl font-bold">{eventMode === "manual" ? "自分で組む" : "自動で組む"}イベント</h1>
+      <MatchBrand/>
+    <h1 className="pr-14 text-xl font-bold">{eventMode === "manual" ? "CUSTOM MATCH" : "SHUFFLE MATCH"}</h1>
       <p className="text-sm text-zinc-300">開催情報と作成先を確認してください。</p>
       {guestMode && <p className="text-sm text-amber-300">ゲストの試合はこのブラウザに一時保存されます。</p>}
       <div id="random-events"><Card title="イベントの基本情報">
@@ -237,8 +239,8 @@ export function FriendlyEventCreate() {
           <label className="block space-y-1 text-sm">
             <span className="text-zinc-300">対戦作成方式</span>
             <select className="w-full rounded-xl bg-zinc-800 p-3" value={eventMode} onChange={(e) => setEventMode(e.target.value as EventMode)}>
-              <option value="auto">自動で組む（乱数）</option>
-              <option value="manual">自分で組む（手動）</option>
+              <option value="auto">SHUFFLE MATCH</option>
+              <option value="manual">CUSTOM MATCH</option>
             </select>
           </label>
           {error && <p className="text-sm text-red-400">{error}</p>}

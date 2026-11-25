@@ -32,7 +32,7 @@ const base=process.env.NAMED_JOIN_TEST_URL||'http://127.0.0.1:3070',remote='http
     return answer(200,{display_name:'本人プロフィール名で上書きしない',target_display_name:'本人',has_target:true,review_token:token,membership_count:1,participant_count:2,match_count:body.p_reference===refs[0]?3:9,result_count:3,team_match_count:0,official_match_count:0});
    }
    if(name==='submit_public_club_claim_named'){
-    assert.equal(body.p_club_id,clubA);assert.equal(body.p_public_confirmation,true);assert(!rawIds.includes(body.p_reference));
+    assert.equal(body.p_club_id,clubA);assert.equal(body.p_public_confirmation,body.p_reference!==null);assert(!rawIds.includes(body.p_reference));
     if(hold)await new Promise(resolve=>releaseSubmit=resolve);
     if(failure){const code=failure;failure=null;tokenVersion++;return answer(code==='PT409'?409:403,{code,message:'synthetic refusal'});}
     assert.equal(body.p_review_token,body.p_reference?`${body.p_reference}:${tokenVersion}`:null);
@@ -46,7 +46,7 @@ const base=process.env.NAMED_JOIN_TEST_URL||'http://127.0.0.1:3070',remote='http
   const p=await c.newPage();p.setDefaultTimeout(15000);p.on('pageerror',e=>errors.push(e.message));
   const dialog=()=>p.getByRole('dialog',{name:'加入申請を確認'}),send=()=>dialog().getByRole('button',{name:'申請する',exact:true});
   const count=()=>calls.filter(c=>c.name==='submit_public_club_claim_named').length;
-  const publicCheck=()=>dialog().getByLabel('承認後この表示名がメンバー一覧に表示されます',{exact:true});
+  const publicCheck=()=>dialog().getByLabel('承認後、グループ内表示名を未所属者にも公開する（OFFでも申請できます）',{exact:true});
   const agree=()=>dialog().getByLabel('この仮登録選手が自分であり、管理者の承認後に表示された所属・戦績を引き継ぐことに同意します',{exact:true});
   const input=()=>dialog().getByLabel('グループ内表示名',{exact:true});
   const select=()=>dialog().getByLabel('加入時に引き継ぐ仮登録選手');
@@ -55,13 +55,13 @@ const base=process.env.NAMED_JOIN_TEST_URL||'http://127.0.0.1:3070',remote='http
   await p.goto(base+'/groups/'+clubA);await open();await p.waitForFunction(t=>document.documentElement.dataset.theme===t,theme);
   const box=await dialog().boundingBox();assert(box.x>=0&&box.x+box.width<=375);assert((await send().boundingBox()).height>=44);
   assert.equal(await input().inputValue(),'');await input().fill('取り消す名前');await publicCheck().check();await dialog().getByRole('button',{name:'キャンセル',exact:true}).click();assert.equal(count(),0);
-  await open();assert.equal(await input().inputValue(),'');await input().fill('新規加入の名前');await dialog().getByLabel('メッセージ（任意）').fill('メモ保持');assert(await send().isDisabled());
-  await publicCheck().check();failure='42501';await send().click();await dialog().getByRole('alert').waitFor();assert.equal(count(),1);assert.equal(await input().inputValue(),'新規加入の名前');assert.equal(await dialog().getByLabel('メッセージ（任意）').inputValue(),'メモ保持');
+  await open();assert.equal(await input().inputValue(),'');await input().fill('新規加入の名前');await dialog().getByLabel('メッセージ（任意）').fill('メモ保持');assert(await send().isEnabled());
+  await publicCheck().uncheck();failure='42501';await send().click();await dialog().getByRole('alert').waitFor();assert.equal(count(),1);assert.equal(await input().inputValue(),'新規加入の名前');assert.equal(await dialog().getByLabel('メッセージ（任意）').inputValue(),'メモ保持');
   hold=true;await send().click();await p.waitForTimeout(100);assert.equal(count(),2);assert(await dialog().getByRole('button',{name:'送信中…'}).isDisabled());hold=false;releaseSubmit();await dialog().waitFor({state:'hidden'});await p.getByText('申請中です',{exact:true}).waitFor();
-  assert.equal(await p.locator('[data-member-id]').getByText('新規加入の名前',{exact:true}).count(),0);assert.deepEqual(calls.filter(c=>c.name==='submit_public_club_claim_named')[0].body,{p_club_id:clubA,p_reference:null,p_message:'メモ保持',p_review_token:null,p_club_display_name:'新規加入の名前',p_public_confirmation:true});
+  assert.equal(await p.locator('[data-member-id]').getByText('新規加入の名前',{exact:true}).count(),0);assert.deepEqual(calls.filter(c=>c.name==='submit_public_club_claim_named')[0].body,{p_club_id:clubA,p_reference:null,p_message:'メモ保持',p_review_token:null,p_club_display_name:'新規加入の名前',p_public_confirmation:false});
   await cancelRequest();await open();await select().selectOption(refs[0]);await agree().waitFor();assert.equal(await input().inputValue(),'Aグループの仮登録別名');assert.equal(await dialog().getByRole('option',{name:'確認済み公開名',exact:true}).count(),0);
   await input().fill('本人が決めた別名');await publicCheck().check();assert(await send().isDisabled());await agree().check();failure='P0001';const n=count();await send().click();await dialog().getByRole('alert').waitFor();assert.equal(count(),n+1);assert.equal(await input().inputValue(),'本人が決めた別名');
-  await dialog().getByRole('button',{name:'引き継ぐ内容を再確認'}).click();await agree().waitFor();assert.equal(await input().inputValue(),'本人が決めた別名');assert(!(await publicCheck().isChecked()));assert(!(await agree().isChecked()));await publicCheck().check();await agree().check();await send().click();await dialog().waitFor({state:'hidden'});await p.getByText('申請中です',{exact:true}).waitFor();
+  await dialog().getByRole('button',{name:'引き継ぐ内容を再確認'}).click();await agree().waitFor();assert.equal(await input().inputValue(),'本人が決めた別名');assert(await publicCheck().isChecked());assert(!(await agree().isChecked()));await publicCheck().check();await agree().check();await send().click();await dialog().waitFor({state:'hidden'});await p.getByText('申請中です',{exact:true}).waitFor();
   assert.equal(await p.locator('[data-member-id]').getByText('本人が決めた別名',{exact:true}).count(),0);await cancelRequest();
   await open();holdPreview=true;await select().selectOption(refs[0]);await p.waitForTimeout(100);assert(releasePreview);
   await select().selectOption(refs[1]);await agree().waitFor();releasePreview();await p.waitForTimeout(100);assert.equal(await input().inputValue(),'もう一人の仮名');

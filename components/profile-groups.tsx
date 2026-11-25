@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { GroupActionIcon } from "./group-action-icon";
 import { GroupEntryLink, useGroupOriginRestore } from "@/components/group-entry-link";
 import { useEffect, useState } from "react";
 import { Card } from "./ui";
@@ -36,7 +37,7 @@ export function ProfileGroups({ owner }: { owner: string | null }) {
   const list=(rows:typeof groups)=><div className="divide-y divide-zinc-700">{rows.map(group=><GroupEntryLink origin="profile" expanded={expanded} groupId={group.id} key={group.id} onClick={()=>setExpanded(false)} className="flex min-h-14 items-center gap-3 py-2"><span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-800 font-semibold text-accent">{Array.from(group.name.trim())[0]??"G"}</span><span className="min-w-0 flex-1 break-words text-sm font-semibold">{group.name}</span><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="shrink-0 text-zinc-400"><path d="m9 5 7 7-7 7"/></svg></GroupEntryLink>)}</div>;
   const actions=PROFILE_GROUP_ACTIONS;
   return <><Card title="所属グループ">
-    {preview.hasMore&&<div className="-mt-1 flex justify-end"><button type="button" className="min-h-11 px-1 text-xs text-zinc-400 hover:underline" onClick={()=>setExpanded(true)}>すべて見る ›</button></div>}
+    {preview.hasMore&&<div className="-mt-1 flex justify-end"><button type="button" className="min-h-11 px-1 text-xs text-zinc-400 hover:underline" onClick={()=>setExpanded(true)}>すべて見る<GroupActionIcon name="right" className="inline-block"/></button></div>}
     {loading&&<p role="status" className="py-3 text-sm text-zinc-400">読み込み中…</p>}
     {list(preview.visible)}
     {!loading&&!groups.length&&!error&&<p className="py-3 text-sm text-zinc-400">まだ所属グループがありません</p>}

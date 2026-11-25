@@ -27,7 +27,7 @@ export async function submitNamedPublicJoin(db: SupabaseClient, context: NamedJo
   }
   const name = draft.name.trim();
   if (!name || Array.from(name).length > 120 || /[\u0000-\u001f\u007f-\u009f]/u.test(name)) throw new PublicClubJoinError("グループ内表示名は制御文字を含めず120文字以内で入力してください", "22023");
-  if (!draft.publicConfirmation) throw new PublicClubJoinError("承認後のメンバー一覧への表示を確認してください", "42501");
+  if (typeof draft.publicConfirmation !== "boolean") throw new PublicClubJoinError("公開設定を選択してください", "42501");
   let token: string | null = null;
   if (draft.reference !== null) {
     const match = candidates.some(candidate => candidate.reference === draft.reference && candidate.is_unlinked);
@@ -40,7 +40,7 @@ export async function submitNamedPublicJoin(db: SupabaseClient, context: NamedJo
   }
   const { data, error } = await db.rpc("submit_public_club_claim_named", {
     p_club_id: context.clubId, p_reference: draft.reference, p_message: draft.message.trim() || null,
-    p_review_token: token, p_club_display_name: name, p_public_confirmation: true,
+    p_review_token: token, p_club_display_name: name, p_public_confirmation: draft.publicConfirmation,
   });
   if (error) throw new PublicClubJoinError("申請できませんでした。入力は保持されています。加入先や仮登録選手の状態を確認し、引き継ぐ内容を再確認してください", error.code);
   if (typeof data !== "string" || !/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(data)) {

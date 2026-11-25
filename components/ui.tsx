@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 
-export function Card({ title, children }: { title: string; children: ReactNode }) {
+export function Card({ title, children }: { title: ReactNode; children: ReactNode }) {
   return <section className="rounded-2xl bg-card p-4 shadow-lg"><h2 className="mb-3 text-lg font-bold">{title}</h2>{children}</section>;
 }
 

@@ -5,8 +5,10 @@ import { useSessionAccount } from "@/components/use-session-account";
 import { readMyMemberships, readClubRoster, readPublicDirectory, readPublicClubMemberCount, readJoinRequestNames, type RosterMember } from "@/lib/group-read";
 import { ClubOwnerTransfer, type OwnerState } from "@/components/club-owner-transfer";
 import { PublicClubJoinDialog } from "@/components/public-club-join-dialog";
-import { ClubDisplayNameDialog } from "@/components/club-display-name-dialog";
-import { ClubDisplayNameError, canEditClubDisplayName, groupMemberLabel, saveClubDisplayName, type ClubNameMember } from "@/lib/club-display-name";
+import { ClubMemberFields } from "@/components/club-member-fields";
+import { GroupActionIcon } from "@/components/group-action-icon";
+import { validMemberFieldState, type MemberFieldState } from "@/lib/club-member-fields";
+import { canEditClubDisplayName, groupMemberLabel, type ClubNameMember, type ClubNameContext } from "@/lib/club-display-name";
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -29,6 +31,7 @@ type Member = ClubNameMember & {
   profile_id: string | null;
   display_name: string;
   public_unlinked?:boolean;
+  field_state?:MemberFieldState|null;
 };
 type StatTab = GroupStatTab;
 type IndividualMode = "総合ランキング" | "勝率ランキング";
@@ -45,6 +48,10 @@ const resolveDisplayName = (playerProfiles: any) => {
   const displayName = getProfileRow(playerProfiles)?.display_name;
   return typeof displayName === "string" && displayName.trim() ? displayName : "名称未設定";
 };
+function memberFieldState(r:RosterMember):MemberFieldState|null {
+ const value={member_id:r.id,club_display_name:r.player_profiles?.club_display_name??null,public_name_choice:r.player_profiles?.public_name_choice,public_name_confirmed:r.player_profiles?.public_name_confirmed,public_name_enabled:r.player_profiles?.public_name_enabled,group_visibility:r.player_profiles?.group_visibility};
+ return validMemberFieldState(value)?value:null;
+}
 const rosterMember = (r: RosterMember): Member => ({
   id:r.id, club_id:r.club_id, profile_id:r.profile_id, player_profile_id:r.player_profile_id,
   // Keep the existing profile-name value for unrelated management/join flows.
@@ -52,6 +59,7 @@ const rosterMember = (r: RosterMember): Member => ({
   profile_display_name:resolveDisplayName(r.player_profiles),
   club_display_name:r.player_profiles?.club_display_name ?? null,
   public_name_confirmed:r.player_profiles?.public_name_confirmed === true,
+  field_state:memberFieldState(r),
   linked_auth_user_id:r.player_profiles?.linked_auth_user_id ?? null,
   is_active:r.is_active, status:r.status, player_active:!r.player_profile_id||!!r.player_profiles?.is_active, role:r.role,
 });
@@ -74,8 +82,8 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
   const popup = popups.at(-1), popupScroll=useRef<HTMLDivElement>(null), returnApplied=useRef(false);
   const tabScroll = useRef<Partial<Record<MainTab,number>>>({}),popupPositionsOnReturn=useRef<{depth:number;top:number}|null>(null);
   const popupStackRef=useRef<Popup[]>([]);popupStackRef.current=popups;
-  const pushPopup=(next:Popup)=>{const stack=[...popupStackRef.current,next];popupStackRef.current=stack;setPopups(stack);history.pushState({...history.state,h21:{...history.state?.h21,id,account:accountId,stack,depth:0,hops:(history.state?.h21?.hops??0)+1}},"",location.href);};
-  const popPopup=()=>{if(history.state?.h21?.id===id&&(history.state.h21.hops??0)>0)history.back();else {const stack=popupStackRef.current.slice(0,-1);setPopups(stack);history.replaceState({...history.state,h21:{...history.state?.h21,stack}},"",location.href);}};
+  const pushPopup=(next:Popup)=>{setMessage("");const stack=[...popupStackRef.current,next];popupStackRef.current=stack;setPopups(stack);history.pushState({...history.state,h21:{...history.state?.h21,id,account:accountId,stack,depth:0,hops:(history.state?.h21?.hops??0)+1}},"",location.href);};
+  const popPopup=()=>{setMessage("");if(history.state?.h21?.id===id&&(history.state.h21.hops??0)>0)history.back();else {const stack=popupStackRef.current.slice(0,-1);setPopups(stack);history.replaceState({...history.state,h21:{...history.state?.h21,stack}},"",location.href);}};
   const [ownerDetail,setOwnerDetail]=useState(false),[ownerDismiss,setOwnerDismiss]=useState(0);
   const [ownerState, setOwnerState] = useState<OwnerState>("unknown");
   const [tab, setTab] = useState<MainTab>("概要");
@@ -101,7 +109,6 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
   const [members, setMembers] = useState<Member[]>([]);
   const [publicMemberCount,setPublicMemberCount]=useState<number|null>(null),[memberCountError,setMemberCountError]=useState("");
   const [inactiveMembers, setInactiveMembers] = useState<Member[]>([]);
-  const [nameEditMember, setNameEditMember] = useState<Member | null>(null);
   const [myProfileId, setMyProfileId] = useState<string | null>(null);
   const [myMemberId, setMyMemberId] = useState<string | null>(null);
   const [myAuthUserId, setMyAuthUserId] = useState<string | null>(null);
@@ -364,7 +371,7 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
     setLoading(true); setError(""); setMessage("");
     try {
       await saveClubMemberRole(s, memberSnapshot(member), role);
-      setMessage("役職を更新しました"); await load(); return true;
+      await load(); return true;
     } catch (cause) { logMemberError("役職の更新に失敗しました", cause); setError(profileErrorMessage(cause)); return false; }
     finally { setLoading(false); }
   };
@@ -454,11 +461,11 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
       groupDeleteInFlight.current = false; setLoading(false);
     }
   };
-  const saveGroupName = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupNameInput.trim(); if (!trimmed) return setError("グループ名を入力してください"); if (trimmed === groupName) { setEditingGroupName(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ name: trimmed }).eq("id", id); if (e) { setError("グループ名の更新に失敗しました"); setLoading(false); return; } else setMessage("グループ名を更新しました"); setEditingGroupName(false); setLoading(false); await load(); };
-  const saveGroupDescription = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupDescriptionInput.trim(); if (trimmed === groupDescription) { setEditingDescription(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ description: trimmed || null }).eq("id", id); if (e) { setError("グループ説明の更新に失敗しました"); setLoading(false); return; } else setMessage("更新しました"); setEditingDescription(false); setLoading(false); await load(); };
-  const saveFacility = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ main_facility_id: facilityInput }).eq("id", id); if (e) { setError("ホームコートの更新に失敗しました"); setLoading(false); return; } else setMessage("ホームコートを更新しました"); setEditingFacility(false); setLoading(false); await load(); };
+  const saveGroupName = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupNameInput.trim(); if (!trimmed) return setError("グループ名を入力してください"); if (trimmed === groupName) { setEditingGroupName(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ name: trimmed }).eq("id", id); if (e) { setError("グループ名の更新に失敗しました"); setLoading(false); return; } else setMessage(""); setEditingGroupName(false); setLoading(false); await load(); };
+  const saveGroupDescription = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; const trimmed = groupDescriptionInput.trim(); if (trimmed === groupDescription) { setEditingDescription(false); return; } setLoading(true); const { error: e } = await s.from("clubs").update({ description: trimmed || null }).eq("id", id); if (e) { setError("グループ説明の更新に失敗しました"); setLoading(false); return; } else setMessage(""); setEditingDescription(false); setLoading(false); await load(); };
+  const saveFacility = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ main_facility_id: facilityInput }).eq("id", id); if (e) { setError("ホームコートの更新に失敗しました"); setLoading(false); return; } else setMessage(""); setEditingFacility(false); setLoading(false); await load(); };
   const uploadGroupImage = async (file: File) => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const ext = file.name.split(".").pop() ?? "jpg"; const path = `${id}/${Date.now()}.${ext}`; const { error: upErr } = await s.storage.from("group-images").upload(path, file, { upsert: true }); if (upErr) { setError("画像アップロードに失敗しました"); setLoading(false); return; } const { data: pub } = s.storage.from("group-images").getPublicUrl(path); const { error: e } = await s.from("clubs").update({ image_url: pub.publicUrl }).eq("id", id); if (e) setError("画像の更新に失敗しました"); else setMessage("画像を更新しました"); setEditingImage(false); setLoading(false); await load(); };
-  const saveVisibility = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ visibility: visibilityInput }).eq("id", id); if (e) { setError("公開設定の更新に失敗しました"); setLoading(false); return; } else setMessage("公開設定を更新しました"); setEditingVisibility(false); setLoading(false); await load(); };
+  const saveVisibility = async () => { if (!canEditGroupProfile(roleCtx)) return deny(); const s = getSupabaseClient(); if (!s || !id) return; setLoading(true); const { error: e } = await s.from("clubs").update({ visibility: visibilityInput }).eq("id", id); if (e) { setError("公開設定の更新に失敗しました"); setLoading(false); return; } else setMessage(""); setEditingVisibility(false); setLoading(false); await load(); };
 
 
 
@@ -483,13 +490,13 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
   };
 
   const selectedMember=[...members,...inactiveMembers].find(m=>m.id===(popup?.kind==="member"?popup.id:selectedMemberId));
-  const childOpen=!!nameEditMember||confirmSelfLeave||confirmGroupDelete||!!confirmLeave||joinDialogOpen||ownerPanel;
+  const childOpen=confirmSelfLeave||confirmGroupDelete||!!confirmLeave||joinDialogOpen||ownerPanel;
   const popupPositions=useRef<number[]>([]);if(popupPositionsOnReturn.current){popupPositions.current[popupPositionsOnReturn.current.depth]=popupPositionsOnReturn.current.top;popupPositionsOnReturn.current=null;}
   const childDepth=ownerDetail?2:childOpen?1:0,priorDepth=useRef(0);
   const closeChildRef=useRef<(depth:number)=>void>(()=>{});
   closeChildRef.current=depth=>{
     if(depth<2&&ownerDetail){setOwnerDismiss(n=>n+1);setOwnerDetail(false);}
-    if(depth===0){setNameEditMember(null);setConfirmSelfLeave(false);setConfirmGroupDelete(false);setConfirmLeave(null);setJoinDialogOpen(false);setOwnerPanel(false);}
+    if(depth===0){setConfirmSelfLeave(false);setConfirmGroupDelete(false);setConfirmLeave(null);setJoinDialogOpen(false);setOwnerPanel(false);}
   };
   useEffect(()=>{
     const saved=history.state?.h21;
@@ -518,13 +525,13 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
     <GroupMemberAvatar member={m} session={avatarSession}/>
     <span className="min-w-0 flex-1 break-words text-sm font-semibold">{m.public_unlinked!==undefined?m.display_name:groupMemberLabel(m)}</span>
     {(isMemberOfGroup||isSuperUser)&&<span className="shrink-0 text-[11px] text-zinc-400">{roleLabel[m.role]}</span>}
-    {(!m.linked_auth_user_id&&m.public_unlinked!==false)&&<span className="shrink-0 text-[11px] text-zinc-400">未連携</span>}<span aria-hidden="true">›</span>
+    {(!m.linked_auth_user_id&&m.public_unlinked!==false)&&<span className="shrink-0 text-[11px] text-zinc-400">未連携</span>}<GroupActionIcon name="right" className="shrink-0 text-zinc-400"/>
   </button>;
-  const eventRows=(events:GroupEvent[])=><div className="divide-y divide-zinc-700">{events.map(e=><button type="button" key={e.href} onClick={()=>openEvent(e.href)} className="block min-h-14 w-full py-3 text-left"><span className="block break-words text-sm font-semibold">{e.name}</span><span className="text-xs text-zinc-400">{new Date(e.date).toLocaleDateString("ja-JP")} / {e.status==="closed"?"終了":e.status==="active"?"開催中":"開催情報"} ›</span></button>)}</div>;
+  const eventRows=(events:GroupEvent[])=><div className="divide-y divide-zinc-700">{events.map(e=><button type="button" key={e.href} onClick={()=>openEvent(e.href)} className="block min-h-14 w-full py-3 text-left"><span className="block break-words text-sm font-semibold">{e.name}</span><span className="text-xs text-zinc-400">{new Date(e.date).toLocaleDateString("ja-JP")} / {e.status==="closed"?"終了":e.status==="active"?"開催中":"開催情報"}<GroupActionIcon name="right" className="ml-1 inline-block"/></span></button>)}</div>;
   const statRows=statTab==="個人"?[...targetIndividuals,...referenceIndividuals]:statTab==="ペア"?pairRows:eventHistoryRows;
   const statKey=(r:any)=>statTab==="個人"?r.playerId:statTab==="ペア"?r.playerIds.join("|"):r.id;
   const statButton=(r:any,i:number)=><button type="button" key={statKey(r)} className="min-h-14 w-full rounded-xl bg-zinc-800 p-3 text-left text-sm" onClick={()=>pushPopup({kind:"statDetail",id:statKey(r)})}>
-    <span className="block break-words font-semibold">{statTab==="開催履歴"?r.name:`${r.isReference?"参考記録":`${i+1}位`} ${r.name??r.pairName}`}</span>
+    <GroupActionIcon name="right" className="float-right ml-2 mt-2 text-zinc-400"/><span className="block break-words font-semibold">{statTab==="開催履歴"?r.name:`${r.isReference?"参考記録":`${i+1}位`} ${r.name??r.pairName}`}</span>
     <span className="block text-xs text-zinc-400">{statTab==="開催履歴"?`${new Date(r.date).toLocaleDateString("ja-JP")} / 試合 ${r.matchCount}`:`${formatRecord(r.wins,r.losses,r.draws)} / 勝率 ${r.rate.toFixed(1)}%`}</span>
   </button>;
   const detailStat=statRows.find(r=>statKey(r)===popup?.id);
@@ -532,29 +539,29 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
   const popupTitle=popup?({menu:"グループの操作",settings:"グループ設定",member:"メンバー詳細",add:"メンバーを追加",inactive:"退会済みメンバー",requests:"加入申請",links:"連携申請",events:"開催一覧",allStats:`${statTab}の全件`,statDetail:"戦績の詳細",points:"総合ptについて"})[popup.kind]:"";
   if (!canViewGroup) return <main className="mx-auto min-h-screen w-full max-w-md space-y-4 p-4"><Card title="グループ"><p role={error?"alert":"status"} className="text-sm">{loading?"読み込み中...":error||"このグループを表示できません"}</p><button disabled={loading} className="mt-3 min-h-11 text-sm underline" onClick={()=>void refreshGroup()}>再読み込み</button></Card><Link href={returnPath} scroll={!returnPath.includes("groupRestore=")} className="block min-h-11 py-3 text-sm underline">戻る</Link></main>;
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 p-4">
-    <header className="flex min-h-11 items-start gap-2 pr-11"><Link href={returnPath} scroll={!returnPath.includes("groupRestore=")} className="shrink-0 py-2 text-sm underline">戻る</Link><div className="min-w-0 flex-1"><h1 className="break-words text-xl font-bold">{groupName}</h1><p className="text-xs text-zinc-400">{visibility==="public"?"公開グループ":"非公開グループ"}</p></div>{isMemberOfGroup&&<button type="button" aria-label="グループの操作" className="min-h-11 min-w-11 rounded-xl border border-zinc-700 text-xl" onClick={()=>pushPopup({kind:"menu"})}>…</button>}</header>
+    <header className="flex min-h-11 items-start gap-2 pr-11"><Link href={returnPath} scroll={!returnPath.includes("groupRestore=")} aria-label="戻る" className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg"><GroupActionIcon name="left"/></Link><div className="min-w-0 flex-1"><h1 className="break-words text-xl font-bold">{groupName}</h1><p className="text-xs text-zinc-400">{visibility==="public"?"公開グループ":"非公開グループ"}</p></div>{isMemberOfGroup&&<button type="button" aria-label="グループの操作" className="flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-zinc-700" onClick={()=>pushPopup({kind:"menu"})}><GroupActionIcon name="settings"/></button>}</header>
     {error&&<p role="alert" className="break-words text-sm text-red-400">{error}</p>}{message&&<p role="status" className="text-sm text-emerald-400">{message}</p>}
     {loading&&<p role="status" className="text-xs text-zinc-400">処理中...</p>}
     <div role="tablist" aria-label="グループ詳細" className={`grid gap-2 ${isMemberOfGroup?"grid-cols-3":"grid-cols-2"}`}>{groupTabs(isMemberOfGroup).map(t=><button key={t} role="tab" aria-selected={tab===t} className={`min-h-11 rounded-xl p-2 text-sm ${tab===t?"bg-accent text-black":"bg-zinc-800 text-zinc-200"}`} onClick={()=>changeTab(t)}>{t}</button>)}</div>
     {tab==="概要"&&<>
-      <Card title="グループ紹介"><p className="whitespace-pre-wrap break-words text-sm text-zinc-300">{groupDescription?(descriptionExpanded?groupDescription:groupDescription.slice(0,140))+(groupDescription.length>140&&!descriptionExpanded?"…":""):"紹介文は未設定です"}</p>{groupDescription.length>140&&<button className="min-h-11 text-xs underline" onClick={()=>setDescriptionExpanded(v=>!v)}>{descriptionExpanded?"閉じる":"もっと見る"}</button>}
+      <Card title="グループ紹介"><p className="whitespace-pre-wrap break-words text-sm text-zinc-300">{groupDescription?(descriptionExpanded?groupDescription:groupDescription.slice(0,140))+(groupDescription.length>140&&!descriptionExpanded?"…":""):"紹介文は未設定です"}</p>{groupDescription.length>140&&<button aria-expanded={descriptionExpanded} className="flex min-h-11 items-center gap-1 text-xs text-zinc-400" onClick={()=>setDescriptionExpanded(v=>!v)}>{descriptionExpanded?"閉じる":"もっと見る"}<GroupActionIcon name={descriptionExpanded?"up":"down"}/></button>}
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm"><dt className="text-zinc-400">活動施設</dt><dd className="break-words">{facilities.find(f=>f.id===facilityId)?.name??"未設定"}</dd><dt className="text-zinc-400">所属人数</dt><dd>{isMemberOfGroup?`${members.length}人`:publicMemberCount!==null?`${publicMemberCount}人`:loading?"確認中…":"不明"}</dd><dt className="text-zinc-400">公開状態</dt><dd>{visibility==="public"?"公開":"非公開"}</dd></dl>
         {!isMemberOfGroup&&memberCountError&&<div className="mt-2"><p role="alert" className="text-sm text-red-400">{memberCountError}</p><button type="button" disabled={loading} className="min-h-11 text-sm underline disabled:opacity-50" onClick={()=>void refreshGroup()}>所属人数を再読み込み</button></div>}
       </Card>
-      <Card title="最近の開催">{isMemberOfGroup?<>{eventsError?<p role="alert" className="text-sm text-red-400">{eventsError}</p>:overviewEvents.length?eventRows(groupPreview(overviewEvents).visible):<p className="text-sm text-zinc-400">開催はありません</p>}{groupPreview(overviewEvents).hasMore&&<button className="min-h-11 text-sm underline" onClick={()=>pushPopup({kind:"events"})}>すべて見る</button>}</>:<p className="text-sm text-zinc-400">開催情報は所属後に確認できます。</p>}</Card>
+      <Card title={<span className="flex items-center justify-between gap-2"><span>最近の開催</span>{isMemberOfGroup&&!eventsError&&groupPreview(overviewEvents).hasMore&&<button className="flex min-h-11 shrink-0 items-center gap-1 text-xs font-normal text-zinc-400" onClick={()=>pushPopup({kind:"events"})}>すべて見る<GroupActionIcon name="right"/></button>}</span>}>{isMemberOfGroup?<>{eventsError?<p role="alert" className="text-sm text-red-400">{eventsError}</p>:overviewEvents.length?eventRows(groupPreview(overviewEvents).visible):<p className="text-sm text-zinc-400">開催はありません</p>}</>:<p className="text-sm text-zinc-400">開催情報は所属後に確認できます。</p>}</Card>
     </>}
     {tab==="メンバー"&&<Card title="メンバー"><div className="divide-y divide-zinc-700">{members.map(memberButton)}</div>{!members.length&&<p className="text-sm text-zinc-400">表示できるメンバーはいません</p>}{canManage&&isMemberOfGroup&&<div className="mt-3 grid grid-cols-2 gap-2"><button className="min-h-11 rounded-xl border border-zinc-600 p-2 text-sm" onClick={()=>pushPopup({kind:"add"})}>メンバー追加</button><button className="min-h-11 rounded-xl border border-zinc-600 p-2 text-sm" onClick={()=>pushPopup({kind:"requests"})}>加入申請</button></div>}</Card>}
     {tab==="戦績"&&isMemberOfGroup&&<Card title="グループ戦績">
       <div className="grid grid-cols-3 gap-2">{(["個人","ペア","開催履歴"] as StatTab[]).map(t=><button type="button" key={t} className={`min-h-11 rounded-xl p-2 text-xs ${statTab===t?"bg-accent text-black":"bg-zinc-800"}`} onClick={()=>setStatTab(t)}>{t}</button>)}</div>
-      {statTab==="個人"&&<div className="my-3 flex flex-wrap items-center gap-2 text-xs">{(["総合ランキング","勝率ランキング"] as IndividualMode[]).map(m=><button key={m} className={`min-h-11 rounded-xl px-2 ${individualMode===m?"bg-accent text-black":"bg-zinc-800"}`} onClick={()=>setIndividualMode(m)}>{m}</button>)}<button type="button" aria-label="総合ptの説明" className="min-h-11 min-w-11 rounded-full border border-zinc-600" onClick={()=>pushPopup({kind:"points"})}>i</button></div>}
-      {statsError?<p role="alert" className="mt-3 text-sm text-red-400">{statsError}</p>:<div className="mt-3 space-y-2">{groupPreview(statRows).visible.map(statButton)}{!statRows.length&&<p className="text-sm text-zinc-400">まだ戦績がありません</p>}{groupPreview(statRows).hasMore&&<button className="min-h-11 text-sm underline" onClick={()=>pushPopup({kind:"allStats"})}>すべて見る</button>}</div>}
+      {statTab==="個人"&&<div className="my-3 flex flex-wrap items-center gap-2 text-xs">{(["総合ランキング","勝率ランキング"] as IndividualMode[]).map(m=><button key={m} className={`min-h-11 rounded-xl px-2 ${individualMode===m?"bg-accent text-black":"bg-zinc-800"}`} onClick={()=>setIndividualMode(m)}>{m}</button>)}<button type="button" aria-label="総合ptの説明" className="flex min-h-11 items-center gap-1 rounded-lg px-2 text-zinc-400" onClick={()=>pushPopup({kind:"points"})}><GroupActionIcon name="info"/>ptの説明</button></div>}
+      {statsError?<p role="alert" className="mt-3 text-sm text-red-400">{statsError}</p>:<div className="mt-3 space-y-2">{groupPreview(statRows).visible.map(statButton)}{!statRows.length&&<p className="text-sm text-zinc-400">まだ戦績がありません</p>}{groupPreview(statRows).hasMore&&<button className="ml-auto flex min-h-11 items-center gap-1 text-sm text-zinc-400" onClick={()=>pushPopup({kind:"allStats"})}><span>すべて見る</span><GroupActionIcon name="right" className="inline-block"/></button>}</div>}
     </Card>}
     {!isMemberOfGroup&&visibility==="public"&&<Card title="加入申請"><p className="text-sm text-zinc-300">このグループで使う表示名と公開内容を確認して申請します。</p>{myPendingRequest||joinSubmitted?<p className="mt-2 text-sm">申請中です</p>:<button type="button" disabled={loading} className="mt-3 min-h-11 w-full rounded-xl bg-accent p-3 text-sm text-black disabled:opacity-50" onClick={()=>void checkOwnJoin()}>加入申請を確認</button>}
       {joinRequests.some(r => r.requester_auth_user_id === myAuthUserId) && <Card title="自分の加入申請"><div className="space-y-2">{joinRequests.filter(r => r.requester_auth_user_id === myAuthUserId).map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><p>{linkStatusLabel[r.status]}</p><p className="text-xs text-zinc-400">対象：{r.target_member_name ?? "正規プロフィールで加入"}</p>{r.status === "pending" && <button disabled={loading} onClick={() => void reviewJoinRequest(r,"cancelled")} className="mt-2 rounded-lg border border-zinc-500 p-2">申請を取り消す</button>}</div>)}</div></Card>}
     </Card>}
     <AppDialog open={!!popup&&!childOpen} title={popupTitle} busy={loading} onClose={closePopup}>
       <div ref={popupScroll} data-group-scroll onScroll={e=>{popupPositions.current[popups.length]=e.currentTarget.scrollTop;}} className="space-y-4 overflow-y-auto overscroll-contain p-4">
-        {popups.length>1&&<button type="button" disabled={loading} className="min-h-11 text-sm underline" onClick={closePopup}>一つ戻る</button>}
+        {popups.length>1&&<button type="button" disabled={loading} className="min-h-11 text-sm underline" onClick={closePopup}><GroupActionIcon name="left" className="mr-1 inline-block"/>一つ戻る</button>}
         {popup?.kind==="menu"&&<div className="space-y-2"><p className="text-xs text-zinc-400">あなたの権限：{appRole==="super_user"?"スーパーユーザー":roleLabel[myRole]}</p>
           {canDeleteGroupAction&&<button className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-left" onClick={()=>pushPopup({kind:"settings"})}>グループ設定</button>}
           {canManage&&<><button className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-left" onClick={()=>pushPopup({kind:"add"})}>メンバー追加</button><button className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-left" onClick={()=>pushPopup({kind:"requests"})}>加入申請</button><button className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-left" onClick={()=>pushPopup({kind:"links"})}>連携申請</button><button className="min-h-11 w-full rounded-xl border border-zinc-600 p-3 text-left" onClick={()=>pushPopup({kind:"inactive"})}>退会済みメンバー</button></>}
@@ -568,7 +575,7 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
         {popup?.kind==="add"&&canManage&&<div className="space-y-3"><label htmlFor="new-member-name" className="block text-sm">メンバー名</label><input id="new-member-name" className="min-h-11 w-full rounded-xl bg-zinc-800 p-3" placeholder="メンバー名" value={name} onChange={e=>setName(e.target.value)}/><p className="text-xs text-zinc-400">未連携の仮登録選手として追加します。アカウント連携には本人承認が必要です。</p><button disabled={loading} className="min-h-11 w-full rounded-xl bg-accent p-3 text-black disabled:opacity-50" onClick={()=>void addMember()}>メンバー追加</button></div>}
         {popup?.kind==="inactive"&&canManage&&<div className="divide-y divide-zinc-700">{inactiveMembers.map(memberButton)}{!inactiveMembers.length&&<p className="text-sm text-zinc-400">該当なし</p>}</div>}
         {popup?.kind==="member"&&selectedMember&&(isMemberOfGroup||selectedMember.public_unlinked!==undefined)&&<>
-          {selectedMember.is_active?<MemberRow key={selectedMember.id} ownerProtected={selectedMember.linked_auth_user_id===myAuthUserId&&ownerState!=="other"} member={selectedMember} editable={canManage&&isMemberOfGroup} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isMemberOfGroup} nameEditable={isMemberOfGroup&&canEditClubDisplayName(selectedMember,nameContext)} onEditName={setNameEditMember} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r=>r.source_player_profile_id===selectedMember.player_profile_id&&r.status==="pending")} onDeactivate={x=>{if(!canManageTargetMember(roleCtx,x.role))return deny();setError("");setConfirmLeave(x);setConfirmChecked(false);}}/>:<><p className="break-words font-semibold">{selectedMember.display_name}</p>{canManageTargetMember(roleCtx,selectedMember.role)&&<button disabled={loading} className="min-h-11 rounded-xl border border-zinc-500 p-3" onClick={()=>void restoreMember(selectedMember)}>復帰</button>}</>}
+          {selectedMember.is_active?<MemberRow key={selectedMember.id} ownerProtected={selectedMember.linked_auth_user_id===myAuthUserId&&ownerState!=="other"} member={selectedMember} editable={canManage&&isMemberOfGroup} currentRole={myRole} isSuperUser={isSuperUser} loading={loading} myAuthUserId={myAuthUserId} canViewRole={isMemberOfGroup} nameEditable={isMemberOfGroup&&canEditClubDisplayName(selectedMember,nameContext)} nameContext={nameContext} onFieldSaved={result=>setMembers(rows=>rows.map(row=>row.id===result.member_id&&row.club_id===id?{...row,club_display_name:result.club_display_name,public_name_confirmed:result.public_name_confirmed,field_state:result}:row))} onSelfLeave={()=>{setSelfLeaveConfirmed(false);setSelfLeaveError("");setConfirmSelfLeave(true);}} onFieldReload={async()=>{const s=getSupabaseClient();if(!s)return null;const row=(await readClubRoster(s,id)).find(row=>row.id===selectedMember.id);if(!row)return null;const next=rosterMember(row);if(next.field_state)setVisibility(next.field_state.group_visibility);setMembers(rows=>rows.map(old=>old.id===next.id?next:old));return next.field_state??null;}} onRole={changeMemberRole} onLink={linkMemberAccount} clubId={id} pending={linkRequests.some(r=>r.source_player_profile_id===selectedMember.player_profile_id&&r.status==="pending")} onDeactivate={x=>{if(!canManageTargetMember(roleCtx,x.role))return deny();setError("");setConfirmLeave(x);setConfirmChecked(false);}}/>:<><p className="break-words font-semibold">{selectedMember.display_name}</p>{canManageTargetMember(roleCtx,selectedMember.role)&&<button disabled={loading} className="min-h-11 rounded-xl border border-zinc-500 p-3" onClick={()=>void restoreMember(selectedMember)}>復帰</button>}</>}
           {!isMemberOfGroup&&selectedMember.public_unlinked&&<button disabled={loading} className="min-h-11 w-full rounded-xl bg-accent p-3 text-black" onClick={()=>void checkOwnJoin()}>本人として加入申請を確認</button>}
         </>}
       {canManage && popup?.kind === "links" && <Card title="連携申請一覧"><div className="space-y-2">{linkRequests.length === 0 ? <p className="text-sm text-zinc-400">該当なし</p> : linkRequests.map(r => <div key={r.id} className="rounded-xl bg-zinc-800 p-3 text-sm"><Link href={`/profile/links/${r.id}`} className="underline">{r.source_display_name} / {linkStatusLabel[r.status]}</Link>{r.status === "pending" && <button disabled={loading} className="mt-2 block rounded-lg border border-zinc-500 p-2" onClick={() => void cancelLinkRequest(r)}>申請を取り消す</button>}</div>)}</div></Card>}
@@ -580,7 +587,7 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
         {popup?.kind==="points"&&isMemberOfGroup&&<div className="space-y-3 text-sm"><p>総合ptは勝率70%・出場割合20%・得失ゲーム差10%です。</p><p>出場割合はグループ内の最多試合数、得失ゲーム差は正の最大差に対する割合で評価します。負の差は0として扱います。</p><p>勝点は勝利3点・引分1点で、総合ptとは別の指標です。3試合未満は参考記録です。</p></div>}
         {popup?.kind==="statDetail"&&isMemberOfGroup&&detailStat&&<div className="space-y-2 text-sm">
           <p className="break-words font-semibold">{detailStat.name??detailStat.pairName}{detailStat.isReference?"（参考記録・3試合未満）":""}</p>
-          {statTab==="開催履歴"?<><p>開催日 {new Date(detailStat.date).toLocaleDateString("ja-JP")}</p><p>試合数 {detailStat.matchCount} / 参加人数 {detailStat.participantCount}</p><button className="min-h-11 text-sm underline" onClick={()=>openEvent(`/events/${detailStat.id}`)}>開催詳細へ</button></>:<><p>試合 {detailStat.matches} / {formatRecord(detailStat.wins,detailStat.losses,detailStat.draws)} / 勝率 {detailStat.rate.toFixed(1)}%</p><p>得点 {detailStat.scored} / 失点 {detailStat.conceded} / 得失点差 {detailStat.diff}</p>{statTab==="個人"?<><p>1試合平均得点 {detailStat.avgScored.toFixed(1)} / 平均失点 {detailStat.avgConceded.toFixed(1)}</p><p>総合pt {detailStat.totalPoint.toFixed(1)} / 勝点 {detailStat.matchPoints}</p><button className="min-h-11 text-xs underline" onClick={()=>pushPopup({kind:"points"})}>総合ptの説明</button></>:<p>1試合平均得失点差 {detailStat.avgDiff.toFixed(1)} / 勝点 {detailStat.matchPoints}</p>}</>}
+          {statTab==="開催履歴"?<><p>開催日 {new Date(detailStat.date).toLocaleDateString("ja-JP")}</p><p>試合数 {detailStat.matchCount} / 参加人数 {detailStat.participantCount}</p><button className="min-h-11 text-sm underline" onClick={()=>openEvent(`/events/${detailStat.id}`)}>開催詳細へ<GroupActionIcon name="right" className="inline-block"/></button></>:<><p>試合 {detailStat.matches} / {formatRecord(detailStat.wins,detailStat.losses,detailStat.draws)} / 勝率 {detailStat.rate.toFixed(1)}%</p><p>得点 {detailStat.scored} / 失点 {detailStat.conceded} / 得失点差 {detailStat.diff}</p>{statTab==="個人"?<><p>1試合平均得点 {detailStat.avgScored.toFixed(1)} / 平均失点 {detailStat.avgConceded.toFixed(1)}</p><p>総合pt {detailStat.totalPoint.toFixed(1)} / 勝点 {detailStat.matchPoints}</p><button className="min-h-11 text-xs underline" onClick={()=>pushPopup({kind:"points"})}><GroupActionIcon name="info" className="mr-1 inline-block"/>ptの説明</button></>:<p>1試合平均得失点差 {detailStat.avgDiff.toFixed(1)} / 勝点 {detailStat.matchPoints}</p>}</>}
         </div>}
         {error&&<p role="alert" className="text-sm text-red-400">{error}</p>}{message&&<p role="status" className="text-sm text-emerald-400">{message}</p>}
       </div>
@@ -626,24 +633,6 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
           </div>
         </div>
       </AppDialog>
-      {nameEditMember?.club_id === id && <ClubDisplayNameDialog key={`${id}:${nameEditMember.id}`} member={nameEditMember} context={nameContext}
-        onClose={() => setNameEditMember(null)}
-        onSave={async (target, input, confirmation) => {
-          const s = getSupabaseClient();
-          if (!s) throw new ClubDisplayNameError("接続情報を確認できません。入力は保持されています");
-          return saveClubDisplayName(s, target, nameContext, input, confirmation);
-        }}
-        onRefresh={async () => {
-          const s = getSupabaseClient(); if (!s) throw new Error("接続できません");
-          const latest = (await readClubRoster(s, id)).find(row => row.id === nameEditMember.id);
-          if (!latest) throw new Error("対象の所属がありません");
-          return rosterMember(latest);
-        }}
-        onSaved={result => {
-          setMembers(rows => rows.map(row => row.id === result.member_id && row.club_id === id
-            ? { ...row, club_display_name: result.club_display_name, public_name_confirmed: result.public_name_confirmed } : row));
-          setNameEditMember(null); setMessage("グループ内表示名を更新しました");
-        }} />}
       <AppDialog open={!!confirmLeave} title="メンバーを非表示／退会にしますか？" busy={loading} onClose={()=>{setConfirmLeave(null);setConfirmChecked(false);}}>
         <div className="space-y-4 overflow-y-auto p-4">
           <p className="break-words">{confirmLeave?.display_name}さんを在籍一覧から外します。アカウントや過去の試合履歴は残り、後から復帰できます。</p>
@@ -655,9 +644,13 @@ function GroupDetail({ id, accountId }: {id:string;accountId:string|null}) {
   </main>;
 }
 
-function MemberRow({ member, ownerProtected, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, nameEditable, onEditName, onRole, onLink, clubId, pending, onDeactivate }: { member: Member; ownerProtected: boolean; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; nameEditable: boolean; onEditName: (m: Member) => void; onRole: (m: Member, role: Role) => Promise<boolean>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
+function MemberRow({ member, ownerProtected, editable, currentRole, isSuperUser, loading, myAuthUserId, canViewRole, nameEditable, nameContext, onFieldSaved, onFieldReload, onSelfLeave, onRole, onLink, clubId, pending, onDeactivate }: { member: Member; ownerProtected: boolean; editable: boolean; currentRole: Role; isSuperUser: boolean; loading: boolean; myAuthUserId: string | null; canViewRole: boolean; nameEditable: boolean; nameContext:ClubNameContext; onFieldSaved:(state:MemberFieldState)=>void; onFieldReload:()=>Promise<MemberFieldState|null>; onSelfLeave:()=>void; onRole: (m: Member, role: Role) => Promise<boolean>; onLink: (m: Member, account: AccountCandidate) => Promise<void>; clubId: string; pending: boolean; onDeactivate: (m: Member) => void; }) {
   const [editing, setEditing] = useState(false);
   const [r, setR] = useState<Role>(member.role);
+  const [roleEditing,setRoleEditing]=useState(false),[roleSaved,setRoleSaved]=useState(false);
+  const roleTimer=useRef<ReturnType<typeof setTimeout>|null>(null),roleInFlight=useRef(false),rowAlive=useRef(true);
+  useEffect(()=>{rowAlive.current=true;return()=>{rowAlive.current=false;if(roleTimer.current)clearTimeout(roleTimer.current);};},[]);
+  const selectRole=async(role:Role)=>{if(roleInFlight.current||loading)return;setR(role);if(role===member.role){setRoleEditing(false);return;}roleInFlight.current=true;setRoleSaved(false);try{if(await onRole(member,role)){if(!rowAlive.current)return;setRoleEditing(false);setRoleSaved(true);roleTimer.current=setTimeout(()=>setRoleSaved(false),2500);}}finally{roleInFlight.current=false;}};
   const [search, setSearch] = useState("");
   const [candidates, setCandidates] = useState<AccountCandidate[]>([]);
   const [selected, setSelected] = useState<AccountCandidate | null>(null);
@@ -687,7 +680,6 @@ function MemberRow({ member, ownerProtected, editable, currentRole, isSuperUser,
       {editing ? (
         <div className="space-y-2">
           <p className="break-words font-semibold">{groupMemberLabel(member)}</p>
-          {ownerProtected && <p className="text-xs text-zinc-400">オーナーの引継ぎ完了を確認するまで降格・退会はできません。</p>}{!hideRoleAndOps && <div className="space-y-2"><label className="block text-xs" htmlFor={`member-role-${member.id}`}>役職</label><select disabled={ownerProtected} id={`member-role-${member.id}`} className="w-full rounded-lg bg-zinc-700 p-2" value={r} onChange={e => setR(e.target.value as Role)}><option value="main_admin" disabled={!canManageTargetMember({isSuperUser,myRole:currentRole},"main_admin")}>メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option></select><button disabled={loading || ownerProtected} className="w-full rounded-lg border border-zinc-500 py-2 disabled:opacity-50" onClick={() => void onRole(member,r)}>役職を保存</button></div>}
           <button disabled={loading} className="w-full rounded-lg border border-zinc-500 py-2" onClick={() => setEditing(false)}>閉じる</button>
           {!member.linked_auth_user_id && !pending && !hideRoleAndOps && <div className="mt-2 rounded-lg border border-zinc-600 p-2">
             <p className="mb-1 text-xs text-zinc-300">本人から確認したメールアドレス</p>
@@ -707,10 +699,14 @@ function MemberRow({ member, ownerProtected, editable, currentRole, isSuperUser,
       ) : (
         <div className="space-y-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2"><p className="min-w-0 break-words font-semibold">{member.public_unlinked !== undefined ? member.display_name : groupMemberLabel(member)}</p>{isLinkedSelf && <span className="app-badge badge-self">あなた</span>}{canViewRole && <span className="app-badge badge-role">{roleLabel[member.role]}</span>}</div>
-          {!cannotEdit && !hideRoleAndOps && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>編集</button>{!cannotEdit && <button disabled={ownerProtected} className="rounded border border-red-500 disabled:opacity-50 px-3 py-1 text-sm text-red-300" onClick={() => onDeactivate(member)}>非表示／退会</button>}</div>}
+          {!cannotEdit && !hideRoleAndOps && !member.linked_auth_user_id && <div className="flex gap-2"><button className="rounded border border-zinc-500 px-3 py-1 text-sm" onClick={() => setEditing(true)}>本人連携</button></div>}
         </div>
       )}
-      {nameEditable && !hideRoleAndOps && <button type="button" disabled={loading} className="mt-2 min-h-11 rounded-xl border border-zinc-500 px-3 text-sm" onClick={() => onEditName(member)}>{member.club_display_name === null ? "グループ内表示名を設定" : "表示名を編集"}</button>}
+      {nameEditable && !hideRoleAndOps && <ClubMemberFields member={member} context={nameContext} state={member.field_state??null} onSaved={onFieldSaved} onReload={onFieldReload}/>}
+      {!cannotEdit&&!hideRoleAndOps&&<div className="mt-3 flex min-h-11 items-center justify-between gap-2"><span className="text-xs text-zinc-400">役職</span>{roleEditing?<select aria-label="役職" disabled={loading||ownerProtected} className="min-h-11 min-w-0 rounded-lg bg-zinc-700 p-2" value={r} onChange={e=>void selectRole(e.target.value as Role)}><option value="main_admin" disabled={!canManageTargetMember({isSuperUser,myRole:currentRole},"main_admin")}>メイン管理者</option><option value="sub_admin">サブ管理者</option><option value="member">メンバー</option></select>:<span className="flex items-center gap-2">{roleLabel[member.role]}{roleSaved&&<span role="status" aria-label="役職を保存しました" className="text-emerald-500"><GroupActionIcon name="check"/></span>}<button type="button" aria-label="役職を編集" disabled={loading||ownerProtected} className="flex min-h-11 min-w-11 items-center justify-center disabled:opacity-40" onClick={()=>{setR(member.role);setRoleEditing(true);}}><GroupActionIcon name="pencil"/></button></span>}</div>}
+      {!nameEditable&&!hideRoleAndOps&&member.linked_auth_user_id&&member.field_state&&<p className="mt-2 text-sm text-zinc-400">未所属者への表示：{member.field_state.public_name_enabled?"公開":"非公開"}</p>}
+      {ownerProtected&&!hideRoleAndOps&&<p className="mt-2 text-xs text-zinc-400">オーナーの引継ぎ完了を確認するまで降格・退会はできません。</p>}
+      {!hideRoleAndOps&&(isLinkedSelf||!cannotEdit)&&<div className="mt-6 border-t border-zinc-700 pt-3"><button disabled={loading||ownerProtected} className="min-h-11 w-full rounded-lg text-sm text-red-300 disabled:opacity-40" onClick={()=>isLinkedSelf?onSelfLeave():onDeactivate(member)}>{isLinkedSelf?"このグループを退会する":"非表示／退会"}</button></div>}
     </div>
   );
 }

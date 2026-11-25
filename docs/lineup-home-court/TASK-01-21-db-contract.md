@@ -1,5 +1,7 @@
 # TASK-01-21 / #258：施設選択専用化のDB契約引継ぎ
 
+> 先行実装時点の記録です。その後の候補受領・独立レビュー・アプリ対応・新しい検証結果は [最新レビュー](../../supabase/maintenance/lineup-home-court/REVIEW.md) を参照してください。
+
 調査基点：main `065ade4b0c579ea47eb0452a85a0f17cb651abb2`。
 正本：[#258コメント7148177020](https://github.com/g-ambe/Padel-match/issues/258#issuecomment-7148177020)、[設定UI追加](https://github.com/g-ambe/Padel-match/issues/258#issuecomment-7148233314)。
 

@@ -49,21 +49,27 @@ test('位置保存の応答喪失はDB再取得で確認し、別画像/別位�
  actual={...confirmed,avatar_version:3};await assert.rejects(save('owner',pid,position,2,3),/lost response/);
  actual={...confirmed,avatar_focus_x:.2};await assert.rejects(save('owner',pid,position,2,3),/lost response/);
 });
-test('ホームコートAPIは本人用RPCとCASを利用し、R2へアクセスせず不正本文を拒否',async()=>{
- const {homeCourtName}=require('../lib/profile-options.ts');const code=fs.readFileSync('app/api/profile-media/[id]/home-court/route.ts','utf8').replaceAll('export ','');let calls=0,allowed=true;
- const patch=evaluate(code,'PATCH',{homeCourtName,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>{if(!allowed)throw new MediaFailure('auth',401);return {ticket:'t',get env(){throw Error('R2 not allowed');},rpc:async(n,a)=>{calls++;assert.equal(n,'save_my_home_court');assert.equal(a.p_expected,2);assert.equal(a.p_name,'コート');assert.equal(a.p_ticket,'t');return {home_court_name:'コート',home_court_version:3};}};}});
+test('ホームコートAPIは旧新の自由入力を拒否し、明示解除だけを本人用施設RPCへ渡す',async()=>{
+ const code=fs.readFileSync('app/api/profile-media/[id]/home-court/route.ts','utf8').replaceAll('export ','');let calls=[],allowed=true;
+ const patch=evaluate(code,'PATCH',{isUuid,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>{if(!allowed)throw new MediaFailure('auth',401);return {ticket:'t',get env(){throw Error('R2 not allowed');},rpc:async(n,a)=>{calls.push({n,a});return {home_facility_id:null,home_court_name:null,home_court_version:3};},read:async()=>{throw Error('auxiliary read failed');}};}});
  const ctx={params:Promise.resolve({id:pid})},req=b=>new Request('https://app.invalid',{method:'PATCH',body:JSON.stringify(b)});
- assert.equal((await patch(req({name:' コート ',version:2}),ctx)).status,200);for(const b of [{name:'a'.repeat(81),version:2},{name:'x\ny',version:2},{name:'x',version:-1},null])assert.equal((await patch(req(b),ctx)).status,400);assert.equal(calls,1);allowed=false;assert.equal((await patch(req({name:'コート',version:2}),ctx)).status,401);
+ for(const b of [{name:'旧クライアントの自由入力',version:2},{name:'新しい自由入力',facilityId:null,version:2},{name:'a'.repeat(81),version:2},{name:'x',version:-1},{name:23,version:2},null])assert.equal((await patch(req(b),ctx)).status,400);
+ assert.equal(calls.length,0);
+ for(const b of [{name:'',facilityId:null,version:2},{name:'',version:2}])assert.equal((await patch(req(b),ctx)).status,200);
+ for(const {n,a} of calls){assert.equal(n,'save_my_home_court_selection');assert.deepEqual(a,{p_profile:pid,p_expected:2,p_facility:null,p_name:'',p_ticket:'t'});}
+ allowed=false;assert.equal((await patch(req({name:'',facilityId:null,version:2}),ctx)).status,401);assert.equal(calls.length,2);
 });
-test('ホームコート保存の応答喪失は実際の版と値で確認し、競合を成功扱いしない',async()=>{
- const {homeCourtName}=require('../lib/profile-options.ts');const code=fs.readFileSync('components/profile-media-provider.tsx','utf8');let actual={home_court_name:'コート',home_court_version:3};
- const save=evaluate(code,'saveHomeCourt',{homeCourtName,current:{current:'owner'},request:async()=>{throw Error('通信断');},read:async()=>({profile:actual}),cache:{current:{}},keyFor:(a,b)=>a+b,update:()=>{}});
- assert.deepEqual(await save('owner',pid,'コート',2),actual);actual={home_court_name:'他端末',home_court_version:3};await assert.rejects(save('owner',pid,'コート',2),/通信断/);
+test('ホームコート保存は施設IDと版で応答喪失を照合し、自由入力を送信しない',async()=>{
+ const code=fs.readFileSync('components/profile-media-provider.tsx','utf8');let actual={home_facility_id:null,home_court_name:null,home_court_version:3},calls=0;
+ const save=evaluate(code,'saveHomeCourt',{current:{current:'owner'},request:async(o,p,options)=>{calls++;assert.deepEqual(JSON.parse(options.body),{facilityId:null,name:'',version:2});throw Error('通信断');},read:async()=>({profile:actual}),cache:{current:{}},keyFor:(a,b)=>a+b,update:()=>{}});
+ assert.deepEqual(await save('owner',pid,{facilityId:null,name:''},2),actual);
+ actual={...actual,home_court_name:'旧登録値'};await assert.rejects(save('owner',pid,{facilityId:null,name:''},2),/通信断/);
+ const before=calls;await assert.rejects(save('owner',pid,{facilityId:null,name:'新規自由入力'},2),/施設一覧/);assert.equal(calls,before);
 });
 test('施設ID保存APIは不正IDを拒否し、補助読込み失敗でもRPCの確定値を返す',async()=>{
  const {homeCourtName}=require('../lib/profile-options.ts');const code=fs.readFileSync('app/api/profile-media/[id]/home-court/route.ts','utf8').replaceAll('export ','');let calls=0;
  const profile={home_facility_id:request,home_court_name:'正式施設名',home_court_version:3};
- const patch=evaluate(code,'PATCH',{homeCourtName,isUuid,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>({ticket:'t',get env(){throw Error('R2 forbidden');},rpc:async(n,a)=>{calls++;assert.equal(n,'save_my_home_court_selection');assert.equal(a.p_facility,request);assert.equal(a.p_expected,2);assert.equal(a.p_ticket,'t');return profile;},read:async()=>{throw Error('補助読込み失敗');}})});
+ const patch=evaluate(code,'PATCH',{homeCourtName,isUuid,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>({ticket:'t',get env(){throw Error('R2 forbidden');},rpc:async(n,a)=>{calls++;assert.equal(n,'save_my_home_court_selection');assert.equal(a.p_facility,request);assert.equal(a.p_name,'');assert.equal(a.p_expected,2);assert.equal(a.p_ticket,'t');return profile;},read:async()=>{throw Error('補助読込み失敗');}})});
  const ctx={params:Promise.resolve({id:pid})},req=facilityId=>new Request('https://app.invalid',{method:'PATCH',body:JSON.stringify({name:'入力候補名',version:2,facilityId})});
  let r=await patch(req(request),ctx);assert.equal(r.status,200);assert.deepEqual((await r.json()).profile,profile);
  for(const id of ['bad-id','',{},12])assert.equal((await patch(req(id),ctx)).status,400);assert.equal(calls,1);
@@ -73,5 +79,14 @@ test('施設選択の応答喪失では改称を許容し、施設IDが違う競
  const save=evaluate(code,'saveHomeCourt',{homeCourtName,current:{current:'owner'},request:async()=>{throw Error('通信断');},read:async()=>({profile:actual}),cache:{current:{}},keyFor:(a,b)=>a+b,update:()=>{}});
  const selection={facilityId:request,name:'改称前の施設名'};assert.deepEqual(await save('owner',pid,selection,2),actual);
  actual={...actual,home_facility_id:pid};await assert.rejects(save('owner',pid,selection,2),/通信断/);
- actual={home_facility_id:null,home_court_name:'以前の自由入力',home_court_version:4};assert.deepEqual(await save('owner',pid,{facilityId:null,name:'以前の自由入力'},3),actual);
+ actual={home_facility_id:null,home_court_name:'以前の自由入力',home_court_version:4};await assert.rejects(save('owner',pid,{facilityId:null,name:'以前の自由入力'},3),/施設一覧/);
+});
+test('施設保存の認可・CASエラーでは旧RPCへfallbackせず既存登録を保持する',async()=>{
+ const code=fs.readFileSync('app/api/profile-media/[id]/home-court/route.ts','utf8').replaceAll('export ','');
+ for(const status of [403,409,429]){
+  const calls=[],existing={home_facility_id:request,home_court_name:'既存施設',home_court_version:2},before=structuredClone(existing);
+  const patch=evaluate(code,'PATCH',{isUuid,MediaFailure,mediaError,jsonResponse:Response.json,limitedBody:async r=>new Uint8Array(await r.arrayBuffer()),mediaContext:async()=>({ticket:'t',rpc:async(n)=>{calls.push(n);throw new MediaFailure('保存拒否',status);},read:async()=>{throw Error('must not follow failed mutation');}})});
+  const r=await patch(new Request('https://app.invalid',{method:'PATCH',body:JSON.stringify({name:'',facilityId:pid,version:2})}),{params:Promise.resolve({id:pid})});
+  assert.equal(r.status,status);assert.deepEqual(calls,['save_my_home_court_selection']);assert.deepEqual(existing,before);
+ }
 });

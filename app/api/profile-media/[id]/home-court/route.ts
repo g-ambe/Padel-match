@@ -1,6 +1,5 @@
 import { mediaContext, limitedBody, jsonResponse, mediaError } from "@/lib/profile-media/server";
 import { MediaFailure } from "@/lib/profile-media/service";
-import { homeCourtName } from "@/lib/profile-options";
 import { isUuid,type PrivateProfile } from "@/lib/profile-media/shared";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -9,14 +8,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   if(bytes.length>1024)throw new MediaFailure("入力が長すぎます",413);
   let value;try{value=JSON.parse(new TextDecoder().decode(bytes));}catch{throw new MediaFailure("入力内容を確認してください",400);}
   if(!value||typeof value.name!=="string"||!Number.isSafeInteger(value.version)||value.version<0)throw new MediaFailure("入力内容を確認してください",400);
-  let name;try{name=homeCourtName(value.name);}catch{throw new MediaFailure("ホームコートは80文字以内のコート名を入力してください",400);}
-  if(Object.prototype.hasOwnProperty.call(value,"facilityId")){
-   if(value.facilityId!==null&&(typeof value.facilityId!=="string"||!isUuid(value.facilityId)))throw new MediaFailure("施設を選択し直してください",400);
-   const profile=await c.rpc<PrivateProfile>("save_my_home_court_selection",{p_profile:id,p_expected:value.version,p_facility:value.facilityId,p_name:name,p_ticket:c.ticket});
+  const hasFacility=Object.prototype.hasOwnProperty.call(value,"facilityId"),facilityId=hasFacility?value.facilityId:null;
+  if(facilityId!==null&&(typeof facilityId!=="string"||!isUuid(facilityId)))throw new MediaFailure("施設を選択し直してください",400);
+  // 旧クライアントも新規の自由入力は拒否。空文字での明示的解除は維持する。
+  if(facilityId===null&&value.name.trim()!=="")throw new MediaFailure("ホームコートは施設一覧から選択してください。画面を再読み込みしてください",400);
+   const profile=await c.rpc<PrivateProfile>("save_my_home_court_selection",{p_profile:id,p_expected:value.version,p_facility:facilityId,p_name:"",p_ticket:c.ticket});
    // 保存確定後の補助読込み失敗で、確定した参照を取り消さない。
    const current=await c.read().catch(()=>null);
    return jsonResponse({profile:current?.profile??profile});
-  }
-  return jsonResponse({profile:await c.rpc<PrivateProfile>("save_my_home_court",{p_profile:id,p_expected:value.version,p_name:name,p_ticket:c.ticket})});
  }catch(error){return mediaError(error);}
 }

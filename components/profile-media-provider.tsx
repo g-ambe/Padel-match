@@ -4,12 +4,11 @@ import { getSupabaseClient } from "@/lib/supabase";
 import { compressProfileImage } from "@/lib/profile-media/compress";
 import { instagramUsername, mergePrivateProfile, type PrivateProfile } from "@/lib/profile-media/shared";
 import type { HomeCourtSelection } from "@/lib/padel-facilities";
-import { homeCourtName } from "@/lib/profile-options";
 import { avatarPosition, sameAvatarPosition, type AvatarPosition } from "@/lib/profile-media/position";
 export type ProfileMediaState = { profile?: PrivateProfile; image?: string; imageEnabled?: boolean; loading?: boolean; busy?: boolean; error?: string; message?: string; uncertain?: boolean };
 type State = ProfileMediaState;
 type Job = { owner: string; profile: string; request: string; version: number; kind: "upload"|"delete"; blob?: Blob; file?: File; uncertain?: boolean };
-type MediaContext = { saveHomeCourt:(owner:string,profile:string,value:string|HomeCourtSelection,version:number)=>Promise<PrivateProfile>; states: Record<string,State>; load: (owner:string,profile:string)=>Promise<void>; change:(owner:string,profile:string,file?:File,expectedVersion?:number)=>Promise<PrivateProfile|null>; retry:(owner:string,profile:string,reconcileOnly?:boolean)=>Promise<PrivateProfile|null>; saveInstagram:(owner:string,profile:string,value:string,expectedVersion?:number)=>Promise<void>; savePosition:(owner:string,profile:string,position:AvatarPosition,avatarVersion:number,poseVersion:number)=>Promise<PrivateProfile> };
+type MediaContext = { saveHomeCourt:(owner:string,profile:string,value:HomeCourtSelection,version:number)=>Promise<PrivateProfile>; states: Record<string,State>; load: (owner:string,profile:string)=>Promise<void>; change:(owner:string,profile:string,file?:File,expectedVersion?:number)=>Promise<PrivateProfile|null>; retry:(owner:string,profile:string,reconcileOnly?:boolean)=>Promise<PrivateProfile|null>; saveInstagram:(owner:string,profile:string,value:string,expectedVersion?:number)=>Promise<void>; savePosition:(owner:string,profile:string,position:AvatarPosition,avatarVersion:number,poseVersion:number)=>Promise<PrivateProfile> };
 const Context = createContext<MediaContext|null>(null);
 const keyFor=(owner:string,profile:string)=>`${owner}:${profile}`;
 export function ProfileMediaProvider({children}:{children:ReactNode}){
@@ -117,11 +116,13 @@ export function ProfileMediaProvider({children}:{children:ReactNode}){
    throw error;
   }
  };
- const saveHomeCourt=async(owner:string,id:string,value:string|HomeCourtSelection,version:number)=>{
-  const facilityId=typeof value==="string"?null:value.facilityId,name=homeCourtName(typeof value==="string"?value:value.name);
+ const saveHomeCourt=async(owner:string,id:string,value:HomeCourtSelection,version:number)=>{
+  const facilityId=value.facilityId;
+  if(facilityId===null&&value.name.trim()!=="")throw new Error("ホームコートは施設一覧から選択してください");
+  const name=null;
   const confirmed=(profile:PrivateProfile)=>(profile.home_court_version??0)>version&&(profile.home_facility_id??null)===facilityId&&(facilityId!==null||profile.home_court_name===name);
   try{
-   const result=await request(owner,`/api/profile-media/${id}/home-court`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify(typeof value==="string"?{name:name??"",version}:{name:name??"",version,facilityId})});
+   const result=await request(owner,`/api/profile-media/${id}/home-court`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:"",version,facilityId})});
    if(current.current!==owner)throw new Error("ログイン情報が変わりました");
    update(owner,id,{profile:result.profile});
    const actual=cache.current[keyFor(owner,id)]?.profile??result.profile;

@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { createRecoveryClient, recoveryPasswordError, recoveryRedirect, takeRecoveryToken } from "@/lib/password-recovery";
+import { classifyRecoveryUpdateError, createRecoveryClient, finishRecoverySignOut, recoveryPasswordError, recoveryRedirect, takeRecoveryToken } from "@/lib/password-recovery";
 import { getSupabaseClient } from "@/lib/supabase";
 
 type Stage = "loading"|"confirm"|"form"|"invalid"|"done"|"uncertain";
@@ -10,7 +10,7 @@ export default function ResetPassword() {
  const [stage,setStage]=useState<Stage>("loading"),[busy,setBusy]=useState(false),[error,setError]=useState(""),[notice,setNotice]=useState("");
  const [password,setPassword]=useState(""),[confirmation,setConfirmation]=useState(""),[show,setShow]=useState(false);
  const token=useRef<string|null>(null),client=useRef<SupabaseClient|null>(null),userId=useRef<string|null>(null),inFlight=useRef(false),initialized=useRef(false),generation=useRef(0);
- useEffect(()=>{const capture=()=>{const hash=window.location.hash;if(!hash&&initialized.current)return;initialized.current=true;generation.current++;setPassword("");setConfirmation("");setError("");
+ useEffect(()=>{const capture=()=>{const hash=window.location.hash;if(!hash&&initialized.current)return;if(inFlight.current){window.history.replaceState(window.history.state,"",window.location.pathname);return;}initialized.current=true;generation.current++;setPassword("");setConfirmation("");setError("");
   window.history.replaceState(window.history.state,"",window.location.pathname);token.current=takeRecoveryToken(hash);client.current=null;userId.current=null;
   if(!token.current||!recoveryRedirect(window.location.origin)){setStage("invalid");return;}setStage("confirm");};
   capture();window.addEventListener("hashchange",capture);return()=>window.removeEventListener("hashchange",capture);},[]);
@@ -21,13 +21,14 @@ export default function ResetPassword() {
  const update=async(e:React.FormEvent)=>{e.preventDefault();if(inFlight.current)return;if(password.length<8){setError("パスワードは8文字以上で入力してください");return;}if(password!==confirmation){setError("パスワード確認が一致しません");return;}
   const db=client.current,id=userId.current;if(!db||!id){setStage("invalid");return;}inFlight.current=true;setBusy(true);setError("");const version=generation.current;
   try{const {data:identity,error:identityError}=await db.auth.getUser();if(version!==generation.current)return;if(identityError||identity.user?.id!==id){setStage("invalid");return;}
-   const {data,error:failure}=await db.auth.updateUser({password});if(version!==generation.current)return;if(failure){setError(recoveryPasswordError(failure.code));return;}if(data.user?.id!==id){setStage("invalid");return;}
-   setPassword("");setConfirmation("");setStage("done");
-   try {
-    const {error:signoutError}=await db.auth.signOut({scope:"global"});
-    const shared=getSupabaseClient();if(shared){const {data:sharedSession}=await shared.auth.getSession();if(sharedSession.session?.user.id===id)await shared.auth.signOut({scope:"local"});}
-    if(signoutError)setNotice("パスワードは変更されました。他の端末のログアウトを確認できませんでした。再ログインしてください。");
-   } catch {setNotice("パスワードは変更されました。他の端末のログアウトを確認できませんでした。再ログインしてください。");}
+   const {data,error:failure}=await db.auth.updateUser({password});
+   if(failure){if(version!==generation.current)return;const kind=classifyRecoveryUpdateError(failure);if(kind==="retry")setError(recoveryPasswordError(failure.code));else if(kind==="expired")setStage("invalid");else {setPassword("");setConfirmation("");setStage("uncertain");}return;}
+   // A successful update requires cleanup even if navigation or another link changes the UI.
+   let shared:SupabaseClient|null=null, sharedUnavailable=false;
+   try {shared=getSupabaseClient();if(!shared)sharedUnavailable=true;} catch {sharedUnavailable=true;}
+   const cleanupSucceeded=await finishRecoverySignOut(db,shared,id);
+   const cleanupFailed=data.user?.id!==id||!cleanupSucceeded||sharedUnavailable;
+   if(version===generation.current){setPassword("");setConfirmation("");if(cleanupFailed)setNotice("パスワードは変更されました。他の端末のログアウトを確認できませんでした。再ログインしてください。");setStage("done");}
   }catch{if(version===generation.current){setPassword("");setConfirmation("");setStage("uncertain");}}
   finally{inFlight.current=false;setBusy(false);}};
  return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-4 p-4"><h1 className="text-2xl font-bold">パスワードを再設定</h1>

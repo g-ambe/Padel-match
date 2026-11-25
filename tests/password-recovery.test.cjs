@@ -13,3 +13,18 @@ test('保存された認証メールは正しい変数・日本語ボタンを�
  const signup=fs.readFileSync('supabase/email-templates/confirm-signup.html','utf8'),reset=fs.readFileSync('supabase/email-templates/reset-password.html','utf8');
  assert.match(signup,/href="{{ \.ConfirmationURL }}"/);assert.match(signup,/メールアドレスを認証する/);assert.match(reset,/href="{{ \.RedirectTo }}#token_hash={{ \.TokenHash }}"/);assert.match(reset,/パスワードを再設定する/);
 });
+test('更新結果不明・確定拒否・セッション失効を区別',()=>{
+ const {classifyRecoveryUpdateError:c}=require('../lib/password-recovery.ts');
+ for(const e of [{name:'AuthRetryableFetchError',status:0},{status:500},{status:502},{},{status:429}])assert.equal(c(e),'uncertain');
+ for(const code of ['same_password','weak_password','validation_failed'])assert.equal(c({code,status:422}),'retry');
+ for(const e of [{name:'AuthSessionMissingError',status:400},{status:401},{code:'session_expired',status:400}])assert.equal(c(e),'expired');
+});
+test('global logout完了まで待ち、同じアカウントだけlocal logout。失敗は成功扱いしない',async()=>{
+ const {finishRecoverySignOut}=require('../lib/password-recovery.ts');let release,done=false,calls=[];
+ const recovery={auth:{signOut:async x=>{calls.push(x.scope);await new Promise(r=>release=r);return{error:null}}}};
+ const shared={auth:{getSession:async()=>({data:{session:{user:{id:'other'}}},error:null}),signOut:async x=>{calls.push(x.scope);return{error:null}}}};
+ const pending=finishRecoverySignOut(recovery,shared,'target').then(v=>{done=true;return v});await new Promise(r=>setImmediate(r));assert.equal(done,false);release();assert.equal(await pending,true);assert.deepEqual(calls,['global']);
+ const same={auth:{...shared.auth,getSession:async()=>({data:{session:{user:{id:'target'}}},error:null}),signOut:async x=>{calls.push(x.scope);return{error:{code:'fail'}}}}};
+ assert.equal(await finishRecoverySignOut({auth:{signOut:async()=>({error:null})}},same,'target'),false);assert.equal(calls.at(-1),'local');
+ assert.equal(await finishRecoverySignOut({auth:{signOut:async()=>{throw Error('network')}}},null,'target'),false);
+});

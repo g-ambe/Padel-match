@@ -25,3 +25,16 @@ export function recoveryPasswordError(code?: string) {
   return code === "same_password" ? "現在と同じパスワードは設定できません。別のパスワードを入力してください。"
     : "パスワードを変更できませんでした。条件を確認して再入力してください。";
 }
+
+export function classifyRecoveryUpdateError(error: {code?:string; status?:number; name?:string}): "retry"|"expired"|"uncertain" {
+  if (error.name === "AuthSessionMissingError" || ["session_not_found","session_expired","refresh_token_not_found","refresh_token_already_used","bad_jwt","user_not_found"].includes(error.code ?? "") || error.status === 401 || error.status === 403) return "expired";
+  if (["same_password","weak_password","validation_failed"].includes(error.code ?? "") && typeof error.status === "number" && error.status >= 400 && error.status < 500) return "retry";
+  return "uncertain";
+}
+
+export async function finishRecoverySignOut(recovery: { auth: Pick<import('@supabase/supabase-js').SupabaseClient['auth'], 'signOut'> }, shared: { auth: Pick<import('@supabase/supabase-js').SupabaseClient['auth'], 'getSession'|'signOut'> } | null, id: string): Promise<boolean> {
+  let failed=false;
+  try { const {error}=await recovery.auth.signOut({scope:"global"});if(error)failed=true; } catch { failed=true; }
+  try { if(shared){const {data,error}=await shared.auth.getSession();if(error)failed=true;if(data.session?.user.id===id){const result=await shared.auth.signOut({scope:"local"});if(result.error)failed=true;}} } catch {failed=true;}
+  return !failed;
+}

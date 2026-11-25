@@ -142,7 +142,7 @@ export function GlobalMenu() {
   };
   const titles:Record<string,string>={menu:"メニュー",settings:"アカウント・アプリ設定",help:"使い方・ヘルプ",about:"アプリについて",notifications:"通知",admin:"スーパーユーザー管理",logout:"ログアウト",practice:"操作を体験"};
 
-  if (!hasSession || pathname.startsWith("/share/")) return null;
+  if (!hasSession || pathname.startsWith("/share/") || pathname.startsWith("/auth/")) return null;
 
   return (
     <>

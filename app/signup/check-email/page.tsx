@@ -9,7 +9,7 @@ export default function CheckEmailPage() {
         <div className="space-y-4">
           <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm leading-6 text-emerald-100">
             <p>確認メールを送信しました。</p>
-            <p>メールを確認し、「Confirm email address」をクリックしてください。</p>
+            <p>メールを確認し、「メールアドレスを認証する」をクリックしてください。</p>
             <p>メール認証完了後、ログインしてください。</p>
           </div>
           <Link href="/login" className="block w-full rounded-2xl border border-zinc-600 py-3 text-center text-sm text-zinc-100">

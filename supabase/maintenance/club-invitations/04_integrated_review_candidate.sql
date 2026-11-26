@@ -1,4 +1,4 @@
--- TASK-08-02 #262 / integrated review candidate 04, self-review correction 01.
+-- TASK-08-02 #262 / integrated review candidate 04, self-review correction 02.
 -- Generated from exact source files at 326976d12d1d81f6f8673402e6e37be742bbfe27.
 -- NOT A MIGRATION. DO NOT RUN ON PROD OR STAGE. ROLLBACK ONLY.
 -- No actual DB execution or parser validation. Static assembly checks only.
@@ -587,14 +587,14 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
      WHERE slot.profile_id=p_source
        AND NOT EXISTS(SELECT 1 FROM public.event_team_sides s
         WHERE s.event_id=t.event_id AND s.side=slot.source_side AND s.club_id=p_club))
-   -- Existing merge does not rewrite the round eligible JSON snapshot.
-   -- Stop on an active/unknown event that still references the provisional
-   -- source, rather than changing the existing round/merge behavior.
+   -- Temporary review-only NO-GO guard. Closed events can be reopened
+   -- and existing fairness calculation uses eligible.source + eligible.key.
+   -- The legacy merge does not translate that snapshot. Do not rewrite it
+   -- here, or silently make this permanent product behavior.
    AND NOT EXISTS(SELECT 1 FROM public.event_team_rounds tr
-     LEFT JOIN public.events ev ON ev.id=tr.event_id
      CROSS JOIN LATERAL jsonb_array_elements(tr.eligible) roster
      WHERE roster->>'profile_id'=p_source::text
-       AND ev.status IS DISTINCT FROM 'closed')
+        OR roster->>'key'='profile:'||p_source::text)
    AND NOT EXISTS(SELECT 1 FROM public.official_matches m LEFT JOIN public.official_events e ON e.id=m.official_event_id
      WHERE p_source IN(m.our_player1_profile_id,m.our_player2_profile_id) AND e.club_id IS DISTINCT FROM p_club)
    AND NOT EXISTS(SELECT 1 FROM public.player_profile_private WHERE profile_id=p_source)
@@ -1419,11 +1419,76 @@ CREATE FUNCTION club_invite_private.lock_accept_scope(p_club uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  PERFORM profile_link_private.serialize_operations();
- PERFORM 1 FROM public.clubs WHERE id=p_club FOR UPDATE;
+ -- The existing reference lock order is authoritative. Extra parent/round
+ -- locks are nonblocking so a competing event write cannot cause a new
+ -- indefinite inversion. Contention must roll back and prompt fresh review.
  PERFORM profile_link_private.lock_references();
- LOCK TABLE public.events,public.event_team_sides,public.official_events
- IN SHARE ROW EXCLUSIVE MODE;
+ LOCK TABLE public.app_admins,public.clubs,public.events,public.event_team_sides,
+  public.event_team_rounds,public.official_events
+ IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+ PERFORM 1 FROM public.clubs WHERE id=p_club FOR UPDATE NOWAIT;
 END $$;
+
+-- Registered invitations become ordinary link requests. Guard the final
+-- merge, not merely the issuance or a browser endpoint. This trigger
+-- deliberately applies ONLY to requests marked by the new lookup ticket.
+-- The legacy merge INSERT precedes reassignment/retirement of source rows.
+-- No new FK, no replacement of the existing named approval or merge body.
+-- Review-only: confirm trigger permissions, table order, rollback and
+-- ordinary paths in the isolated DB before approving a release.
+CREATE UNIQUE INDEX club_invite_registered_request_marker
+ ON club_invite_private.lookup_tickets(result_link_id)
+ WHERE result_link_id IS NOT NULL;
+
+CREATE FUNCTION club_invite_private.guard_registered_invite_merge()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $
+DECLARE v_t club_invite_private.lookup_tickets%ROWTYPE;
+ v_r public.player_profile_link_requests%ROWTYPE;
+ v_digest bytea; v_target uuid;
+BEGIN
+ IF NEW.link_request_id IS NULL THEN RETURN NEW; END IF;
+ SELECT * INTO v_t FROM club_invite_private.lookup_tickets
+ WHERE result_link_id=NEW.link_request_id;
+ -- The unchanged legacy direct link/join paths have no marker.
+ IF NOT FOUND THEN RETURN NEW; END IF;
+ PERFORM profile_link_private.serialize_operations();
+ SELECT * INTO v_r FROM public.player_profile_link_requests
+ WHERE id=NEW.link_request_id FOR UPDATE;
+ IF NOT FOUND OR v_t.account_kind<>'registered'
+ OR v_t.consumed_at IS NULL OR v_t.consumed_operation_id IS NULL
+ OR v_r.status<>'pending' OR v_r.expires_at<=clock_timestamp()
+ OR v_r.club_id IS DISTINCT FROM v_t.club_id
+ OR v_r.source_club_member_id IS DISTINCT FROM v_t.member_id
+ OR v_r.source_player_profile_id IS DISTINCT FROM v_t.source_profile_id
+ OR v_r.target_auth_user_id IS DISTINCT FROM v_t.target_auth_id
+ OR v_r.requested_by_auth_user_id IS DISTINCT FROM v_t.manager_auth_id
+ OR NEW.club_id IS DISTINCT FROM v_t.club_id
+ OR NEW.source_player_profile_id IS DISTINCT FROM v_t.source_profile_id
+ OR NEW.target_auth_user_id IS DISTINCT FROM v_t.target_auth_id
+ OR NEW.requested_by_auth_user_id IS DISTINCT FROM v_t.manager_auth_id
+ OR NEW.approved_by_auth_user_id IS DISTINCT FROM auth.uid()
+ OR auth.uid() IS DISTINCT FROM v_t.target_auth_id
+ THEN RAISE SQLSTATE 'PT409' USING MESSAGE='招待の連携内容を再確認してください'; END IF;
+ PERFORM club_invite_private.lock_accept_scope(v_t.club_id);
+ -- Use the current confirmed target, not manager-provided or stale JWT email.
+ -- Registered route is tied to the original existing Auth account; an email
+ -- change requires fresh review rather than silently reusing an old ticket.
+ SELECT canonical_id,current_email_digest INTO v_target,v_digest
+ FROM club_invite_private.recipient_identity(v_t.target_auth_id);
+ IF NOT FOUND OR v_target IS DISTINCT FROM NEW.target_player_profile_id
+ OR v_digest IS DISTINCT FROM v_t.email_digest
+ OR NOT club_invite_private.manager_ok(v_t.manager_auth_id,v_t.club_id,v_t.member_id)
+ OR NOT club_invite_private.source_in_scope(v_t.club_id,v_t.member_id,v_t.source_profile_id)
+ OR v_r.expires_at<=clock_timestamp()
+ THEN RAISE SQLSTATE 'PT409' USING MESSAGE='招待の連携内容を再確認してください'; END IF;
+ RETURN NEW;
+END $;
+
+CREATE TRIGGER club_invite_guard_registered_merge
+ BEFORE INSERT ON public.player_profile_merges
+ FOR EACH ROW EXECUTE FUNCTION club_invite_private.guard_registered_invite_merge();
+REVOKE ALL ON FUNCTION club_invite_private.guard_registered_invite_merge()
+ FROM PUBLIC,anon,authenticated,service_role;
 
 CREATE FUNCTION public.accept_my_club_invite(
  p_invite uuid,p_generation integer,p_operation_id uuid,
@@ -1668,7 +1733,13 @@ BEGIN
 
  DELETE FROM club_invite_private.lookup_tickets
  WHERE (consumed_at IS NULL AND expires_at<=v_now)
-    OR (consumed_at IS NOT NULL AND consumed_at<=v_cutoff);
+    OR (consumed_at IS NOT NULL AND consumed_at<=v_cutoff
+       AND NOT EXISTS(SELECT 1 FROM public.player_profile_link_requests r
+        WHERE r.id=club_invite_private.lookup_tickets.result_link_id
+          AND r.status='pending' AND r.expires_at>v_now));
+ -- An anomalously extended live request must not lose its guard marker.
+ -- Report/resolve this retention anomaly before release; normal requests
+ -- expire in seven days, so the 30-day cleanup is unaffected.
  GET DIAGNOSTICS v_tickets=ROW_COUNT;
 
  DELETE FROM club_invite_private.lookup_limits
@@ -1786,6 +1857,12 @@ BEGIN
  IF EXISTS(SELECT 1 FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
     WHERE t.relnamespace=nsp AND c.contype='f' AND c.confrelid='public.player_profiles'::regclass)
  THEN RAISE EXCEPTION 'Invite introduces forbidden player profile FK'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM pg_trigger t
+    WHERE t.tgrelid='public.player_profile_merges'::regclass
+      AND t.tgname='club_invite_guard_registered_merge'
+      AND t.tgfoid=to_regprocedure('club_invite_private.guard_registered_invite_merge()')
+      AND NOT t.tgisinternal AND t.tgenabled='O')
+ THEN RAISE EXCEPTION 'Invite registered approval guard missing'; END IF;
  PERFORM profile_link_private.check_reference_schema();
 END $invite_acl$;
 

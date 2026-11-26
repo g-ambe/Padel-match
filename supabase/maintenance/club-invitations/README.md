@@ -63,3 +63,10 @@ IF NOT FOUND THEN RAISE SQLSTATE 'PT409' USING MESSAGE='再確認してくださ
 
 ## 検証ゲート
 既存候補02の試験計画に追加: valid bearer+別確認済みログイン/明示同意成功、無効/旧/期限切れ/取消/別invite/未ログイン/未確認/CSRF拒否、50並行で1回だけbind、同時再送/取消/accept、元メール本人のアクセス拒否、別アカウントでのbind replay拒否、bound本人のメール変更、他招待非開示、bindのみでは所属/戦績変化なし、拒否/期限切れで既存データ維持、30日掃除でquota回避不可。実配送成功1件・CPU0.816msは既存証拠、統合負荷/並行/SQLは未検証。既存認証/通常連携/グループ公開設定の回帰試験必須。既存アプリ本実装はSQL独立レビュー後。 
+
+
+## 2026-11-26 統合候補04 自己レビュー修正01（最新差分）
+- 正本は `04_integrated_review_candidate.sql` の修正01（SQL commit `994e90087dc1b68a3d7a9ed58bf80c0be52079bc`）。既存01〜03ファイルは歴史資料。未実行、独立レビュー前、送信OFF・ROLLBACKのみ。
+- rebind preview のDTOに `account_review_token`（当該招待・世代・現auth.uid・正規profile・確認済みメールHMAC・現復帰hashを束ねた鍵付きfingerprint）を追加。POST rebindに `accountReviewToken` 必須、RPC `public.rebind_club_invite(uuid,uuid,integer,text,boolean,text)` の末尾 `p_account_review_token` に渡す。表示後にアカウント/メール/正規profileが変化した場合は再表示・再同意。追加OTPやメールは不要。既存5引数版は作成しない。tokenはログ/URLに載せない。最終戦績引継ぎの同意とは別。
+- 検索counterを消費した後のsource check・分類・鍵・ticket生成失敗を同一subtransactionに収める。Auth照合はSTRICTで行数変化時conflict。予約時刻は分類・権限等の再確認後に更新し、最終承認が期限を越えたら全承認subtransactionをrollbackする。仕様値の変更なし。
+- NO-GO: 未承認の匿名再送閾値と付け替え後回復（30日purge後含む）、旧lookupの独立枠、固定10分窓の境界、匿名counterの例外rollback、チーム戦eligible snapshotとscope/lockの競合、登録済みの既存申請発行後のscope変化、実DB定義/ACL・構文・実行・並列試験。現候補から直接アプリ実装/適用に進まない。既存機能変更・権限緩和・実DB/メール・本番/正式Stage/mergeは禁止。既存API契約との差分は上記のみ（同意時のCAS強化）。

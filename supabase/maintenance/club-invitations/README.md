@@ -120,3 +120,11 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 - 0045のteam_rounds_private.snapshot(uuid)だけを既存関数として置換するレビュー候補。0045から取得した元prosrc全文と実定義・owner/volatility/search_path・anon/auth EXECUTEを事前照合し、差異があれば全rollback。変更はrounds.eligible返却式のみ。既存get/create/update RPCの引数・権限・revision契約・request ID冪等を維持。新旧revision差異は既存再生成を利用。新規public RPCなし、既存snapshotのACL変更なし。他の既存関数やRLS/戦績データを変更しない。適用は同一transactionで行う候補であり、source一律拒否撤去だけを単独適用しない。
 - 独立レビュー必須: 旧profileと既存canonicalが過去同一roundに存在する場合の衝突・承認前検査の要否、退会再加入でmember IDが変わった場合、同時刻/連鎖/復元・closed再開、欠席中の旧履歴、既存通常連携でのscope異常による生成エラー、既存revision/冪等と並行変更。現候補では曖昧な履歴は生成時に停止し、事前にすべて検出できるとは保証しない。既存書込/lock規則と追加NOWAIT lockの別group競合を隔離試験で確認。現候補をリリース可と扱わない。
 - 未承認/未解決: 匿名再送閾値とIP信頼、旧検索別枠、cron・鍵・rotation、実カタログ差分、SQL parser/PLpgSQL compile、正負/並行/回帰/実Auth・HTTP試験。旧仕様の変更や本番/正式Stageへの適用は別承認。独立レビューでは承認済み3点を再度仕様決定しない。
+
+
+## 2026-11-26 修正05：ユーザー承認によるイベント固有対応の除外（最新）
+[承認記録](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7186410956) が修正04以前の乱数ID正規化・再開時の公平性対応・関連テスト要求を上書きする。SQL commit `1f7dac2e788f3a0feabf68d9e4e05d23e7fa3311`。
+- 招待の入口・本人同意・既存プロフィール統合が今回の目的。イベント開催状態による連携制限、eligibleの有無/内容による追加拒否、読み取り時ID正規化、team_rounds_private.snapshotの置換・pre/postflight、event_team_roundsへの追加ロックを撤去。乱数生成の既存コード・RPC・保存済み履歴に変更なし。既存同一試合重複検査はそのまま。連携後に同一開催を継続・再開した場合の旧eligible由来の公平性差異や同一round別courtの重複という既存の限定的リスクは追加対応しない。別Issueも作らない。
+- 実際の統合対象であるclub_members、event_participants、通常試合、event_team_matchesの元所属side/club、公式戦、private/media等のscope検査、登録済み招待由来の承認直前guard、既存named本人承認、既存統合と復元は維持。他clubの戦績を巻き込まないため、events/event_team_sides/official_events等の親表検査/追加NOWAIT lockは維持し、別group競合は隔離検証。event statusによる制限は新設しない。
+- 管理者横断rolling20/10分および取消・明示新規招待は承認維持。#7186015901 の取消前ticket再利用指摘を修正：既存terminal secret triggerがpending→終端時に同一sourceの未消費ticketを全て削除（発行管理者・宛先にかかわらず）。消費済みticket・送信試行・quota・既存registered markerは維持。新checkはカウンタ計上後のsubtransaction内でsettle_staleを先に実行して自然期限切れを確定してから発行。registered consumeもserialize後、ticket読取前にsettle_stale。initial reserveは既にsettle済み。取消/期限/拒否/承認とfresh check/consume/reserveの同時操作、旧ticket拒否、新ticket成功、旧消費済み操作の冪等結果と監査維持、lookupカウンタとquota保持、終端30日削除前後を検証する。DB未実行。
+- 旧修正04のnormalize_team_eligible、snapshot置換、16段制限、生成時PT409、関連する追加前提・試験は全て撤回。既存イベント機能の回帰確認は必要最小限（既存SQL/RPC不変、既存統合が従来の戦績を引継ぐこと）。独立レビューの焦点は今回の招待・本人確認・権限/戦績のscope・quota・回復・構文・既存承認互換。匿名閾値/IP、旧検索経路、鍵/cron、実カタログ、追加親lockの競合と実試験は未解決のまま。ROLLBACK専用・送信OFF・Draft、SQL適用/本番/正式Stage/merge禁止。

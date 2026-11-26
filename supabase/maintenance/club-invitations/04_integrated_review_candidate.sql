@@ -1,4 +1,4 @@
--- TASK-08-02 #262 / integrated review candidate 04.
+-- TASK-08-02 #262 / integrated review candidate 04, self-review correction 01.
 -- Generated from exact source files at 326976d12d1d81f6f8673402e6e37be742bbfe27.
 -- NOT A MIGRATION. DO NOT RUN ON PROD OR STAGE. ROLLBACK ONLY.
 -- No actual DB execution or parser validation. Static assembly checks only.
@@ -667,12 +667,16 @@ BEGIN
  SELECT count(*) INTO v_count FROM auth.users u WHERE lower(u.email)=v_email;
  IF v_count>1 THEN RETURN QUERY SELECT 'conflict'::text,NULL::uuid; RETURN; END IF;
  IF v_count=0 THEN RETURN QUERY SELECT 'signup_required'::text,NULL::uuid; RETURN; END IF;
- SELECT u.id,u.email_confirmed_at IS NOT NULL,
+ BEGIN
+  SELECT u.id,u.email_confirmed_at IS NOT NULL,
    NOT coalesce(u.is_anonymous,false) AND u.deleted_at IS NULL
     AND (u.banned_until IS NULL OR u.banned_until<=clock_timestamp())
- INTO v_id,v_confirmed,v_usable
- FROM auth.users u WHERE lower(u.email)=v_email FOR SHARE;
- IF NOT FOUND OR v_usable IS NOT TRUE THEN RETURN QUERY SELECT 'conflict'::text,NULL::uuid; RETURN; END IF;
+  INTO STRICT v_id,v_confirmed,v_usable
+  FROM auth.users u WHERE lower(u.email)=v_email FOR SHARE;
+ EXCEPTION WHEN no_data_found OR too_many_rows THEN
+  RETURN QUERY SELECT 'conflict'::text,NULL::uuid; RETURN;
+ END;
+ IF v_usable IS NOT TRUE THEN RETURN QUERY SELECT 'conflict'::text,NULL::uuid; RETURN; END IF;
  IF v_confirmed THEN
   IF NOT EXISTS(SELECT 1 FROM public.profiles WHERE id=v_id) THEN
    RETURN QUERY SELECT 'conflict'::text,NULL::uuid; RETURN;
@@ -720,6 +724,7 @@ BEGIN
  -- consume before address lookup; invalid input also counts for an authorized target.
  IF NOT club_invite_private.take_lookup(v_actor,v_now)
  THEN RETURN jsonb_build_object('status','lookup_limit'); END IF;
+ BEGIN
  v_email:=club_invite_private.normalize_email(p_email);
  IF v_email IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
  SELECT player_profile_id INTO v_source FROM public.club_members WHERE id=p_member AND club_id=p_club;
@@ -728,9 +733,8 @@ BEGIN
  OR EXISTS(SELECT 1 FROM club_invite_private.invitations i WHERE i.source_profile_id=v_source
       AND i.status='pending' AND i.expires_at>v_now)
  THEN RETURN jsonb_build_object('status','conflict'); END IF;
- -- Local exception block preserves outer lookup counter if classification,
- -- Vault or insert fails; never expose the input or internal SQLERRM.
- BEGIN
+ -- Local exception block preserves outer lookup counter if source check,
+ -- classification, Vault or insert fails; never expose input or SQLERRM.
   SELECT a.account_kind,a.target_auth_id INTO v_kind,v_target
     FROM club_invite_private.classify_account(v_email) a;
   IF v_kind NOT IN ('registered','signup_required') OR v_kind IS NULL
@@ -914,6 +918,10 @@ BEGIN
  SELECT account_kind INTO v_kind FROM club_invite_private.classify_account(v_email);
  IF v_kind IS DISTINCT FROM 'signup_required'
  THEN RETURN jsonb_build_object('status','recheck_required'); END IF;
+ v_now:=clock_timestamp();
+ IF v_t.expires_at<=v_now OR NOT club_invite_private.manager_ok(p_actor,p_club,p_member)
+ OR NOT club_invite_private.source_available(p_club,p_member,v_t.source_profile_id)
+ THEN RETURN jsonb_build_object('status','conflict'); END IF;
  v_quota:=club_invite_private.send_quota(p_member,v_digest,p_actor,p_club,v_now);
  IF v_quota<>'ok' THEN RETURN jsonb_build_object('status',v_quota); END IF;
  INSERT INTO club_invite_private.invitations(club_id,member_id,source_profile_id,inviter_auth_id,
@@ -999,6 +1007,10 @@ BEGIN
  SELECT account_kind INTO v_class FROM club_invite_private.classify_account(v_email);
  IF v_class IS NULL OR v_class='conflict' THEN RETURN jsonb_build_object('status','conflict'); END IF;
  IF p_kind='auth_confirmation' AND NOT club_invite_private.auth_resend_ok(v_email)
+ THEN RETURN jsonb_build_object('status','not_found'); END IF;
+ v_now:=clock_timestamp();
+ IF NOT club_invite_private.invite_usable(v_i,p_generation)
+ OR (p_mode='manager' AND NOT club_invite_private.manager_ok(p_actor,v_i.club_id,v_i.member_id))
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_quota:=club_invite_private.send_quota(v_i.member_id,v_i.email_digest,v_manager,v_i.club_id,v_now);
  IF v_quota<>'ok' THEN
@@ -1334,17 +1346,22 @@ BEGIN
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  RETURN jsonb_build_object('status','ok','invite_id',v_i.id,'generation',v_i.generation,
   'original_email_masked',club_invite_private.mask_email(v_email),
-  'current_account_email',v_current_email,'current_account_name',v_name);
+  'current_account_email',v_current_email,'current_account_name',v_name,
+  'account_review_token',encode(club_invite_private.request_fingerprint(jsonb_build_array(
+    'rebind-preview-v1',v_i.id,v_i.generation,v_actor,v_target,encode(v_digest,'hex'),
+    encode(v_secret_hash,'hex'))),'hex'));
 END $$;
 
 CREATE FUNCTION public.rebind_club_invite(
- p_operation_id uuid,p_invite uuid,p_generation integer,p_secret text,p_consent boolean
+ p_operation_id uuid,p_invite uuid,p_generation integer,p_secret text,p_consent boolean,
+ p_account_review_token text
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE v_actor uuid:=auth.uid(); v_digest bytea; v_target uuid;
  v_i club_invite_private.invitations%ROWTYPE; v_hash bytea; v_request bytea; v_now timestamptz;
 BEGIN
  IF v_actor IS NULL OR p_operation_id IS NULL OR p_invite IS NULL
  OR p_generation IS NULL OR p_consent IS NOT TRUE
+ OR p_account_review_token IS NULL OR p_account_review_token !~ '^[0-9a-f]{64}$'
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_hash:=club_invite_private.secret_hash(p_secret);
  IF v_hash IS NULL THEN RETURN jsonb_build_object('status','not_found'); END IF;
@@ -1355,8 +1372,11 @@ BEGIN
  IF NOT FOUND THEN RETURN jsonb_build_object('status','not_found'); END IF;
  SELECT * INTO v_i FROM club_invite_private.invitations WHERE id=p_invite FOR UPDATE;
  IF NOT FOUND THEN RETURN jsonb_build_object('status','not_found'); END IF;
+ IF p_account_review_token IS DISTINCT FROM encode(club_invite_private.request_fingerprint(jsonb_build_array(
+   'rebind-preview-v1',p_invite,p_generation,v_actor,v_target,encode(v_digest,'hex'),encode(v_hash,'hex'))),'hex')
+ THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_request:=club_invite_private.request_fingerprint(jsonb_build_array('rebind',p_operation_id,
-   p_invite,p_generation,v_actor,encode(v_digest,'hex'),encode(v_hash,'hex'),true));
+   p_invite,p_generation,v_actor,encode(v_digest,'hex'),encode(v_hash,'hex'),true,p_account_review_token));
  -- Replay returns only the result, never new authority or another link.
  IF v_i.bound_auth_id IS NOT NULL THEN
   IF v_i.bind_operation_id=p_operation_id AND v_i.bind_request_digest=v_request
@@ -1386,10 +1406,10 @@ END $$;
 
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA club_invite_private FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION public.list_my_club_invites(),public.preview_my_club_invite(uuid,integer),
- public.preview_club_invite_rebind(uuid,integer,text),public.rebind_club_invite(uuid,uuid,integer,text,boolean)
+ public.preview_club_invite_rebind(uuid,integer,text),public.rebind_club_invite(uuid,uuid,integer,text,boolean,text)
  FROM PUBLIC,anon,authenticated,service_role;
 GRANT EXECUTE ON FUNCTION public.list_my_club_invites(),public.preview_my_club_invite(uuid,integer),
- public.preview_club_invite_rebind(uuid,integer,text),public.rebind_club_invite(uuid,uuid,integer,text,boolean)
+ public.preview_club_invite_rebind(uuid,integer,text),public.rebind_club_invite(uuid,uuid,integer,text,boolean,text)
  TO authenticated;
 
 -- Lock parents as well as existing merge references. This is a draft lock
@@ -1525,7 +1545,8 @@ BEGIN
   UPDATE club_invite_private.invitations SET status='approved',recipient_auth_id=v_actor,
     link_request_id=v_link,decided_at=clock_timestamp(),email_ciphertext=NULL,recovery_digest=NULL,
     decision_operation_id=p_operation_id,decision_request_digest=v_request
-   WHERE id=v_i.id AND status='pending' AND generation=p_generation;
+   WHERE id=v_i.id AND status='pending' AND generation=p_generation
+     AND expires_at>clock_timestamp();
   IF NOT FOUND THEN RAISE SQLSTATE 'PT409' USING MESSAGE='Invitation approval failed'; END IF;
   -- Existing named approval already writes notification and restore audit.
   -- No additional notification or modification of the canonical name.
@@ -1683,7 +1704,7 @@ DECLARE f text; r text; o oid; expected_role text;
  'public.list_my_club_invites()',
  'public.preview_my_club_invite(uuid,integer)',
  'public.preview_club_invite_rebind(uuid,integer,text)',
- 'public.rebind_club_invite(uuid,uuid,integer,text,boolean)',
+ 'public.rebind_club_invite(uuid,uuid,integer,text,boolean,text)',
  'public.accept_my_club_invite(uuid,integer,uuid,text,text,text,text,boolean,boolean)',
  'public.reject_my_club_invite(uuid,integer,uuid)'];
  svc_f text[]:=ARRAY[

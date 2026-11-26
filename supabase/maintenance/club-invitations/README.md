@@ -79,3 +79,34 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 - 解決案（独立レビュー対象）: 保存済みeligibleをそのまま保持し、既存の未復元merge履歴を使ってチーム戦のfairness入力にだけsource→canonicalを反映する読み取り時正規化。対象club/元所属side/正規profile/復元状態/時系列・重複・連鎖・ID不整合を検証。過去snapshot本体や既存スコアを変更せず、restore時の挙動も維持する。これを安全に実装可能か、または対象限定の更新＋既存復元監査拡張が必要か、Codexが独立検証する。実装は承認待ち。全乱数ラウンドの招待拒否、旧イベント再開禁止、無監査のsnapshot書換えは勝手に確定しない。
 - lock_accept_scopeは既存lock_references順序を維持した後、clubs/app_admins/events/event_team_sides/event_team_rounds/official_eventsにNOWAITの追加lockを取得する草案。長時間ブロックを回避する意図だが、旧関数のロック・同時ラウンド生成・行ロック・直接DML・Auth更新・PGRST timeoutを含む実並行検証は未実施。trigger経由の例外が既存named RPC全体をrollbackすること、旧直接申請/通常joinの無影響を証明する。
 - 現段階は独立レビューに渡せる候補であり、アプリ実装・SQL適用・リリースのGOではない。匿名再送閾値、bound後回復、30日削除後の回復、旧lookup経路、cron/鍵、隔離実行は継続NO-GO。Codexはread-onlyレビューで指摘・最小修正案・隔離試験計画をPRへ記録し、仕様の決定や実装・DB/メール・マージは行わない。
+
+
+## 2026-11-26 独立レビュー修正03と残る仕様決定
+
+独立レビュー [PR #273](https://github.com/g-ambe/Padel-match/pull/273#issuecomment-7185769923) / [Issue #262](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7185775453) のNO-GOを受領。候補04の修正03 SQL commit `285fd1f1bf77a3201fdbcfa06c118116991cd0d4`。未実行・未適用・送信OFFを維持。
+
+### 1. 構文と検索制限
+- guard_registered_invite_merge の単独ドルを対応する名前付きドル引用に修正。全体の文字列・コメントを除いたドル引用の対応48組、関数名45本重複なし、ROLLBACK/COMMITの静的検査のみ。PostgreSQL parser/PLpgSQL compileは未実施。
+- 検索制限は、任意の連続10分間（左端を含めず右端を含む）で最大20回という厳しい解釈を候補とする。管理者1名につき最大20時刻のみをprivate tableの配列に保持。共有serialize_operations、行ロック、DB時刻により直近10分の件数を確認し追加。検索拒否時に新時刻を追加しない。権限ある対象への不正メール入力も計上し、例外時に計上を失わない既存subtransaction維持。グループ横断。最終許可時刻から10分経過後にcleanup。旧検索RPC・匿名制限は未変更。固定窓からの変更は仕様文言を安全側に解釈したレビュー候補であり、利用者確認待ち。実SQLの境界/並行試験が必要。
+
+### 2. チーム戦: 保存履歴を保持する解決設計案（未実装、要承認）
+0045 team_rounds_private.snapshot は、現所属のroster、実試合枠matches、過去rounds.eligible、sidesを返す。get_friendly_team_round_context と create_friendly_team_round の双方がsnapshotを使い、同一JSONのmd5をrevisionにする。createは新しいeligibleとして現rosterを保存する。0039 mergeはclub_membersの同じ行IDを維持し、event_team_matchesのprofile_idを更新するが、eligibleは変更しない。TS generateTeamRound はsource:keyで出場/休憩を集計し、現在のrosterのkeyと過去eligibleを照合。終了後の再開あり。
+
+推奨: 新招待側だけで完結できると仮定せず、既存team_rounds_private.snapshotのrounds.eligible返却部分に限定した読み取り時正規化を別途レビューする。既存の保存JSON、スコア、試合・統合/復元監査、現roster、ゲスト、出場計算、乱数ロジック自体は書き換えない。既存の公開RPC引数・返却shape・認可を維持し、管理者の既存event権限の下だけで実行。merge履歴をブラウザに返さず、専用private helperで変換。get/create/editの共通snapshotを使い、正規化結果がrevisionに含まれるようにする。移行中の既存revisionは409/40001再生成を案内、操作ID再送による二重生成なし。既存承認・招待承認双方で整合。
+
+変換条件の候補:
+1. eligible rowのsourceがteam_a/team_b、key='profile:'||profile_id、guest_id NULL、member_id有効であること。ゲスト/変更なしのプロフィールはそのまま。sourceから当該eventのside clubを確定し、別側・別clubへ勝手に移さない。
+2. 未復元mergeのsource→targetを追う。各edgeは当該club、round.created_at以前の誤対応を避ける時系列（snapshot作成後の統合）、既存merge_changesのclub_members行IDとbefore/afterのprofile_id/club_idが一致する証拠を要求。同じmember_idを使うだけで同一人物とみなさない。merge時刻同値やclock/transaction時刻境界は隔離試験で検証し、曖昧なら停止。連鎖は有限深さ・循環/複数候補拒否、終点は現rosterの同じsource/member_idと現在profile_id、正規プロフィールの有効性を確認する。現rosterにいない選手は公平性の集計対象外として元記録維持（後日参加時に再評価）。
+3. 変換はeligibleのkeyとprofile_idのみ。source/member_id/name/guest_idは保持。変換後の同じsource:key重複、試合枠の重複/不明な所属、復元で矛盾したmappingは黙って統合しない。既存両所属選手のside別扱いを維持し、試合は1人1回の制約を変えない。対象イベントの生成を安全に停止し、データ補正の要否を報告する。既存戦績の閲覧/終了/再開を禁止しない。
+4. 本方式を隔離検証・承認後に実装し、旧IDを持つ正常なeligibleについて新招待の一律拒否を撤去。source_in_scopeには元所属side/club/member_idの妥当性と他clubへの巻込み防止を残す。旧snapshotに含まれるだけで招待拒否しない。現候補はまだ一時拒否を保持し、送信OFFのまま。既存snapshotの実定義・署名・owner/ACLを照合してから最小差分SQLを設計する。現候補に未検証のCREATE OR REPLACEを追加しない。
+5. 比較案: eligible本体をmerge時に監査付きで更新し復元対応を拡張する方法は、過去snapshotの不変性と復元処理の変更が大きいため優先しない。読取時の整合検査が成立しないと判明した場合に再検討。
+
+必須試験: 休憩していた元選手の連携→次roundで休憩回数・streakが同一人物として継続、出場していた元選手の連携→誤休憩0、active/closed/reopen、対決/混合の元side、manual/削除court/欠席/途中参加/ゲスト/両所属、同一人物重複・別club・不正member/旧ID・連鎖・循環・復元、同時生成/保存/連携、旧revisionの拒否、操作ID再送、既存戦績・保存eligible・merge audit不変、アクセス負例、未連携選手の従来生成結果不変。
+
+### 3. 付け替え誤操作と30日削除（推奨仕様、未承認）
+- pendingの付け替え済み招待を元宛先へ戻す操作・同じ招待ID/世代の復活・元アドレスへの再送は許可しない。
+- 管理者に現権限があり本人連携が未成立の場合だけ、明示取消→対象/戦績の再検査→正しい宛先を再入力し新check→別invite ID・新token・新7日期限で明示的に再招待する案。元ID/旧hashを復活させない、元宛先の自動再発行はしない。旧試行も日次/rolling24h/cooldownに計上。管理者が異なる場合は現操作管理者枠。既に承認済みの連携は取消ではなく既存の復元手順・別承認。メール変更でbound本人がアクセスできない場合も同じ管理者経由の取消・新規。
+- 30日後に最小監査を消す。永久に元宛先への新規招待を禁じる要件にはしない。古い招待の復活はIDとtoken消滅により常に不可、明示的な新規招待とは別。無期限の識別子を保持しない。ユーザー承認後、現候補のbound_recovery_blockedを適切に見直し、削除前後で同じ新規発行条件にする。現時点では回復方式未承認につき既存の一時ブロックを維持、機能有効化禁止。
+
+### 4. ロックと残る実行ゲート
+別グループ書込みでNOWAIT競合する指摘は妥当。既存mergeはそもそも全参照表をSHARE ROW EXCLUSIVEでlockする。今回追加の親/role/round表について、対象行lockだけでは新規履歴のphantomやrole追加/side変更を防げない場合がある。書込み側の既存lock規則を全件照合してから絞る。現段階でlockを外さず、追加lockあり/対象行案の安全性と通常経路回帰・失敗時完全rollbackを隔離試験で比較。既存の通常join/link/restoreのロックを変更しない。匿名再送閾値・IP信頼、旧検索経路、鍵/cron、実DBカタログ、SQL parser/compile、認可/並行/保存/restore試験は継続NO-GO。正式実装・リリース承認なし。

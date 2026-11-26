@@ -110,3 +110,13 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 
 ### 4. ロックと残る実行ゲート
 別グループ書込みでNOWAIT競合する指摘は妥当。既存mergeはそもそも全参照表をSHARE ROW EXCLUSIVEでlockする。今回追加の親/role/round表について、対象行lockだけでは新規履歴のphantomやrole追加/side変更を防げない場合がある。書込み側の既存lock規則を全件照合してから絞る。現段階でlockを外さず、追加lockあり/対象行案の安全性と通常経路回帰・失敗時完全rollbackを隔離試験で比較。既存の通常join/link/restoreのロックを変更しない。匿名再送閾値・IP信頼、旧検索経路、鍵/cron、実DBカタログ、SQL parser/compile、認可/並行/保存/restore試験は継続NO-GO。正式実装・リリース承認なし。
+
+
+## 2026-11-26 承認仕様反映・修正04（最新、旧保留記載を上書き）
+承認 [Issue #262](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7185930180)。SQL commit `0e4fe8d659dd4584d3b72a5ef9b2e7fd0ef7f683`。候補04はROLLBACK専用、実SQL/アプリ未適用、送信OFF、隔離試験・独立再レビュー待ち。
+- 検索: 管理者単位・グループ横断・任意の連続10分間20回を確定。修正03のrolling配列を維持（最大20時刻、行/共有lock、時刻境界、例外時計上保持）。通常Auth、旧検索RPC、匿名再送は無変更。
+- 回復: 未連携のbound pendingは元宛先への再送/付け替え戻し禁止、現権限管理者が取消して新check、新operation、新invite ID、新7日、fresh secret。終端行の一時的なbound_recovery_blocked関数とcheck/consume/reserveの3判定を撤去。取消済み・拒否済み・期限切れのID/世代を復活させず、終端後の明示的な新規操作だけ許す。旧quota行を維持、30日削除前後で同じ再招待条件、旧リンク永久無効、承認済みは既存復元の別承認。通常の登録済み連携申請ルートも新check＋確認を再要求。旧招待の再送は引き続きpending/unbound/current-generationのみ。
+- チーム戦: source_in_scopeのeligible一律拒否を、元profile ID/key/member ID/guest/side/club/event_modeの不整合時のみ拒否へ変更。新規private INVOKER STABLE helper normalize_team_eligibleは、既存イベント権限下の共通snapshot内でのみ実行。保存済みeligibleの順序/その他項目/現roster/試合枠/スコア/統合・復元監査は変更しない。未復元mergeとmerge_changesの同一member/clubのbefore/after証拠、side、時系列、有限16段・循環拒否、現rosterと正規profileの照合を経て、返却eligibleのprofile_id/keyのみ変換。ゲスト/active mergeなしは従来どおり。欠席・退会等で現rosterに対象がいない場合は元履歴を維持。別memberで同一終点、重複、曖昧な履歴は自動補正せずエラー。
+- 0045のteam_rounds_private.snapshot(uuid)だけを既存関数として置換するレビュー候補。0045から取得した元prosrc全文と実定義・owner/volatility/search_path・anon/auth EXECUTEを事前照合し、差異があれば全rollback。変更はrounds.eligible返却式のみ。既存get/create/update RPCの引数・権限・revision契約・request ID冪等を維持。新旧revision差異は既存再生成を利用。新規public RPCなし、既存snapshotのACL変更なし。他の既存関数やRLS/戦績データを変更しない。適用は同一transactionで行う候補であり、source一律拒否撤去だけを単独適用しない。
+- 独立レビュー必須: 旧profileと既存canonicalが過去同一roundに存在する場合の衝突・承認前検査の要否、退会再加入でmember IDが変わった場合、同時刻/連鎖/復元・closed再開、欠席中の旧履歴、既存通常連携でのscope異常による生成エラー、既存revision/冪等と並行変更。現候補では曖昧な履歴は生成時に停止し、事前にすべて検出できるとは保証しない。既存書込/lock規則と追加NOWAIT lockの別group競合を隔離試験で確認。現候補をリリース可と扱わない。
+- 未承認/未解決: 匿名再送閾値とIP信頼、旧検索別枠、cron・鍵・rotation、実カタログ差分、SQL parser/PLpgSQL compile、正負/並行/回帰/実Auth・HTTP試験。旧仕様の変更や本番/正式Stageへの適用は別承認。独立レビューでは承認済み3点を再度仕様決定しない。

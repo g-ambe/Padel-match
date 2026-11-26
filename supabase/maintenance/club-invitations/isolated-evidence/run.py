@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Synthetic-only PostgreSQL check. No hosted DB, HTTP, credentials or email."""
-import hashlib, os, pathlib, re, subprocess, time, uuid
+import hashlib, os, pathlib, re, subprocess, sys, time, uuid
 HERE=pathlib.Path(__file__).resolve().parent
 REPO=HERE.parents[3]
 MIG=REPO/'supabase/migrations'
@@ -8,7 +8,8 @@ GF=REPO/'supabase/maintenance/group-foundation'
 CAND=HERE.parent/'04_integrated_review_candidate.sql'
 NAME='codex-task0802-'+uuid.uuid4().hex[:12]
 assert hashlib.sha256(CAND.read_bytes()).hexdigest()=='10a191b43f10751c28f23cbf06210affb81438e8ff3d81bb93b85a0b9818526e','candidate SHA differs; review required'
-ENV={k:v for k,v in os.environ.items() if k in ('PATH','HOME','USER','LANG','LC_ALL','DOCKER_HOST')}
+ENV={k:v for k,v in os.environ.items() if k in ('PATH','HOME','USER','LANG','LC_ALL')}
+ENV['DOCKER_HOST']='unix:///var/run/docker.sock'
 def docker(*args,**kwargs): return subprocess.run(['docker',*args],env=ENV,check=True,**kwargs)
 def sql(data,quiet=True):
  r=docker('exec','-i','-e','PGOPTIONS=-c search_path=public,extensions',NAME,'psql','-X','-U','postgres','-d','postgres','-qAt','-v','ON_ERROR_STOP=1','-f','-',input=data,text=True,capture_output=True)
@@ -16,7 +17,7 @@ def sql(data,quiet=True):
  return r.stdout
 created=False
 try:
- docker('run','-d','--name',NAME,'--network','none','--tmpfs','/var/lib/postgresql/data:rw,size=512m','-e','POSTGRES_PASSWORD=synthetic-local-only','postgres:17-alpine',capture_output=True,text=True)
+ docker('run','--pull=never','-d','--name',NAME,'--network','none','--tmpfs','/var/lib/postgresql/data:rw,size=512m','-e','POSTGRES_PASSWORD=synthetic-local-only','postgres:17-alpine',capture_output=True,text=True)
  created=True
  for _ in range(60):
   if subprocess.run(['docker','exec',NAME,'psql','-X','-U','postgres','-d','postgres','-qAt','-c','SELECT 1'],env=ENV,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:break
@@ -42,14 +43,19 @@ try:
  candidate=CAND.read_text();assert candidate.count('ROLLBACK;')==1
  sql("SET padel.invite_review_isolated='synthetic-only';\n"+candidate.replace('ROLLBACK;','COMMIT;'))
  sql((HERE/'fixtures.sql').read_text());sql((HERE/'history-fixture.sql').read_text())
- for f in ('unregistered-accept.sql','retention-key-role.sql'):
-  print('TEST',f,flush=True);sql((HERE/f).read_text())
- sql((HERE/'locks-fixture.sql').read_text());sql((HERE/'rebind-check.sql').read_text())
- out=sql((HERE/'make-links.sql').read_text()).strip().splitlines()[-1]
- link,token=out.split('|'); assert re.fullmatch(r'[a-f0-9-]{36}',link) and re.fullmatch(r'[a-f0-9]{32}',token)
- testenv=ENV|{'TASK0802_CONTAINER':NAME,'TASK0802_LINK_ID':link,'TASK0802_REVIEW_TOKEN':token}
- subprocess.run(['python3',str(HERE/'lock-snapshot.py')],env=testenv,check=True)
- print('PASS synthetic-only tests; other cases not covered',flush=True)
+ if '--previous' in sys.argv:
+  for f in ('unregistered-accept.sql','retention-key-role.sql'):
+   print('TEST',f,flush=True);sql((HERE/f).read_text())
+  sql((HERE/'locks-fixture.sql').read_text());sql((HERE/'rebind-check.sql').read_text())
+  out=sql((HERE/'make-links.sql').read_text()).strip().splitlines()[-1]
+  link,token=out.split('|');assert re.fullmatch(r'[a-f0-9-]{36}',link) and re.fullmatch(r'[a-f0-9]{32}',token)
+  subprocess.run(['python3',str(HERE/'lock-snapshot.py')],env=ENV|{'TASK0802_CONTAINER':NAME,'TASK0802_LINK_ID':link,'TASK0802_REVIEW_TOKEN':token},check=True)
+ else:
+  print('TEST remaining.sql',flush=True);sql((HERE/'remaining.sql').read_text())
+  out=sql((HERE/'race-setup.sql').read_text()).strip().splitlines()[-1]
+  inv,token=out.split('|');assert re.fullmatch(r'[a-f0-9-]{36}',inv) and re.fullmatch(r'[a-f0-9]{32}',token)
+  subprocess.run(['python3',str(HERE/'race.py')],env=ENV|{'TASK0802_CONTAINER':NAME,'TASK0802_INVITE':inv,'TASK0802_REVIEW_TOKEN':token},check=True)
+ print('PASS executed selected SQL cases; see report for omissions',flush=True)
 finally:
  if created:
   subprocess.run(['docker','rm','-f',NAME],env=ENV,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

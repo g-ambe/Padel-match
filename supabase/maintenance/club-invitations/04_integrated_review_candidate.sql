@@ -1,4 +1,4 @@
--- TASK-08-02 #262 / integrated review candidate 04, self-review correction 02.
+-- TASK-08-02 #262 / integrated review candidate 04, independent-review correction 03.
 -- Generated from exact source files at 326976d12d1d81f6f8673402e6e37be742bbfe27.
 -- NOT A MIGRATION. DO NOT RUN ON PROD OR STAGE. ROLLBACK ONLY.
 -- No actual DB execution or parser validation. Static assembly checks only.
@@ -211,8 +211,10 @@ CREATE INDEX club_invite_lookup_expiry ON club_invite_private.lookup_tickets(exp
 -- Dedicated lookup throttle; shared with all new invite check endpoints.
 CREATE TABLE club_invite_private.lookup_limits (
   manager_auth_id uuid PRIMARY KEY,
-  window_started_at timestamptz NOT NULL,
-  lookup_count integer NOT NULL CHECK (lookup_count>=1)
+  last_accepted_at timestamptz NOT NULL,
+  accepted_at timestamptz[] NOT NULL CHECK (
+    cardinality(accepted_at) BETWEEN 1 AND 20
+    AND array_position(accepted_at,NULL::timestamptz) IS NULL)
 );
 -- Operational gate: default OFF, unset global budget cannot enable sending.
 CREATE TABLE club_invite_private.settings (
@@ -687,28 +689,34 @@ BEGIN
  END IF;
 END $$;
 
--- 20 per fixed ten-minute window, same convention as existing lookup.
--- Saturate at 20 rather than increasing forever. Return normal quota
--- response to persist counter, do not raise after consuming it.
+-- Candidate interpretation of 20 per 10 minutes: at most 20 accepted
+-- lookups in any rolling ten-minute window (start exclusive).
+-- One bounded timestamp array per manager, no email or target information.
+-- All new invite check calls share the existing serialization lock.
+-- Consume invalid authorized attempts too. Do not throw on limit denial.
 CREATE FUNCTION club_invite_private.take_lookup(p_actor uuid,p_now timestamptz)
-RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE v_count integer;
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $lookup_rolling$
+DECLARE v_times timestamptz[]; v_now timestamptz; v_recent timestamptz[];
 BEGIN
  IF p_actor IS NULL OR p_now IS NULL THEN RETURN false; END IF;
- INSERT INTO club_invite_private.lookup_limits(manager_auth_id,window_started_at,lookup_count)
- VALUES(p_actor,p_now,1)
- ON CONFLICT(manager_auth_id) DO UPDATE
- SET lookup_count=CASE
-    WHEN club_invite_private.lookup_limits.window_started_at<=p_now-interval '10 minutes' THEN 1
-    ELSE club_invite_private.lookup_limits.lookup_count+1 END,
- window_started_at=CASE
-    WHEN club_invite_private.lookup_limits.window_started_at<=p_now-interval '10 minutes' THEN p_now
-    ELSE club_invite_private.lookup_limits.window_started_at END
- WHERE club_invite_private.lookup_limits.window_started_at<=p_now-interval '10 minutes'
-    OR club_invite_private.lookup_limits.lookup_count<20
- RETURNING lookup_count INTO v_count;
- RETURN FOUND AND v_count BETWEEN 1 AND 20;
-END $$;
+ PERFORM profile_link_private.serialize_operations();
+ v_now:=clock_timestamp();
+ INSERT INTO club_invite_private.lookup_limits(manager_auth_id,last_accepted_at,accepted_at)
+ VALUES(p_actor,v_now,ARRAY[v_now])
+ ON CONFLICT(manager_auth_id) DO NOTHING;
+ IF FOUND THEN RETURN true; END IF;
+ SELECT accepted_at INTO v_times FROM club_invite_private.lookup_limits
+ WHERE manager_auth_id=p_actor FOR UPDATE;
+ IF NOT FOUND THEN RETURN false; END IF;
+ v_now:=clock_timestamp();
+ SELECT coalesce(array_agg(t ORDER BY t),ARRAY[]::timestamptz[]) INTO v_recent
+ FROM unnest(v_times) AS times(t) WHERE t>v_now-interval '10 minutes';
+ IF cardinality(v_recent)>=20 THEN RETURN false; END IF;
+ UPDATE club_invite_private.lookup_limits
+ SET accepted_at=array_append(v_recent,v_now),last_accepted_at=v_now
+ WHERE manager_auth_id=p_actor;
+ RETURN FOUND;
+END $lookup_rolling$;
 
 CREATE FUNCTION public.check_club_invite_account(p_club uuid,p_member uuid,p_email text)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -1441,7 +1449,7 @@ CREATE UNIQUE INDEX club_invite_registered_request_marker
  WHERE result_link_id IS NOT NULL;
 
 CREATE FUNCTION club_invite_private.guard_registered_invite_merge()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $registered_invite_guard$
 DECLARE v_t club_invite_private.lookup_tickets%ROWTYPE;
  v_r public.player_profile_link_requests%ROWTYPE;
  v_digest bytea; v_target uuid;
@@ -1482,7 +1490,7 @@ BEGIN
  OR v_r.expires_at<=clock_timestamp()
  THEN RAISE SQLSTATE 'PT409' USING MESSAGE='招待の連携内容を再確認してください'; END IF;
  RETURN NEW;
-END $;
+END $registered_invite_guard$;
 
 CREATE TRIGGER club_invite_guard_registered_merge
  BEFORE INSERT ON public.player_profile_merges
@@ -1698,7 +1706,7 @@ CREATE INDEX club_invite_consumed_lookup_retention
  ON club_invite_private.lookup_tickets(consumed_at)
  WHERE consumed_at IS NOT NULL;
 CREATE INDEX club_invite_lookup_limit_window
- ON club_invite_private.lookup_limits(window_started_at);
+ ON club_invite_private.lookup_limits(last_accepted_at);
 CREATE INDEX club_invite_anon_limit_window
  ON club_invite_private.anonymous_limits(window_started_at);
 
@@ -1743,7 +1751,7 @@ BEGIN
  GET DIAGNOSTICS v_tickets=ROW_COUNT;
 
  DELETE FROM club_invite_private.lookup_limits
- WHERE window_started_at<=v_now-interval '10 minutes';
+ WHERE last_accepted_at<=v_now-interval '10 minutes';
  GET DIAGNOSTICS v_lookup_limits=ROW_COUNT;
 
  DELETE FROM club_invite_private.anonymous_limits

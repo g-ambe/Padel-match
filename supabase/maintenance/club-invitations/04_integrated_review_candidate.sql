@@ -1,10 +1,12 @@
--- TASK-08-02 #262 / integrated review candidate 04, approved-spec correction 04.
+-- TASK-08-02 #262 / integrated review candidate 04, scope simplification 05.
 -- Generated from exact source files at 326976d12d1d81f6f8673402e6e37be742bbfe27.
 -- NOT A MIGRATION. DO NOT RUN ON PROD OR STAGE. ROLLBACK ONLY.
 -- No actual DB execution or parser validation. Static assembly checks only.
 -- The hard send-off constraint deliberately prevents sending; isolated positive
 -- send tests must use a separately reviewed synthetic adaptation (mock delivery).
--- Approved: rolling search, explicit new invite after terminal state, read-time round identity.
+-- Approved: rolling search, explicit new invite after terminal state.
+-- Team-round eligibility/history normalization and event-state gating excluded by owner.
+-- Existing profile merge and actual transferred-reference scope remain unchanged.
 -- Unresolved: anonymous limits/IP trust, old lookup bypass, real lock-order and scope behavior,
 -- existing link approval after team scope drift, Auth/Vault catalog, scheduled cleanup,
 -- and all independent tests. Never activate based on this file.
@@ -585,22 +587,6 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
      WHERE slot.profile_id=p_source
        AND NOT EXISTS(SELECT 1 FROM public.event_team_sides s
         WHERE s.event_id=t.event_id AND s.side=slot.source_side AND s.club_id=p_club))
-   -- An ordinary historical eligible reference is permitted, even for an
-   -- active/reopenable event. Only malformed or out-of-scope rows block.
-   -- The atomic review candidate below installs read-time normalization.
-   AND NOT EXISTS(SELECT 1 FROM public.event_team_rounds tr
-     LEFT JOIN public.events ev ON ev.id=tr.event_id
-     CROSS JOIN LATERAL jsonb_array_elements(tr.eligible) roster
-     WHERE (roster->>'profile_id'=p_source::text
-        OR roster->>'key'='profile:'||p_source::text)
-       AND (roster->>'profile_id' IS DISTINCT FROM p_source::text
-         OR roster->>'key' IS DISTINCT FROM 'profile:'||p_source::text
-         OR roster->>'member_id' IS DISTINCT FROM p_member::text
-         OR roster->>'guest_id' IS NOT NULL
-         OR ev.event_mode IS DISTINCT FROM 'team'
-         OR NOT EXISTS(SELECT 1 FROM public.event_team_sides side
-          WHERE side.event_id=tr.event_id AND side.side=roster->>'source'
-            AND side.club_id=p_club)))
    AND NOT EXISTS(SELECT 1 FROM public.official_matches m LEFT JOIN public.official_events e ON e.id=m.official_event_id
      WHERE p_source IN(m.our_player1_profile_id,m.our_player2_profile_id) AND e.club_id IS DISTINCT FROM p_club)
    AND NOT EXISTS(SELECT 1 FROM public.player_profile_private WHERE profile_id=p_source)
@@ -739,6 +725,9 @@ BEGIN
  BEGIN
  v_email:=club_invite_private.normalize_email(p_email);
  IF v_email IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
+ -- Settle elapsed invitations before issuing a new check ticket.
+ PERFORM club_invite_private.settle_stale();
+ v_now:=clock_timestamp();
  SELECT player_profile_id INTO v_source FROM public.club_members WHERE id=p_member AND club_id=p_club;
  IF v_source IS NULL OR NOT club_invite_private.source_available(p_club,p_member,v_source)
  OR EXISTS(SELECT 1 FROM club_invite_private.invitations i WHERE i.source_profile_id=v_source
@@ -778,6 +767,7 @@ BEGIN
  v_hash:=club_invite_private.secret_hash(p_ticket);
  IF v_hash IS NULL THEN RETURN jsonb_build_object('status','not_found'); END IF;
  PERFORM profile_link_private.serialize_operations();
+ PERFORM club_invite_private.settle_stale();
  SELECT * INTO v_t FROM club_invite_private.lookup_tickets t
  WHERE t.ticket_digest=v_hash AND t.manager_auth_id=v_actor
   AND t.club_id=p_club AND t.member_id=p_member FOR UPDATE;
@@ -1428,12 +1418,12 @@ CREATE FUNCTION club_invite_private.lock_accept_scope(p_club uuid)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 BEGIN
  PERFORM profile_link_private.serialize_operations();
- -- The existing reference lock order is authoritative. Extra parent/round
+ -- The existing reference lock order is authoritative. Extra parent/role
  -- locks are nonblocking so a competing event write cannot cause a new
  -- indefinite inversion. Contention must roll back and prompt fresh review.
  PERFORM profile_link_private.lock_references();
  LOCK TABLE public.app_admins,public.clubs,public.events,public.event_team_sides,
-  public.event_team_rounds,public.official_events
+  public.official_events
  IN SHARE ROW EXCLUSIVE MODE NOWAIT;
  PERFORM 1 FROM public.clubs WHERE id=p_club FOR UPDATE NOWAIT;
 END $$;
@@ -1690,6 +1680,14 @@ BEGIN
   NEW.email_ciphertext:=NULL;
   NEW.recovery_digest:=NULL;
   NEW.bind_request_digest:=NULL;
+  -- A fresh explicit check must follow the terminal transition. Do not delete
+  -- consumed tickets: they retain request provenance and replay evidence.
+  IF TG_OP='UPDATE' THEN
+   IF OLD.status='pending' THEN
+    DELETE FROM club_invite_private.lookup_tickets
+     WHERE source_profile_id=OLD.source_profile_id AND consumed_at IS NULL;
+   END IF;
+  END IF;
  END IF;
  RETURN NEW;
 END $$;
@@ -1766,149 +1764,6 @@ END $$;
 REVOKE ALL ON FUNCTION club_invite_private.cleanup_retention(),
  club_invite_private.erase_terminal_secrets()
  FROM PUBLIC,anon,authenticated,service_role;
-
--- TASK-08-02 approved read-time team eligibility normalization.
--- Only existing authorized team-round RPCs reach this invoker helper.
--- No history, merge records, roster rows, score or guest writes.
-CREATE FUNCTION club_invite_private.normalize_team_eligible(
- p_event uuid,p_round_at timestamptz,p_eligible jsonb,p_roster jsonb
-) RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY INVOKER SET search_path='' AS $team_eligible$
-DECLARE
- v_item jsonb; v_current jsonb; v_next jsonb; v_output jsonb:='[]'::jsonb;
- v_profile uuid; v_member uuid; v_club uuid; v_edge public.player_profile_merges%ROWTYPE;
- v_side text; v_key text; v_last timestamptz; v_depth integer;
- v_seen uuid[]; v_valid boolean; v_current_count integer; v_changed boolean:=false;
-BEGIN
- IF p_event IS NULL OR p_round_at IS NULL OR jsonb_typeof(p_eligible) IS DISTINCT FROM 'array'
- OR jsonb_typeof(p_roster) IS DISTINCT FROM 'array'
- THEN RAISE SQLSTATE 'PT409' USING MESSAGE='ラウンド履歴を確認してください'; END IF;
- FOR v_item IN SELECT value FROM jsonb_array_elements(p_eligible) LOOP
-  v_next:=v_item;
-  -- Leave guests and profiles without active merge edges exactly as before.
-  IF v_item->>'profile_id' IS NOT NULL THEN
-   v_profile:=(v_item->>'profile_id')::uuid;
-   IF EXISTS(SELECT 1 FROM public.player_profile_merges m
-       WHERE m.source_player_profile_id=v_profile AND m.restored_at IS NULL) THEN
-    v_side:=v_item->>'source';
-    v_key:=v_item->>'key';
-    v_member:=(v_item->>'member_id')::uuid;
-    SELECT count(*),coalesce(jsonb_agg(x.value),'[]'::jsonb)->0
-      INTO v_current_count,v_current
-    FROM jsonb_array_elements(p_roster) x
-    WHERE x.value->>'source'=v_side
-      AND x.value->>'member_id'=v_member::text;
-    IF v_current_count>1 THEN
-     RAISE SQLSTATE 'PT409' USING MESSAGE='ラウンドの所属情報を確認してください';
-    END IF;
-    SELECT side.club_id INTO v_club FROM public.event_team_sides side
-     WHERE side.event_id=p_event AND side.side=v_side;
-    v_valid:=coalesce(FOUND AND v_club IS NOT NULL AND v_member IS NOT NULL
-      AND v_side IN ('team_a','team_b') AND v_key='profile:'||v_profile::text
-      AND v_item->>'guest_id' IS NULL,false);
-    v_last:=p_round_at; v_depth:=0; v_seen:=ARRAY[v_profile];
-    LOOP
-     SELECT * INTO v_edge FROM public.player_profile_merges m
-       WHERE m.source_player_profile_id=v_profile AND m.restored_at IS NULL;
-     EXIT WHEN NOT FOUND;
-     -- Unique active-source index is part of the preflight contract.
-     v_depth:=v_depth+1;
-     IF v_depth>16 OR v_edge.target_player_profile_id=ANY(v_seen) THEN
-      RAISE SQLSTATE 'PT409' USING MESSAGE='ラウンドの連携履歴を確認してください';
-     END IF;
-     IF v_edge.club_id IS DISTINCT FROM v_club OR v_edge.merged_at<=v_last
-       OR NOT EXISTS(SELECT 1 FROM profile_link_private.merge_changes mc
-        WHERE mc.merge_id=v_edge.id AND mc.source_schema='public'
-          AND mc.source_table='club_members' AND mc.row_id=v_member
-          AND mc.before_row->>'id'=v_member::text AND mc.after_row->>'id'=v_member::text
-          AND mc.before_row->>'club_id'=v_club::text AND mc.after_row->>'club_id'=v_club::text
-          AND mc.before_row->>'player_profile_id'=v_profile::text
-          AND mc.after_row->>'player_profile_id'=v_edge.target_player_profile_id::text)
-     THEN v_valid:=false; END IF;
-     v_last:=v_edge.merged_at;
-     v_profile:=v_edge.target_player_profile_id;
-     v_seen:=array_append(v_seen,v_profile);
-    END LOOP;
-    IF v_current_count=1 THEN
-     IF v_valid IS NOT TRUE
-       OR v_current->>'profile_id' IS DISTINCT FROM v_profile::text
-       OR v_current->>'key' IS DISTINCT FROM 'profile:'||v_profile::text
-       OR v_current->>'guest_id' IS NOT NULL
-       OR NOT EXISTS(SELECT 1 FROM public.player_profiles pp
-          WHERE pp.id=v_profile AND pp.is_active AND pp.linked_auth_user_id IS NOT NULL
-            AND profile_link_private.canonical(pp.linked_auth_user_id)=pp.id)
-     THEN RAISE SQLSTATE 'PT409' USING MESSAGE='ラウンドの連携履歴を確認してください'; END IF;
-     v_next:=v_item||jsonb_build_object('profile_id',v_profile,'key','profile:'||v_profile::text);
-     v_changed:=true;
-    ELSIF EXISTS(SELECT 1 FROM jsonb_array_elements(p_roster) x
-          WHERE x.value->>'source'=v_side AND x.value->>'key'='profile:'||v_profile::text)
-    THEN
-     -- Different membership row: no silent cross-member history transfer.
-     RAISE SQLSTATE 'PT409' USING MESSAGE='ラウンドの所属情報を確認してください';
-    END IF;
-    -- An absent/removed participant without a current eligible target does
-    -- not affect today's fairness. Keep the original snapshot entry.
-   END IF;
-  END IF;
-  v_output:=v_output||jsonb_build_array(v_next);
- END LOOP;
- IF v_changed AND EXISTS(
-    SELECT 1 FROM jsonb_array_elements(v_output) x
-    GROUP BY x.value->>'source',x.value->>'key' HAVING count(*)>1)
- THEN RAISE SQLSTATE 'PT409' USING MESSAGE='ラウンドの選手情報が重複しています'; END IF;
- RETURN v_output;
-END $team_eligible$;
-REVOKE ALL ON FUNCTION club_invite_private.normalize_team_eligible(uuid,timestamptz,jsonb,jsonb)
- FROM PUBLIC,anon,authenticated,service_role;
-
--- Exactly preserve the existing snapshot signature, volatility and ACL.
--- The known source body is embedded from 0045; drift stops the whole candidate,
--- never force-replaces an unknown deployed implementation.
-DO $team_snapshot_preflight$
-DECLARE p_oid oid:=to_regprocedure('team_rounds_private.snapshot(uuid)');
-BEGIN
- IF p_oid IS NULL OR NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=p_oid
-   AND pg_get_userbyid(p.proowner)='postgres' AND NOT p.prosecdef
-   AND p.provolatile='s' AND p.prorettype='jsonb'::regtype
-   AND p.prosrc=$team_snapshot_original$
-WITH roster AS (
- SELECT 'profile:'||pp.id AS key,s.side AS source,pp.id AS profile_id,NULL::uuid AS guest_id,cm.id AS member_id,coalesce(pp.display_name,'名称未設定') AS name
- FROM public.event_team_sides s JOIN public.club_members cm ON cm.club_id=s.club_id AND cm.is_active
- JOIN public.player_profiles pp ON pp.id=coalesce(cm.player_profile_id,cm.profile_id) AND pp.is_active
- WHERE s.event_id=p_event AND NOT EXISTS(SELECT 1 FROM public.event_team_attendance a WHERE a.event_id=p_event AND a.side=s.side AND a.member_id=cm.id AND a.status='absent')
- UNION ALL SELECT 'guest:'||g.id,g.side,NULL::uuid,g.id,NULL::uuid,g.guest_name FROM public.event_team_guests g
- WHERE g.event_id=p_event AND NOT EXISTS(SELECT 1 FROM public.event_team_attendance a WHERE a.event_id=p_event AND a.side=g.side AND a.guest_id=g.id AND a.status='absent')
-) SELECT jsonb_build_object(
- 'court_count',(SELECT court_count FROM public.events WHERE id=p_event),
- 'roster',coalesce((SELECT jsonb_agg(to_jsonb(r) ORDER BY source,key) FROM roster r),'[]'::jsonb),
- 'matches',coalesce((SELECT jsonb_agg(to_jsonb(m) ORDER BY match_order,created_at,id) FROM public.event_team_matches m WHERE event_id=p_event),'[]'::jsonb),
- 'rounds',coalesce((SELECT jsonb_agg(jsonb_build_object('id',r.id,'round_number',r.round_number,'mode',r.mode,'court_count',r.court_count,'eligible',r.eligible) ORDER BY r.round_number) FROM public.event_team_rounds r WHERE event_id=p_event),'[]'::jsonb),
- 'sides',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY side) FROM public.event_team_sides s WHERE event_id=p_event),'[]'::jsonb)
- ); $team_snapshot_original$
-   AND coalesce(p.proconfig,ARRAY[]::text[]) && ARRAY['search_path=""','search_path='])
- OR has_function_privilege('anon',p_oid,'EXECUTE')
- OR has_function_privilege('authenticated',p_oid,'EXECUTE')
- THEN RAISE EXCEPTION 'Existing team round snapshot baseline drift'; END IF;
-END $team_snapshot_preflight$;
-
-CREATE OR REPLACE FUNCTION team_rounds_private.snapshot(p_event uuid)
-RETURNS jsonb LANGUAGE sql STABLE SECURITY INVOKER SET search_path=''
-AS $team_snapshot_normalized$
-WITH roster AS (
- SELECT 'profile:'||pp.id AS key,s.side AS source,pp.id AS profile_id,NULL::uuid AS guest_id,cm.id AS member_id,coalesce(pp.display_name,'名称未設定') AS name
- FROM public.event_team_sides s JOIN public.club_members cm ON cm.club_id=s.club_id AND cm.is_active
- JOIN public.player_profiles pp ON pp.id=coalesce(cm.player_profile_id,cm.profile_id) AND pp.is_active
- WHERE s.event_id=p_event AND NOT EXISTS(SELECT 1 FROM public.event_team_attendance a WHERE a.event_id=p_event AND a.side=s.side AND a.member_id=cm.id AND a.status='absent')
- UNION ALL SELECT 'guest:'||g.id,g.side,NULL::uuid,g.id,NULL::uuid,g.guest_name FROM public.event_team_guests g
- WHERE g.event_id=p_event AND NOT EXISTS(SELECT 1 FROM public.event_team_attendance a WHERE a.event_id=p_event AND a.side=g.side AND a.guest_id=g.id AND a.status='absent')
-) SELECT jsonb_build_object(
- 'court_count',(SELECT court_count FROM public.events WHERE id=p_event),
- 'roster',coalesce((SELECT jsonb_agg(to_jsonb(r) ORDER BY source,key) FROM roster r),'[]'::jsonb),
- 'matches',coalesce((SELECT jsonb_agg(to_jsonb(m) ORDER BY match_order,created_at,id) FROM public.event_team_matches m WHERE event_id=p_event),'[]'::jsonb),
- 'rounds',coalesce((SELECT jsonb_agg(jsonb_build_object('id',r.id,'round_number',r.round_number,'mode',r.mode,'court_count',r.court_count,'eligible',club_invite_private.normalize_team_eligible(
-      p_event,r.created_at,r.eligible,
-      coalesce((SELECT jsonb_agg(to_jsonb(rr) ORDER BY rr.source,rr.key) FROM roster rr),'[]'::jsonb))) ORDER BY r.round_number) FROM public.event_team_rounds r WHERE event_id=p_event),'[]'::jsonb),
- 'sides',coalesce((SELECT jsonb_agg(to_jsonb(s) ORDER BY side) FROM public.event_team_sides s WHERE event_id=p_event),'[]'::jsonb)
- ); $team_snapshot_normalized$;
 
 REVOKE ALL ON SCHEMA club_invite_private FROM PUBLIC,anon,authenticated,service_role;
 REVOKE ALL ON ALL TABLES IN SCHEMA club_invite_private FROM PUBLIC,anon,authenticated,service_role;
@@ -2009,12 +1864,6 @@ BEGIN
  IF EXISTS(SELECT 1 FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
     WHERE t.relnamespace=nsp AND c.contype='f' AND c.confrelid='public.player_profiles'::regclass)
  THEN RAISE EXCEPTION 'Invite introduces forbidden player profile FK'; END IF;
- IF NOT EXISTS(SELECT 1 FROM pg_proc p WHERE p.oid=to_regprocedure('team_rounds_private.snapshot(uuid)')
-    AND position('club_invite_private.normalize_team_eligible(' IN p.prosrc)>0
-    AND NOT p.prosecdef AND p.provolatile='s' AND pg_get_userbyid(p.proowner)='postgres')
- OR has_function_privilege('anon','team_rounds_private.snapshot(uuid)','EXECUTE')
- OR has_function_privilege('authenticated','team_rounds_private.snapshot(uuid)','EXECUTE')
- THEN RAISE EXCEPTION 'Team history normalization missing or exposed'; END IF;
  IF NOT EXISTS(SELECT 1 FROM pg_trigger t
     WHERE t.tgrelid='public.player_profile_merges'::regclass
       AND t.tgname='club_invite_guard_registered_merge'

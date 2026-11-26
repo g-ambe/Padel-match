@@ -1,0 +1,8 @@
+ALTER TABLE club_invite_private.settings DROP CONSTRAINT club_invite_review_send_off;
+UPDATE club_invite_private.settings SET send_enabled=true;
+INSERT INTO vault.decrypted_secrets VALUES ('padel_club_invite_hmac_v1',encode(decode(repeat('11',32),'hex'),'base64')),('padel_club_invite_encryption_v1',encode(decode(repeat('22',32),'hex'),'base64'));
+INSERT INTO auth.users(id,email,email_confirmed_at) VALUES ('10000000-0000-4000-8000-000000000001','manager@example.test',now()),('10000000-0000-4000-8000-000000000002','recipient@example.test',now()),('10000000-0000-4000-8000-000000000003','outsider@example.test',now());
+INSERT INTO public.profiles(id,display_name,email) SELECT id,'架空利用者',email FROM auth.users;
+INSERT INTO public.player_profiles(id,linked_auth_user_id,display_name) VALUES ('20000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','管理者'),('20000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000002','本人'),('20000000-0000-4000-8000-000000000003',NULL,'仮選手'),('20000000-0000-4000-8000-000000000004','10000000-0000-4000-8000-000000000003','第三者');
+INSERT INTO public.clubs(id,name,owner_id,visibility) VALUES ('30000000-0000-4000-8000-000000000001','架空A','10000000-0000-4000-8000-000000000001','public'),('30000000-0000-4000-8000-000000000002','架空B','10000000-0000-4000-8000-000000000003','public');
+INSERT INTO public.club_members(id,club_id,profile_id,player_profile_id,role) VALUES ('40000000-0000-4000-8000-000000000001','30000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','main_admin'),('40000000-0000-4000-8000-000000000002','30000000-0000-4000-8000-000000000001',NULL,'20000000-0000-4000-8000-000000000003','member');

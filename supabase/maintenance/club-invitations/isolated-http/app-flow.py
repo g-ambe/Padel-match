@@ -8,6 +8,10 @@ def node(body):
  r=subprocess.run(['node',str(H/'app-flow.cjs')],input=json.dumps(body),text=True,capture_output=True,env=env)
  assert r.returncode==0,r.stderr[-2000:];return json.loads(r.stdout)
 sent=node({'mode':'send','service':service,'args':args});assert sent['invite'] and sent['generation']==1
+negative={'p_actor':mgr,'p_mode':'manager','p_invite':sent['invite'],'p_generation':sent['generation'],'p_operation_id':str(uuid.uuid4()),'p_kind':'auth_confirmation','p_secret':None,'p_ip_digest':None}
+status,unregistered=http(R,'/rpc/reserve_club_invite_resend',negative,service);assert status==200 and unregistered.get('status')!='reserved'
+negative['p_actor']=ids[outsider];negative['p_operation_id']=str(uuid.uuid4())
+status,other=http(R,'/rpc/reserve_club_invite_resend',negative,service);assert status==200 and other.get('status')!='reserved'
 uid=signup(mail)
 # Simulate elapsed cooldown only in the disposable synthetic database.
 sql="UPDATE club_invite_private.send_attempts SET reserved_at=clock_timestamp()-interval '61 seconds' WHERE invite_id='%s'; UPDATE auth.users SET confirmation_sent_at=clock_timestamp()-interval '61 seconds' WHERE id='%s';"%(sent['invite'],uid)
@@ -23,6 +27,9 @@ status,final=http(R,'/rpc/finalize_club_invite_send',{'p_operation_id':resend['p
 status,replay=http(R,'/rpc/reserve_club_invite_resend',resend,service);assert status==200 and replay.get('status')=='sent'
 status,again=http(M,'/api/v1/messages');assert sum(any(t['Address']==mail for t in item['To']) for item in again.get('messages',[]))==after_count
 confirm(mail);status,session=login(mail);assert status==200
+negative['p_actor']=mgr;negative['p_operation_id']=str(uuid.uuid4())
+status,confirmed=http(R,'/rpc/reserve_club_invite_resend',negative,service);assert status==200 and confirmed.get('status')!='reserved'
+print('PASS unregistered / confirmed / outsider confirmation resend denied',flush=True)
 print('PASS local Auth confirmation resend / Mailpit / single operation replay / confirmed login',flush=True)
 sql="INSERT INTO public.profiles(id,display_name,email) VALUES('%s','本人','%s'); INSERT INTO public.player_profiles(id,linked_auth_user_id,display_name) VALUES('20000000-0000-4000-8000-000000000098','%s','本人');"%(uid,mail,uid)
 r=subprocess.run(['docker','--host=unix:///var/run/docker.sock','exec','-i',D,'psql','-X','-U','postgres','-d','postgres','-q','-v','ON_ERROR_STOP=1','-f','-'],input=sql,text=True,capture_output=True);assert r.returncode==0,r.stderr

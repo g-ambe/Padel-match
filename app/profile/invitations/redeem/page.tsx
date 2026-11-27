@@ -1,0 +1,26 @@
+"use client";
+import Link from "next/link";
+import {useEffect,useRef,useState} from "react";
+import {Card} from "@/components/ui";
+import {useSessionAccount} from "@/components/use-session-account";
+import {getSupabaseClient} from "@/lib/supabase";
+import {inviteRecoveryKey,parseInviteFragment,readInviteRecovery,saveInviteRecovery,type InviteLink} from "@/lib/club-invite-link";
+
+type Review={original_email_masked:string;current_account_email:string;current_account_name:string;account_review_token:string};
+export default function RedeemInvitation(){
+ const account=useSessionAccount(),epoch=useRef(0),locked=useRef(false),operation=useRef<string|null>(null);
+ const [link,setLink]=useState<InviteLink|null>(null),[review,setReview]=useState<Review|null>(null),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[consent,setConsent]=useState(false),[done,setDone]=useState(false);
+ useEffect(()=>{const fragment=window.location.hash;const parsed=fragment?parseInviteFragment(fragment):null;if(fragment)window.history.replaceState(null,"",window.location.pathname+window.location.search);if(fragment&&!parsed){setMessage("招待リンクを確認できません。メールから開き直してください。");return;}if(parsed){try{saveInviteRecovery(sessionStorage,parsed);}catch{/* Same-tab login recovery may be unavailable. */}setLink(parsed);}else{try{setLink(readInviteRecovery(sessionStorage));}catch{setLink(null);}}},[]);
+ useEffect(()=>{epoch.current++;locked.current=false;operation.current=null;setBusy(false);setReview(null);setConsent(false);setDone(false);return()=>{epoch.current++;};},[account.id]);
+ const preview=async()=>{const s=getSupabaseClient();if(!s||!account.id||!link||locked.current)return;const v=epoch.current;locked.current=true;setBusy(true);setMessage("");try{const {data,error}=await s.rpc("preview_club_invite_rebind",{p_invite:link.invite,p_generation:link.generation,p_secret:link.secret});if(v!==epoch.current)return;if(error||!data)throw Error();if(data.status==="use_normal_invite"){setDone(true);try{sessionStorage.removeItem(inviteRecoveryKey);}catch{}return;}if(data.status!=="ok"||typeof data.original_email_masked!=="string"||typeof data.current_account_email!=="string"||typeof data.current_account_name!=="string"||typeof data.account_review_token!=="string"||!/^[0-9a-f]{64}$/.test(data.account_review_token))throw Error();setReview(data);setConsent(false);operation.current=null;}catch{if(v===epoch.current)setMessage("招待またはアカウントを確認できません。メールのリンクとログイン状態を確認してください。");}finally{if(v===epoch.current){locked.current=false;setBusy(false);}}};
+ const bind=async()=>{const s=getSupabaseClient();if(!s||!account.id||!link||!review||!consent||locked.current)return;const v=epoch.current;operation.current??=crypto.randomUUID();locked.current=true;setBusy(true);setMessage("");try{const {data,error}=await s.rpc("rebind_club_invite",{p_operation_id:operation.current,p_invite:link.invite,p_generation:link.generation,p_secret:link.secret,p_consent:true,p_account_review_token:review.account_review_token});if(v!==epoch.current)return;if(error||!data||data.status!=="rebound"||data.invite_id!==link.invite||data.generation!==link.generation)throw Error();try{sessionStorage.removeItem(inviteRecoveryKey);}catch{}setDone(true);setReview(null);}catch{if(v===epoch.current)setMessage("結果を確認できません。同じ操作を再試行するか、招待一覧を確認してください。");}finally{if(v===epoch.current){locked.current=false;setBusy(false);}}};
+ return <main className="mx-auto min-h-screen max-w-md p-4"><Card title="招待の確認"><div className="space-y-4 text-sm">
+  {message&&<p role="alert" className="text-red-400">{message}</p>}{!link&&!message&&<p>招待メールのリンクから開いてください。</p>}
+  {link&&!account.ready&&<p>ログイン状態を確認しています...</p>}
+  {link&&account.ready&&!account.id&&<><p>ログインまたは新規登録とメール確認後、この画面へ戻ってください。別のタブ・端末ではメールの招待リンクを開き直してください。</p><Link href="/login" className="block min-h-11 underline">ログイン・新規登録</Link></>}
+  {link&&account.id&&!done&&!review&&<><p>ログイン中のアカウントで招待を確認します。リンクは本人専用です。</p><button disabled={busy} onClick={()=>void preview()} className="min-h-11 rounded-xl bg-accent px-4 text-black disabled:opacity-50">招待を確認</button></>}
+  {review&&!done&&<><p>招待先：{review.original_email_masked}</p><p>現在のアカウント：{review.current_account_name}（{review.current_account_email}）</p><p>この招待1件を現在のアカウントに付け替えます。所属・戦績の引継ぎには次の画面で別途同意が必要です。</p><label className="flex gap-2"><input type="checkbox" checked={consent} disabled={busy} onChange={e=>setConsent(e.target.checked)}/>現在のアカウントでこの招待を受け取ることに同意します</label><button disabled={busy||!consent} onClick={()=>void bind()} className="min-h-11 rounded-xl bg-accent px-4 text-black disabled:opacity-50">このアカウントで確認</button><p>別アカウントを使う場合はログアウト後にメールのリンクを開き直してください。</p></>}
+  {done&&<><p>招待一覧で表示名と所属・戦績の引継ぎを確認してください。</p><Link href="/profile/invitations" className="block min-h-11 underline">招待一覧へ</Link></>}
+  <Link href="/home" className="block min-h-11 underline">後で確認する</Link>
+ </div></Card></main>;
+}

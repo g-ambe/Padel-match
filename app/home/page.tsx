@@ -76,6 +76,7 @@ export default function HomePage() {
 
   return <main className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-5 p-4">
     <header className="min-h-11 pr-14"><MatchBrand/><h1 className="text-2xl font-bold">試合</h1></header>
+    {!guest&&ownerId&&<Link href="/profile/invitations/redeem" className="min-h-11 rounded-xl border border-zinc-700 p-3 text-sm">招待リンクの確認に戻る ›</Link>}
     <div className="space-y-2 text-sm"><div className="flex items-center justify-between gap-3"><label htmlFor="match-group-filter" className="font-semibold">表示対象グループ</label></div><select id="match-group-filter" aria-label="表示対象グループ" className="min-h-12 w-full rounded-xl border border-zinc-700 bg-card p-3" value={group} onChange={event => { setGroup(event.target.value); setExpanded(false); if (ownerId) { try { saveMatchGroupFilter(sessionStorage, ownerId, event.target.value); } catch { /* 表示は維持する。 */ } } }}>
       <option value="all">すべての閲覧可能な試合</option><option value="none">グループなし</option>{groups.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
     </select></div>

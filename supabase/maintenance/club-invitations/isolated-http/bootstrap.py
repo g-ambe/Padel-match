@@ -21,6 +21,10 @@ h52=(G/'168_h52_media_reference_guard_CANDIDATE.sql').read_text()
 for old in (" OR to_regclass('public.h51_postcutover_data_preservation') IS NULL\n"," OR NOT EXISTS(SELECT 1 FROM public.h51_postcutover_data_preservation WHERE marker='retained')\n"," OR (SELECT count(*) FROM supabase_migrations.schema_migrations WHERE name='task08_prod_phase2_atomic')<>1\n"):
  assert h52.count(old)==1;h52=h52.replace(old,'')
 sql(h52)
+if os.environ.get('TASK0802_FORMAL') == '1':
+ sql("CREATE ROLE authenticator LOGIN PASSWORD 'fake-postgrest-password' NOINHERIT; GRANT anon,authenticated,service_role TO authenticator; GRANT USAGE ON SCHEMA public TO anon,authenticated,service_role;")
+ print('PASS synthetic baseline prepared for formal candidate')
+ raise SystemExit(0)
 candidate=P/'maintenance/club-invitations/04_integrated_review_candidate.sql'
 assert hashlib.sha256(candidate.read_bytes()).hexdigest()=='1c039a661628d229b25d1bd123946dda246233585e3e3901fc7614202429c7b6', 'candidate changed; review required'
 c=candidate.read_text();assert c.count('ROLLBACK;')==1

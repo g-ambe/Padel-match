@@ -12,7 +12,7 @@ const reply=(status:string,code=200)=>Response.json({status},{status:code,header
 const DELIVERY_ENABLED: boolean = false;
 export async function POST(request:Request){
  try{
-  if(!DELIVERY_ENABLED)return reply("unavailable",503);
+  if(!DELIVERY_ENABLED)return reply("not_ready",503);
   const {env}=await getCloudflareContext({async:true});const e=env as Env;
   const origin=e.INVITE_PUBLIC_ORIGIN,url=process.env.NEXT_PUBLIC_SUPABASE_URL;
   if(!origin||!url||!e.INVITE_SUPABASE_SERVICE_ROLE_KEY||!e.INVITE_SMTP_APP_PASSWORD)return reply("unavailable",503);

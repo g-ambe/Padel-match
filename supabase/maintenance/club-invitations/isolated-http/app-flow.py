@@ -8,7 +8,22 @@ def node(body):
  r=subprocess.run(['node',str(H/'app-flow.cjs')],input=json.dumps(body),text=True,capture_output=True,env=env)
  assert r.returncode==0,r.stderr[-2000:];return json.loads(r.stdout)
 sent=node({'mode':'send','service':service,'args':args});assert sent['invite'] and sent['generation']==1
-uid=signup(mail);confirm(mail);status,session=login(mail);assert status==200
+uid=signup(mail)
+# Simulate elapsed cooldown only in the disposable synthetic database.
+sql="UPDATE club_invite_private.send_attempts SET reserved_at=clock_timestamp()-interval '61 seconds' WHERE invite_id='%s'; UPDATE auth.users SET confirmation_sent_at=clock_timestamp()-interval '61 seconds' WHERE id='%s';"%(sent['invite'],uid)
+r=subprocess.run(['docker','--host=unix:///var/run/docker.sock','exec','-i',D,'psql','-X','-U','postgres','-d','postgres','-q','-v','ON_ERROR_STOP=1','-f','-'],input=sql,text=True,capture_output=True);assert r.returncode==0,r.stderr
+resend={'p_actor':mgr,'p_mode':'manager','p_invite':sent['invite'],'p_generation':sent['generation'],'p_operation_id':str(uuid.uuid4()),'p_kind':'auth_confirmation','p_secret':None,'p_ip_digest':None}
+status,forbidden=http(R,'/rpc/reserve_club_invite_resend',resend,out_token);assert status in (401,403)
+status,reserved=http(R,'/rpc/reserve_club_invite_resend',resend,service);assert status==200 and reserved.get('status')=='reserved',(status,reserved)
+status,claim=http(R,'/rpc/claim_club_invite_send',{'p_operation_id':resend['p_operation_id']},service);assert status==200 and claim.get('kind')=='auth_confirmation' and claim.get('email')==mail
+status,before=http(M,'/api/v1/messages');before_count=sum(any(t['Address']==mail for t in item['To']) for item in before.get('messages',[]))
+status,_=http(A,'/resend',{'type':'signup','email':claim['email']});assert status==200,status
+status,after=http(M,'/api/v1/messages');after_count=sum(any(t['Address']==mail for t in item['To']) for item in after.get('messages',[]));assert after_count==before_count+1
+status,final=http(R,'/rpc/finalize_club_invite_send',{'p_operation_id':resend['p_operation_id'],'p_generation':resend['p_generation'],'p_result':'sent','p_failure_code':None},service);assert status==200 and final.get('status')=='sent'
+status,replay=http(R,'/rpc/reserve_club_invite_resend',resend,service);assert status==200 and replay.get('status')=='sent'
+status,again=http(M,'/api/v1/messages');assert sum(any(t['Address']==mail for t in item['To']) for item in again.get('messages',[]))==after_count
+confirm(mail);status,session=login(mail);assert status==200
+print('PASS local Auth confirmation resend / Mailpit / single operation replay / confirmed login',flush=True)
 sql="INSERT INTO public.profiles(id,display_name,email) VALUES('%s','本人','%s'); INSERT INTO public.player_profiles(id,linked_auth_user_id,display_name) VALUES('20000000-0000-4000-8000-000000000098','%s','本人');"%(uid,mail,uid)
 r=subprocess.run(['docker','--host=unix:///var/run/docker.sock','exec','-i',D,'psql','-X','-U','postgres','-d','postgres','-q','-v','ON_ERROR_STOP=1','-f','-'],input=sql,text=True,capture_output=True);assert r.returncode==0,r.stderr
 result=node({'mode':'accept','token':session['access_token'],'other':out_token,'invite':sent['invite'],'operation':str(uuid.uuid4())});assert result['status']=='approved'

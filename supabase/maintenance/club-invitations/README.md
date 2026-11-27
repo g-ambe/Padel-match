@@ -3,6 +3,8 @@
 基準 main: 5fd308eea4f7d673c2a3e170c934876634154d94。承認: [基本仕様](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7157860703)、[認証分離・複数招待](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7166012903)、[付け替え](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7182981350)、[内部設定](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7183006329)。[候補02](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7182312203) と [実配送試験](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7182152763) を参照。以下はレビュー候補、実行・適用・リリース承認ではない。新規 migration は未配置。
 
 ## 最終仕様の優先順位
+
+**最新正本：末尾の2026-11-27 修正06と承認記録 [#7206101373](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7206101373)。修正05によるイベント固有対応撤回は維持。以下の旧候補・未承認・最新等の当時の記載は履歴であり、新しい承認を優先する。**
 候補02の認証・送信・同意の契約を維持し、異メール付け替えと承認済み数値は以下で上書きする。矛盾は本節優先、未確定は安全側で停止して報告。
 - 200試行/rolling24h、仮所属3/日、宛先3/日、管理者10/日、グループ20/日。予約済み全状態合算、JST日付境界、仮所属および宛先60秒。管理者再送は実操作管理者、本人再送は元招待者。通常Auth送信は現行制限維持、招待導線の認証再送は合算。Gmail全体の送信保証ではない。settings初期OFF、global_24h_limit=200。
 - 検索は明示招待操作時だけ、管理者単位・グループ横断20回/10分、ticket5分。入力時の検索、通常ログイン、再送、付け替えは対象外。既存検索RPCを使った制限の迂回可能性はレビューで評価し、既存契約変更は別承認。
@@ -89,7 +91,7 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 - guard_registered_invite_merge の単独ドルを対応する名前付きドル引用に修正。全体の文字列・コメントを除いたドル引用の対応48組、関数名45本重複なし、ROLLBACK/COMMITの静的検査のみ。PostgreSQL parser/PLpgSQL compileは未実施。
 - 検索制限は、任意の連続10分間（左端を含めず右端を含む）で最大20回という厳しい解釈を候補とする。管理者1名につき最大20時刻のみをprivate tableの配列に保持。共有serialize_operations、行ロック、DB時刻により直近10分の件数を確認し追加。検索拒否時に新時刻を追加しない。権限ある対象への不正メール入力も計上し、例外時に計上を失わない既存subtransaction維持。グループ横断。最終許可時刻から10分経過後にcleanup。旧検索RPC・匿名制限は未変更。固定窓からの変更は仕様文言を安全側に解釈したレビュー候補であり、利用者確認待ち。実SQLの境界/並行試験が必要。
 
-### 2. チーム戦: 保存履歴を保持する解決設計案（未実装、要承認）
+### 2. チーム戦: 保存履歴を保持する解決設計案（履歴・修正05で撤回済み）
 0045 team_rounds_private.snapshot は、現所属のroster、実試合枠matches、過去rounds.eligible、sidesを返す。get_friendly_team_round_context と create_friendly_team_round の双方がsnapshotを使い、同一JSONのmd5をrevisionにする。createは新しいeligibleとして現rosterを保存する。0039 mergeはclub_membersの同じ行IDを維持し、event_team_matchesのprofile_idを更新するが、eligibleは変更しない。TS generateTeamRound はsource:keyで出場/休憩を集計し、現在のrosterのkeyと過去eligibleを照合。終了後の再開あり。
 
 推奨: 新招待側だけで完結できると仮定せず、既存team_rounds_private.snapshotのrounds.eligible返却部分に限定した読み取り時正規化を別途レビューする。既存の保存JSON、スコア、試合・統合/復元監査、現roster、ゲスト、出場計算、乱数ロジック自体は書き換えない。既存の公開RPC引数・返却shape・認可を維持し、管理者の既存event権限の下だけで実行。merge履歴をブラウザに返さず、専用private helperで変換。get/create/editの共通snapshotを使い、正規化結果がrevisionに含まれるようにする。移行中の既存revisionは409/40001再生成を案内、操作ID再送による二重生成なし。既存承認・招待承認双方で整合。
@@ -103,7 +105,7 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 
 必須試験: 休憩していた元選手の連携→次roundで休憩回数・streakが同一人物として継続、出場していた元選手の連携→誤休憩0、active/closed/reopen、対決/混合の元side、manual/削除court/欠席/途中参加/ゲスト/両所属、同一人物重複・別club・不正member/旧ID・連鎖・循環・復元、同時生成/保存/連携、旧revisionの拒否、操作ID再送、既存戦績・保存eligible・merge audit不変、アクセス負例、未連携選手の従来生成結果不変。
 
-### 3. 付け替え誤操作と30日削除（推奨仕様、未承認）
+### 3. 付け替え誤操作と30日削除（履歴・後続承認を参照）
 - pendingの付け替え済み招待を元宛先へ戻す操作・同じ招待ID/世代の復活・元アドレスへの再送は許可しない。
 - 管理者に現権限があり本人連携が未成立の場合だけ、明示取消→対象/戦績の再検査→正しい宛先を再入力し新check→別invite ID・新token・新7日期限で明示的に再招待する案。元ID/旧hashを復活させない、元宛先の自動再発行はしない。旧試行も日次/rolling24h/cooldownに計上。管理者が異なる場合は現操作管理者枠。既に承認済みの連携は取消ではなく既存の復元手順・別承認。メール変更でbound本人がアクセスできない場合も同じ管理者経由の取消・新規。
 - 30日後に最小監査を消す。永久に元宛先への新規招待を禁じる要件にはしない。古い招待の復活はIDとtoken消滅により常に不可、明示的な新規招待とは別。無期限の識別子を保持しない。ユーザー承認後、現候補のbound_recovery_blockedを適切に見直し、削除前後で同じ新規発行条件にする。現時点では回復方式未承認につき既存の一時ブロックを維持、機能有効化禁止。
@@ -112,7 +114,7 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 別グループ書込みでNOWAIT競合する指摘は妥当。既存mergeはそもそも全参照表をSHARE ROW EXCLUSIVEでlockする。今回追加の親/role/round表について、対象行lockだけでは新規履歴のphantomやrole追加/side変更を防げない場合がある。書込み側の既存lock規則を全件照合してから絞る。現段階でlockを外さず、追加lockあり/対象行案の安全性と通常経路回帰・失敗時完全rollbackを隔離試験で比較。既存の通常join/link/restoreのロックを変更しない。匿名再送閾値・IP信頼、旧検索経路、鍵/cron、実DBカタログ、SQL parser/compile、認可/並行/保存/restore試験は継続NO-GO。正式実装・リリース承認なし。
 
 
-## 2026-11-26 承認仕様反映・修正04（最新、旧保留記載を上書き）
+## 2026-11-26 承認仕様反映・修正04（履歴・チーム戦部分は修正05で撤回）
 承認 [Issue #262](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7185930180)。SQL commit `0e4fe8d659dd4584d3b72a5ef9b2e7fd0ef7f683`。候補04はROLLBACK専用、実SQL/アプリ未適用、送信OFF、隔離試験・独立再レビュー待ち。
 - 検索: 管理者単位・グループ横断・任意の連続10分間20回を確定。修正03のrolling配列を維持（最大20時刻、行/共有lock、時刻境界、例外時計上保持）。通常Auth、旧検索RPC、匿名再送は無変更。
 - 回復: 未連携のbound pendingは元宛先への再送/付け替え戻し禁止、現権限管理者が取消して新check、新operation、新invite ID、新7日、fresh secret。終端行の一時的なbound_recovery_blocked関数とcheck/consume/reserveの3判定を撤去。取消済み・拒否済み・期限切れのID/世代を復活させず、終端後の明示的な新規操作だけ許す。旧quota行を維持、30日削除前後で同じ再招待条件、旧リンク永久無効、承認済みは既存復元の別承認。通常の登録済み連携申請ルートも新check＋確認を再要求。旧招待の再送は引き続きpending/unbound/current-generationのみ。
@@ -122,9 +124,39 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 - 未承認/未解決: 匿名再送閾値とIP信頼、旧検索別枠、cron・鍵・rotation、実カタログ差分、SQL parser/PLpgSQL compile、正負/並行/回帰/実Auth・HTTP試験。旧仕様の変更や本番/正式Stageへの適用は別承認。独立レビューでは承認済み3点を再度仕様決定しない。
 
 
-## 2026-11-26 修正05：ユーザー承認によるイベント固有対応の除外（最新）
+## 2026-11-26 修正05：ユーザー承認によるイベント固有対応の除外（維持・運用仕様は修正06で確定）
 [承認記録](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7186410956) が修正04以前の乱数ID正規化・再開時の公平性対応・関連テスト要求を上書きする。SQL commit `1f7dac2e788f3a0feabf68d9e4e05d23e7fa3311`。
 - 招待の入口・本人同意・既存プロフィール統合が今回の目的。イベント開催状態による連携制限、eligibleの有無/内容による追加拒否、読み取り時ID正規化、team_rounds_private.snapshotの置換・pre/postflight、event_team_roundsへの追加ロックを撤去。乱数生成の既存コード・RPC・保存済み履歴に変更なし。既存同一試合重複検査はそのまま。連携後に同一開催を継続・再開した場合の旧eligible由来の公平性差異や同一round別courtの重複という既存の限定的リスクは追加対応しない。別Issueも作らない。
 - 実際の統合対象であるclub_members、event_participants、通常試合、event_team_matchesの元所属side/club、公式戦、private/media等のscope検査、登録済み招待由来の承認直前guard、既存named本人承認、既存統合と復元は維持。他clubの戦績を巻き込まないため、events/event_team_sides/official_events等の親表検査/追加NOWAIT lockは維持し、別group競合は隔離検証。event statusによる制限は新設しない。
 - 管理者横断rolling20/10分および取消・明示新規招待は承認維持。#7186015901 の取消前ticket再利用指摘を修正：既存terminal secret triggerがpending→終端時に同一sourceの未消費ticketを全て削除（発行管理者・宛先にかかわらず）。消費済みticket・送信試行・quota・既存registered markerは維持。新checkはカウンタ計上後のsubtransaction内でsettle_staleを先に実行して自然期限切れを確定してから発行。registered consumeもserialize後、ticket読取前にsettle_stale。initial reserveは既にsettle済み。取消/期限/拒否/承認とfresh check/consume/reserveの同時操作、旧ticket拒否、新ticket成功、旧消費済み操作の冪等結果と監査維持、lookupカウンタとquota保持、終端30日削除前後を検証する。DB未実行。
 - 旧修正04のnormalize_team_eligible、snapshot置換、16段制限、生成時PT409、関連する追加前提・試験は全て撤回。既存イベント機能の回帰確認は必要最小限（既存SQL/RPC不変、既存統合が従来の戦績を引継ぐこと）。独立レビューの焦点は今回の招待・本人確認・権限/戦績のscope・quota・回復・構文・既存承認互換。匿名閾値/IP、旧検索経路、鍵/cron、実カタログ、追加親lockの競合と実試験は未解決のまま。ROLLBACK専用・送信OFF・Draft、SQL適用/本番/正式Stage/merge禁止。
+
+
+## 2026-11-27 修正06：残存運用仕様6項目の承認反映（最新正本）
+[ユーザー承認](https://github.com/g-ambe/Padel-match/issues/262#issuecomment-7206101373)、SQL commit `c6cf80539c5e76d5809d8d187838ba711636fb3b`。修正05の機能/イベント除外、検索rolling20/10分、明示取消→fresh check→新規招待、既存プロフィール統合・権限・戦績scope・7日・全送信quotaは維持。正式migrationではない。実SQL/鍵/cron/Worker/本番/正式Stageへの適用なし。
+
+### 1. 匿名再送
+- IP単位10回、招待ID単位3回、各subjectの最初の計上から固定10分（600秒経過で新枠）。全体/日次/60秒/同時送信の従来quotaとAuth制限も適用。既存のtake_anonymous_limitの計上順序を維持：形状が有効なbearer再送でIP枠を先に、現在の有効bearerを検証後に招待ID枠。quota拒否も正常returnなら計上保持。期限/世代不一致・秘密不正は招待ID枠を消費させず、IP枠で抑制する。SQL例外でtransactionがrollbackした場合のカウンタも含め、Worker入口での濫用対策・fail closedを結合試験で確認する。未確定の例外時永続化方式を勝手に追加しない。
+- settingsの初期値10/3、送信OFFのhard CHECK維持。NULLは対応する匿名枠を閉じる。両枠とWorker信頼境界確認前は匿名再送を有効化しない。匿名の不正/制限応答は同じnot_found、具体的な理由・他group情報を返さない。
+- Cloudflare公式 https://developers.cloudflare.com/fundamentals/reference/http-headers/ に基づき、信頼できる直接入口のCF-Connecting-IPを使用。body/query/X-Forwarded-For/x-real-ip等の自己申告値を使わない。same-zone Worker subrequestのx-real-ip書換、cross-zone共通IP、Pseudo IPv4等を考慮し、直接入口と確認できない/欠落・不正時は匿名再送を拒否。IPv4/IPv6の同一アドレスを正規化し、Worker側の用途専用HMAC-SHA256 secret（設計上の実装案、未作成）でdomain-separated digestのみservice-only RPCへ渡す。生IP/鍵/招待secretは保存・ログ出力しない。既存2種Vault鍵をWorkerへ持ち出さない。鍵の配置・信頼経路を実装時にレビュー。
+
+### 2. 鍵管理
+- 既存key_bytesの専用Vault名 padel_club_invite_hmac_v1 / padel_club_invite_encryption_v1、独立32byte乱数、base64・一意・互いに異なる鍵、欠落/不正でPT503を維持。既存Auth/他機能鍵変更なし。自動rotationなし。鍵の設置・保管/復旧は別途承認、変更時は送信停止・未終端招待・既存digest・rolling quota・監査の整合を確認し別手順。鍵の値をIssue/commit/ログに記録しない。
+
+### 3. 自動削除
+- 終端最小監査は720時間保持し、その後cleanup_retentionで削除。毎日03:00 JST、schedulerがUTCなら `0 18 * * *`。Supabase Cron/pg_cronでowner-only cleanupを定期実行する設計（https://supabase.com/docs/guides/cron および https://supabase.com/docs/guides/cron/quickstart）。本番/Stageのcron timezone/拡張/実行role/重複job/失敗履歴は設定前に照合。既存jobやtimezoneを変更しない。正常時の削除遅延最大約24h、失敗時は秘密を含まないエラー記録を確認し次回実行で再処理。cleanupの依存中の登録済みpending marker保護は維持し、異常延長を発見したら報告。既存所属/戦績/統合監査/通常Authは削除しない。ジョブ作成SQLは候補本体に含めない。
+
+### 4. 中立表示/API
+- get_club_invite_statusのmember_attempts_today/cooldown_until/inflightは自groupの対象memberに限定。delivery_statusは対象inviteの試行のみ。masked_email/期限/世代/付け替え状態等の既存自group情報は維持。別groupの同一宛先の試行でこれらのDTOが変化しないこと。
+- reserve_club_invite_send / reserve_club_invite_resend のquota拒否は認証済み経路で共通status `temporarily_unavailable`（実装用コード名の決定）、匿名bearerでは従来の `not_found`。内部quota_check/send_quotaの理由・カウンタ・拒否判定を変更しない。Worker/画面は他groupの状態、理由、待機時刻、宛先等を返さない。文言「現在、招待メールを送信できません。しばらくしてから再度お試しください。」。自身の招待状態と厳密一致した既存operationの冪等応答は維持。送信可否からの副次的推測は残る。新機能のみの未実装API契約更新で、旧アプリ/RPC変更なし。
+
+### 5. ロック競合
+- 既存lock_references/追加lock_accept_scopeを変更しない。短い待機・一時拒否・再試行を許容、失敗時に入力値を失わず再試行案内（スコアは既存UI挙動確認のうえ必要最小限）。データ消失、二重処理、部分承認、継続的阻害は不可。操作IDの再利用は同一payloadの安全な再試行のみ。既存イベント固有対応を復活させない。過去の合成試験は限定的で、残る実Auth/HTTP・既存通常join/restore・同時操作を確認する。
+
+### 6. 既存検索
+- 旧検索RPC・通常ログイン・既存通常Auth・連携フローは変更しない。新招待検索のみrolling20/10分/manager。旧経路が別枠であるためアプリ全体の検索上限とはならない残存リスクを受容。
+
+### 7. 検証・引継ぎ
+- 修正06の変更はsettings初期値/postflight、reserve 2本のquota拒否status、get_statusの集計範囲、注記のみ。6表/14 public RPC/30 private functions、引数/ACL/既存関数/lock/cleanup本文/統合/戦績は維持。原本ROLLBACK・送信OFF維持。
+- 既存 isolated-evidence/ のrunnerは旧修正05 SHA256に固定されており、修正06では意図的にhash不一致で停止する。過去の証跡を変更せず保存。Codexは新候補のhashをレビュー後に対応する試験runner/期待値を更新し、前回「匿名閾値NULL」の負例は試験用DBで明示NULL設定して確認する。新規初期10/3、両閾値境界/固定枠更新/並行/欠落IP、匿名応答中立、同一宛先で別group予約中の自group DTO不変とquota中立拒否、同group自身の状態表示、既存quotaと冪等性を重点検証。Worker IP偽装/secret非公開は実装時ゲート、cron schedule/owner/失敗再処理は別途設定承認後。実Auth/PostgREST・既存通常加入/復元等の残試験と統合し、変更のない過去PASSを無条件に再実行しない。
+- 修正06 parser/DB/HTTP実行未実施。正式SQL確定・アプリ実装・本番適用は引き続きNO-GO。新規Issue/PRなし、既存PR Draft維持。

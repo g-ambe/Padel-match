@@ -12,3 +12,8 @@ export function saveInviteRecovery(storage:Pick<Storage,"setItem">,link:InviteLi
 export function readInviteRecovery(storage:Pick<Storage,"getItem">):InviteLink|null{
  try{const raw=storage.getItem(inviteRecoveryKey);if(!raw)return null;const value=JSON.parse(raw);return parseInviteFragment(new URLSearchParams({invite:String(value.invite),generation:String(value.generation),secret:String(value.secret)}).toString());}catch{return null;}
 }
+
+// Never put the bearer link in the redirect URL; recovery is scoped to this tab.
+export function postAuthInviteDestination(storage:Pick<Storage,"getItem">):"/profile/invitations/redeem"|"/home" {
+ return readInviteRecovery(storage)?"/profile/invitations/redeem":"/home";
+}

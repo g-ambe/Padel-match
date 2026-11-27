@@ -1,0 +1,40 @@
+"use client";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Card } from "@/components/ui";
+import { useSessionAccount } from "@/components/use-session-account";
+import { getSupabaseClient } from "@/lib/supabase";
+import { acceptClubInvitation, listClubInvitations, previewClubInvitation, rejectClubInvitation, type ClubInvitation, type ClubInvitationPreview } from "@/lib/club-invitations";
+
+type Draft = { preview: ClubInvitationPreview; name: string; publicChoice: boolean; consent: boolean; selected: boolean; result?: string; completed?: boolean };
+export default function InvitationsPage() {
+  const account=useSessionAccount(), generation=useRef(0), busyRef=useRef(false);
+  const operations=useRef<Record<string,{key:string;id:string}>>({});
+  const [items,setItems]=useState<ClubInvitation[]>([]),[drafts,setDrafts]=useState<Record<string,Draft>>({});
+  const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  const load=useCallback(async()=>{
+    const s=getSupabaseClient();if(!s||!account.id)return;
+    const g=++generation.current;setLoading(true);setError("");
+    try {const rows=await listClubInvitations(s);if(g===generation.current){setItems(rows);setDrafts({});operations.current={};}}
+    catch {if(g===generation.current)setError("招待を確認できません。しばらくしてから再読み込みしてください。");}
+    finally {if(g===generation.current)setLoading(false);}
+  },[account.id]);
+  useEffect(()=>{generation.current++;setItems([]);setDrafts({});operations.current={};if(account.ready&&account.id)void load();return()=>{generation.current++;};},[account.ready,account.id,load]);
+  const open=async(invite:ClubInvitation)=>{const s=getSupabaseClient();if(!s||busyRef.current)return;const g=generation.current;busyRef.current=true;setBusy(true);setError("");try{const p=await previewClubInvitation(s,invite);if(g===generation.current)setDrafts(d=>({...d,[invite.invite_id]:{preview:p,name:p.group_display_name_suggestion,publicChoice:p.group_visibility==="public",consent:false,selected:false}}));}catch{if(g===generation.current)setError("招待の内容を確認できません。再読み込みしてください。");}finally{busyRef.current=false;if(g===generation.current)setBusy(false);}};
+  const edit=(id:string,change:Partial<Draft>)=>setDrafts(d=>({...d,[id]:{...d[id],...change}}));
+  const op=(id:string,key:string)=>{const current=operations.current[id];if(!current||current.key!==key)operations.current[id]={key,id:crypto.randomUUID()};return operations.current[id].id;};
+  const acceptSelected=async()=>{const s=getSupabaseClient();if(!s||busyRef.current)return;const selected=items.filter(i=>drafts[i.invite_id]?.selected&&drafts[i.invite_id]?.consent&&!drafts[i.invite_id]?.completed);if(!selected.length)return;const g=generation.current;busyRef.current=true;setBusy(true);setError("");try{for(const i of selected){if(g!==generation.current)break;const d=drafts[i.invite_id];const key=JSON.stringify([d.preview.generation,d.preview.review_token,d.name,d.publicChoice,d.consent]);try{await acceptClubInvitation(s,d.preview,{name:d.name,publicChoice:d.publicChoice,consent:d.consent,operationId:op(i.invite_id,key)});if(g===generation.current)edit(i.invite_id,{result:"参加しました",selected:false,completed:true});}catch{if(g===generation.current)edit(i.invite_id,{result:"確認できませんでした。入力を保持しています。状態を確認して再試行してください"});}}}finally{busyRef.current=false;if(g===generation.current)setBusy(false);}};
+  const reject=async(i:ClubInvitation)=>{if(!window.confirm("この招待を拒否しますか？"))return;const s=getSupabaseClient();if(!s||busyRef.current)return;const g=generation.current;busyRef.current=true;setBusy(true);try{await rejectClubInvitation(s,i,op(i.invite_id,`reject:${i.generation}`));if(g===generation.current)setItems(v=>v.filter(x=>x.invite_id!==i.invite_id));}catch{if(g===generation.current)setError("結果を確認できません。再読み込みして状態を確認してください。");}finally{busyRef.current=false;if(g===generation.current)setBusy(false);}};
+  return <main className="mx-auto min-h-screen max-w-md space-y-4 p-4"><Card title="グループ招待">
+    {!account.ready?<p>確認中...</p>:!account.id?<p className="text-sm">ログイン後に招待を確認できます。 <Link className="underline" href="/login">ログイン</Link></p>:<div className="space-y-4">
+      <p className="text-sm text-zinc-400">グループごとに内容と引継ぎを確認してください。未選択の招待は後で確認できます。</p>
+      {loading&&<p role="status">読み込み中...</p>}{error&&<p role="alert" className="text-sm text-red-400">{error}</p>}
+      {!loading&&!error&&items.length===0&&<p className="text-sm">確認できる招待はありません。</p>}
+      {items.map(i=>{const d=drafts[i.invite_id];return <section key={i.invite_id} className="space-y-2 rounded-xl border border-zinc-700 p-3"><h2 className="font-bold">{i.club_name}</h2><p className="text-sm">対象：{i.member_name}</p><p className="text-xs text-zinc-400">期限 {new Date(i.expires_at).toLocaleString("ja-JP")}</p>
+        {!d?<button disabled={busy||loading} className="min-h-11 underline" onClick={()=>void open(i)}>内容を確認</button>:<><label className="block text-sm">グループ内表示名<input value={d.name} disabled={busy||!!d.completed} onChange={e=>edit(i.invite_id,{name:e.target.value})} className="mt-1 min-h-11 w-full rounded-lg bg-zinc-800 p-2" maxLength={120}/></label><p className="text-xs text-zinc-400">本人プロフィール名は変わりません。参加記録 {d.preview.participant_count}件、試合 {d.preview.match_count}件、結果 {d.preview.result_count}件、チーム戦 {d.preview.team_match_count}件、公式戦 {d.preview.official_match_count}件</p>
+          {d.preview.group_visibility==="public"&&<label className="flex gap-2 text-sm"><input type="checkbox" checked={d.publicChoice} disabled={busy||!!d.completed} onChange={e=>edit(i.invite_id,{publicChoice:e.target.checked})}/>この表示名を未所属者にも公開する</label>}
+          <label className="flex gap-2 text-sm"><input type="checkbox" checked={d.consent} disabled={busy||!!d.completed} onChange={e=>edit(i.invite_id,{consent:e.target.checked})}/>本人として所属と戦績の引継ぎに同意します</label><label className="flex gap-2 text-sm"><input type="checkbox" checked={d.selected} disabled={busy||!!d.completed} onChange={e=>edit(i.invite_id,{selected:e.target.checked})}/>この招待に参加する</label>{d.result&&<p role="status" className="text-sm">{d.result}</p>}</>}
+        <button disabled={busy||loading||!!d?.completed} onClick={()=>void reject(i)} className="min-h-11 text-sm text-red-300">この招待を拒否</button></section>})}
+      <button disabled={busy||loading||!items.some(i=>drafts[i.invite_id]?.selected&&drafts[i.invite_id]?.consent&&!drafts[i.invite_id]?.completed)} onClick={()=>void acceptSelected()} className="min-h-11 w-full rounded-xl bg-accent p-3 text-black disabled:opacity-40">選択した招待に参加</button><button disabled={busy||loading} onClick={()=>void load()} className="min-h-11 text-sm underline">招待を再読み込み</button>
+    </div>}</Card><Link href="/notifications" className="block text-center text-sm underline">通知へ戻る</Link></main>;
+}

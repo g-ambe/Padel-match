@@ -18,14 +18,9 @@ sql="UPDATE club_invite_private.send_attempts SET reserved_at=clock_timestamp()-
 r=subprocess.run(['docker','--host=unix:///var/run/docker.sock','exec','-i',D,'psql','-X','-U','postgres','-d','postgres','-q','-v','ON_ERROR_STOP=1','-f','-'],input=sql,text=True,capture_output=True);assert r.returncode==0,r.stderr
 resend={'p_actor':mgr,'p_mode':'manager','p_invite':sent['invite'],'p_generation':sent['generation'],'p_operation_id':str(uuid.uuid4()),'p_kind':'auth_confirmation','p_secret':None,'p_ip_digest':None}
 status,forbidden=http(R,'/rpc/reserve_club_invite_resend',resend,out_token);assert status in (401,403)
-status,reserved=http(R,'/rpc/reserve_club_invite_resend',resend,service);assert status==200 and reserved.get('status')=='reserved',(status,reserved)
-status,claim=http(R,'/rpc/claim_club_invite_send',{'p_operation_id':resend['p_operation_id']},service);assert status==200 and claim.get('kind')=='auth_confirmation' and claim.get('email')==mail
 status,before=http(M,'/api/v1/messages');before_count=sum(any(t['Address']==mail for t in item['To']) for item in before.get('messages',[]))
-status,_=http(A,'/resend',{'type':'signup','email':claim['email']});assert status==200,status
+confirmation=node({'mode':'confirmation','service':service,'token':mgr_token,'args':resend,'email':mail});assert confirmation['status']=='sent'
 status,after=http(M,'/api/v1/messages');after_count=sum(any(t['Address']==mail for t in item['To']) for item in after.get('messages',[]));assert after_count==before_count+1
-status,final=http(R,'/rpc/finalize_club_invite_send',{'p_operation_id':resend['p_operation_id'],'p_generation':resend['p_generation'],'p_result':'sent','p_failure_code':None},service);assert status==200 and final.get('status')=='sent'
-status,replay=http(R,'/rpc/reserve_club_invite_resend',resend,service);assert status==200 and replay.get('status')=='sent'
-status,again=http(M,'/api/v1/messages');assert sum(any(t['Address']==mail for t in item['To']) for item in again.get('messages',[]))==after_count
 confirm(mail);status,session=login(mail);assert status==200
 negative['p_actor']=mgr;negative['p_operation_id']=str(uuid.uuid4())
 status,confirmed=http(R,'/rpc/reserve_club_invite_resend',negative,service);assert status==200 and confirmed.get('status')!='reserved'

@@ -10,7 +10,13 @@ const localFetch=async(url,init={})=>{const p=new URL(String(url)),h=new Headers
 const client=token=>createClient('http://local.invalid','synthetic-key',{global:{fetch:localFetch,headers:{Authorization:'Bearer '+token}},auth:{persistSession:false,autoRefreshToken:false}});
 async function rpc(db,name,args){const {data,error}=await db.rpc(name,args);if(error)throw Error('synthetic RPC failure');return data}
 (async()=>{
- if(input.mode==='route'){
+ if(input.mode==='confirmation'){
+  const svc=client(input.service);let sent=0;
+  const requestBody={mode:'manager',kind:'auth_confirmation',inviteId:input.args.p_invite,generation:input.args.p_generation,operationId:input.args.p_operation_id};
+  const make=()=>new Request('https://app.example.test/api/club-invitations/send',{method:'POST',headers:{origin:'https://app.example.test','content-type':'application/json',authorization:'Bearer '+input.token},body:JSON.stringify(requestBody)});
+  const deps={enabled:true,origin:async()=>'https://app.example.test',backend:async request=>{const token=request.headers.get('authorization');const common=['--host=unix:///var/run/docker.sock','exec','-e','http_proxy=','-e','https_proxy=','-e','HTTP_PROXY=','-e','HTTPS_PROXY=','-e','ALL_PROXY=','-e','all_proxy=',input.container,'wget','-q','-O','-'];const user=cp.spawnSync('docker',[...common,'--header=Authorization: '+token,'http://'+input.auth+'/user'],{encoding:'utf8'});if(user.status!==0)throw Error('local auth denied');return {actor:JSON.parse(user.stdout).id,rpc:(name,args)=>rpc(svc,name,args),send:async()=>{throw Error('unexpected SMTP')},sendConfirmation:async email=>{assert.equal(email,input.email);sent++;const r=cp.spawnSync('docker',[...common,'--header=Content-Type: application/json','--post-data='+JSON.stringify({type:'signup',email}),'http://'+input.auth+'/resend'],{encoding:'utf8'});return r.status===0?{result:'sent',failure:null}:{result:'unknown',failure:'uncertain'}}}}};
+  assert.equal((await (await handleInviteDelivery(make(),deps)).json()).status,'sent');assert.equal((await (await handleInviteDelivery(make(),deps)).json()).status,'sent');assert.equal(sent,1);console.log(JSON.stringify({status:'sent'}));
+ }else if(input.mode==='route'){
   const svc=client(input.service);let reserved,delivered=0,syntheticSecret;
   const body={mode:'initial',clubId:input.args.p_club,memberId:input.args.p_member,ticket:input.args.p_ticket,email:input.args.p_email,operationId:input.args.p_operation_id};
   const make=()=>new Request('https://app.example.test/api/club-invitations/send',{method:'POST',headers:{origin:'https://app.example.test','content-type':'application/json',authorization:'Bearer '+input.token},body:JSON.stringify(body)});

@@ -2,7 +2,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 require('node:module').registerHooks({resolve(s,c,next){return next(['./profile-links','./player-profiles','./group-read','./friendly-round-history','./permissions'].includes(s)?s+'.ts':s,c)}});
 const {listClubInvitations,previewClubInvitation,acceptClubInvitation,rejectClubInvitation}=require('../lib/club-invitations.ts');
-const invite={invite_id:'a',generation:1,club_id:'c',club_name:'グループ',member_name:'仮',expires_at:'2099-01-01T00:00:00Z',group_visibility:'public',inflight:false};
+const invite={invite_id:'a',generation:1,club_id:'c',club_name:'グループ',member_name:'仮',expires_at:'2099-01-01T00:00:00Z',group_visibility:'public',inflight:false,rebound:false};
 const preview={...invite,status:'ok',review_token:'proof',group_display_name_suggestion:'仮',group_display_name_current:null,target_display_name:'本人',participant_count:1,match_count:2,result_count:1,team_match_count:0,official_match_count:0};
 test('本人一覧・previewは対象generationと本人同意情報を要求',async()=>{
  const db={rpc:async(name)=>({data:name==='list_my_club_invites'?{status:'ok',invitations:[invite]}:preview,error:null})};

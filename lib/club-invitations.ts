@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isValidProfileLinkDisplayName } from "./profile-links";
 
-export type ClubInvitation = { invite_id: string; generation: number; club_id: string; club_name: string; member_name: string; expires_at: string; group_visibility: "public" | "private"; inflight: boolean };
+export type ClubInvitation = { invite_id: string; generation: number; club_id: string; club_name: string; member_name: string; expires_at: string; group_visibility: "public" | "private"; inflight: boolean; rebound: boolean };
 export type ClubInvitationPreview = { status: "ok"; invite_id: string; generation: number; club_id: string; club_name: string; expires_at: string; group_visibility: "public" | "private"; group_display_name_suggestion: string; group_display_name_current: string | null; review_token: string; target_display_name: string | null; participant_count: number; match_count: number; result_count: number; team_match_count: number; official_match_count: number };
 type Result = { status?: unknown; [key: string]: unknown };
 async function rpc(s: SupabaseClient, name: string, args: Record<string, unknown>): Promise<Result> {
@@ -12,7 +12,7 @@ async function rpc(s: SupabaseClient, name: string, args: Record<string, unknown
 export async function listClubInvitations(s: SupabaseClient): Promise<ClubInvitation[]> {
   const r=await rpc(s,"list_my_club_invites",{});
   if(r.status!=="ok" || !Array.isArray(r.invitations)) throw new Error(r.status==="identity_required"?"確認済みのアカウントとプロフィールが必要です。":"招待一覧を確認できません。");
-  if(!r.invitations.every(i=>i && typeof i==="object" && typeof i.invite_id==="string" && Number.isSafeInteger(i.generation) && typeof i.club_id==="string" && typeof i.club_name==="string" && typeof i.member_name==="string" && typeof i.expires_at==="string" && (i.group_visibility==="public"||i.group_visibility==="private") && typeof i.inflight==="boolean")) throw new Error("招待一覧を確認できません。");
+  if(!r.invitations.every(i=>i && typeof i==="object" && typeof i.invite_id==="string" && Number.isSafeInteger(i.generation) && typeof i.club_id==="string" && typeof i.club_name==="string" && typeof i.member_name==="string" && typeof i.expires_at==="string" && (i.group_visibility==="public"||i.group_visibility==="private") && typeof i.inflight==="boolean" && typeof i.rebound==="boolean")) throw new Error("招待一覧を確認できません。");
   return r.invitations as ClubInvitation[];
 }
 export async function previewClubInvitation(s: SupabaseClient, invite: ClubInvitation): Promise<ClubInvitationPreview> {

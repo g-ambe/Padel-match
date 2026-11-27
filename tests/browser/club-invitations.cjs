@@ -2,7 +2,7 @@
 const assert=require('node:assert/strict'),{chromium}=require('playwright');
 const {navigationFixture,user,clubA,id}=require('../fixtures/navigation-app.cjs');
 const base=process.env.INVITATION_TEST_URL||'http://127.0.0.1:3070',remote='http://127.0.0.1:54321';
-const invite={invite_id:id(801),generation:1,club_id:clubA,club_name:'架空クラブ',member_name:'仮名',expires_at:'2099-01-01T00:00:00Z',group_visibility:'public',inflight:false};
+const invite={invite_id:id(801),generation:1,club_id:clubA,club_name:'架空クラブ',member_name:'仮名',expires_at:'2099-01-01T00:00:00Z',group_visibility:'public',inflight:false,rebound:false};
 const preview=()=>({...invite,status:'ok',review_token:'token-1',group_display_name_suggestion:'仮名',group_display_name_current:null,target_display_name:'本人',participant_count:1,match_count:1,result_count:1,team_match_count:0,official_match_count:0});
 (async()=>{const browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});try{
  for(const width of [375,1280]){const f=navigationFixture(),ctx=await browser.newContext({viewport:{width,height:850}});let current=preview(),approved=false,first=true,operation;const calls=[],outside=[],delivery=[];

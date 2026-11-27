@@ -1,15 +1,17 @@
--- TASK-08-02 #262 / integrated review candidate 04, scope simplification 05.
+-- TASK-08-02 #262 / integrated review candidate 04, operational contract 06.
 -- Generated from exact source files at 326976d12d1d81f6f8673402e6e37be742bbfe27.
 -- NOT A MIGRATION. DO NOT RUN ON PROD OR STAGE. ROLLBACK ONLY.
--- No actual DB execution or parser validation. Static assembly checks only.
+-- Revision 06: changed sections not yet parser/DB validated; prior evidence is for revision 05.
 -- The hard send-off constraint deliberately prevents sending; isolated positive
 -- send tests must use a separately reviewed synthetic adaptation (mock delivery).
 -- Approved: rolling search, explicit new invite after terminal state.
 -- Team-round eligibility/history normalization and event-state gating excluded by owner.
 -- Existing profile merge and actual transferred-reference scope remain unchanged.
--- Unresolved: anonymous limits/IP trust, old lookup bypass, real lock-order and scope behavior,
--- existing link approval after team scope drift, Auth/Vault catalog, scheduled cleanup,
--- and all independent tests. Never activate based on this file.
+-- Approved: anonymous fixed windows IP 10/invite 3 per 10m, neutral quota denial,
+-- own-member status only, dedicated keys/no automatic rotation, daily 03:00 JST cleanup,
+-- existing locks and legacy lookup unchanged. See Issue #262 comment 7206101373.
+-- Unresolved: trusted Worker implementation, actual Auth/Vault/catalog, scheduler setup,
+-- remaining independent/HTTP tests and release gates. Never activate based on this file.
 
 -- TASK-08-02 / #262, candidate 03: review-only schema + quota helper.
 -- Baseline main 5fd308eea4f7d673c2a3e170c934876634154d94.
@@ -311,11 +313,12 @@ ALTER TABLE club_invite_private.send_attempts
   (kind='auth_confirmation')=(request_kind='auth_resend')
   AND (request_kind<>'initial' OR reservation_auth_kind='manager'));
 
--- Anonymous controls remain OFF until limits and Worker IP trust boundary
--- are reviewed and explicitly configured. All settings are private.
+-- Approved initial limits. Nullable values remain a fail-closed operational
+-- switch; the hard review send-OFF gate below is unchanged. Worker trust
+-- boundary must be verified before any activation. All settings are private.
 ALTER TABLE club_invite_private.settings
- ADD COLUMN anonymous_ip_10m_limit integer CHECK(anonymous_ip_10m_limit>0),
- ADD COLUMN anonymous_ref_10m_limit integer CHECK(anonymous_ref_10m_limit>0);
+ ADD COLUMN anonymous_ip_10m_limit integer DEFAULT 10 CHECK(anonymous_ip_10m_limit>0),
+ ADD COLUMN anonymous_ref_10m_limit integer DEFAULT 3 CHECK(anonymous_ref_10m_limit>0);
 CREATE TABLE club_invite_private.anonymous_limits(
  scope text NOT NULL CHECK(scope IN ('ip','invite')),
  subject_digest bytea NOT NULL CHECK(octet_length(subject_digest)=32),
@@ -922,7 +925,8 @@ BEGIN
  OR NOT club_invite_private.source_available(p_club,p_member,v_t.source_profile_id)
  THEN RETURN jsonb_build_object('status','conflict'); END IF;
  v_quota:=club_invite_private.send_quota(p_member,v_digest,p_actor,p_club,v_now);
- IF v_quota<>'ok' THEN RETURN jsonb_build_object('status',v_quota); END IF;
+ -- Do not disclose destination/global quota reasons or other-group activity.
+ IF v_quota<>'ok' THEN RETURN jsonb_build_object('status','temporarily_unavailable'); END IF;
  INSERT INTO club_invite_private.invitations(club_id,member_id,source_profile_id,inviter_auth_id,
   email_digest,email_ciphertext,generation,created_at,expires_at)
  VALUES(p_club,p_member,v_t.source_profile_id,p_actor,v_digest,
@@ -1013,7 +1017,9 @@ BEGIN
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_quota:=club_invite_private.send_quota(v_i.member_id,v_i.email_digest,v_manager,v_i.club_id,v_now);
  IF v_quota<>'ok' THEN
-  RETURN jsonb_build_object('status',CASE WHEN p_mode='bearer' THEN 'not_found' ELSE v_quota END);
+  -- Anonymous invalid/limited requests remain indistinguishable; logged-in
+  -- callers receive no cross-group quota reason.
+  RETURN jsonb_build_object('status',CASE WHEN p_mode='bearer' THEN 'not_found' ELSE 'temporarily_unavailable' END);
  END IF;
  v_generation:=v_i.generation; v_kind:=p_kind;
  IF p_kind='group_invite' THEN
@@ -1209,7 +1215,7 @@ BEGIN
  WHERE club_id=p_club AND member_id=p_member
  ORDER BY (status='pending') DESC,created_at DESC,id DESC LIMIT 1;
  SELECT count(*) INTO v_count FROM club_invite_private.send_attempts
- WHERE member_id=p_member AND day_jst=(v_now AT TIME ZONE 'Asia/Tokyo')::date;
+ WHERE club_id=p_club AND member_id=p_member AND day_jst=(v_now AT TIME ZONE 'Asia/Tokyo')::date;
  IF NOT FOUND THEN v_count:=0; END IF;
  IF v_i.id IS NULL THEN RETURN jsonb_build_object('status','none','member_attempts_today',v_count); END IF;
  IF v_i.status='pending' AND v_i.bound_auth_id IS NULL AND v_i.email_ciphertext IS NOT NULL THEN
@@ -1219,7 +1225,8 @@ BEGIN
   END;
  END IF;
  SELECT max(reserved_at),coalesce(bool_or(status IN ('reserved','sending')),false) INTO v_last,v_inflight
- FROM club_invite_private.send_attempts WHERE member_id=p_member OR email_digest=v_i.email_digest;
+ -- Only this managed membership; do not expose destination-wide activity.
+ FROM club_invite_private.send_attempts WHERE club_id=p_club AND member_id=p_member;
  SELECT status INTO v_delivery FROM club_invite_private.send_attempts
  WHERE invite_id=v_i.id ORDER BY reserved_at DESC,operation_id DESC LIMIT 1;
  v_expiry:=v_i.expires_at;
@@ -1710,6 +1717,7 @@ CREATE INDEX club_invite_anon_limit_window
  ON club_invite_private.anonymous_limits(window_started_at);
 
 -- Owner-only maintenance. Not exposed to PostgREST or service_role.
+-- Approved schedule: daily 03:00 JST (18:00 UTC if scheduler is UTC).
 -- No cron job, network call, send, key creation, or actual deletion now.
 CREATE FUNCTION club_invite_private.cleanup_retention()
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -1859,7 +1867,7 @@ BEGIN
  IF (SELECT count(*) FROM club_invite_private.settings)<>1
  OR NOT EXISTS(SELECT 1 FROM club_invite_private.settings
     WHERE singleton AND NOT send_enabled AND global_24h_limit=200
-    AND anonymous_ip_10m_limit IS NULL AND anonymous_ref_10m_limit IS NULL)
+    AND anonymous_ip_10m_limit=10 AND anonymous_ref_10m_limit=3)
  THEN RAISE EXCEPTION 'Invite initial operational gate is unsafe'; END IF;
  IF EXISTS(SELECT 1 FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
     WHERE t.relnamespace=nsp AND c.contype='f' AND c.confrelid='public.player_profiles'::regclass)

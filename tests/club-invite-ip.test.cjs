@@ -1,0 +1,4 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {normalizeInviteIp,anonymousInviteIpDigest}=require('../lib/club-invite-ip.ts');
+test('IPv4とIPv6を正規化し、曖昧な入力・転送ヘッダー形式を拒否',()=>{assert.equal(normalizeInviteIp('192.0.2.1'),'192.0.2.1');assert.equal(normalizeInviteIp('::ffff:192.0.2.1'),'192.0.2.1');assert.equal(normalizeInviteIp('2001:0db8:0:0:0:0:0:1'),'2001:db8::1');for(const value of ['192.00.2.1','256.0.0.1','1.2.3.4, 5.6.7.8','fe80::1%eth0',' 1.2.3.4'])assert.equal(normalizeInviteIp(value),null)});
+test('未信頼入口・不正鍵は拒否し、生IPを返さず同じIPは同じdigest',async()=>{const key=btoa('a'.repeat(32));assert.equal(await anonymousInviteIpDigest('192.0.2.1',key,false),null);assert.equal(await anonymousInviteIpDigest('192.0.2.1','bad',true),null);const a=await anonymousInviteIpDigest('2001:0db8:0:0:0:0:0:1',key,true),b=await anonymousInviteIpDigest('2001:db8::1',key,true);assert.equal(a,b);assert.match(a,/^\\x[0-9a-f]{64}$/)});

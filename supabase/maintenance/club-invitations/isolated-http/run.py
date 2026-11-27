@@ -29,7 +29,8 @@ try:
  start('auth','ghcr.io/supabase/gotrue:v2.197.0',*authenv,'-e','GOTRUE_API_HOST=0.0.0.0','-e','GOTRUE_API_PORT=9999','-e','GOTRUE_JWT_AUD=authenticated','-e','GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated','-e','GOTRUE_DISABLE_SIGNUP=false','-e','GOTRUE_EXTERNAL_EMAIL_ENABLED=true','-e','GOTRUE_MAILER_AUTOCONFIRM=false','-e','GOTRUE_SMTP_HOST=mail','-e','GOTRUE_SMTP_PORT=1025','-e','GOTRUE_SMTP_ADMIN_EMAIL=synthetic@example.test','-e','GOTRUE_SMTP_SENDER_NAME=Synthetic','-e','GOTRUE_MAILER_URLPATHS_CONFIRMATION=/verify')
  run(['python3',str(H/'bootstrap.py')]);start('rest','ghcr.io/supabase/postgrest:v16.5','-e','PGRST_DB_URI=postgres://authenticator:fake-postgrest-password@db:5432/postgres','-e','PGRST_DB_SCHEMAS=public','-e','PGRST_DB_ANON_ROLE=anon','-e','PGRST_JWT_SECRET=local-only-fake-jwt-secret-0123456789abcdef')
  time.sleep(3)
- for name in ('auth-check.py','unregistered.py','restore-check.py','operations.py','reinvite.py','scope-check.py','legacy-join.py','role-check.py'):run(['python3',str(H/name)])
+ names_to_run = ('final-three.py',) if os.environ.get('TASK0802_FINAL_THREE') == '1' else ('auth-check.py','unregistered.py','restore-check.py','operations.py','reinvite.py','scope-check.py','legacy-join.py','role-check.py')
+ for name in names_to_run:run(['python3',str(H/name)])
  print('PASS selected local Auth / Mailpit / PostgREST tests; see omissions')
 finally:
  for c in reversed(created):subprocess.run(['docker','--host=unix:///var/run/docker.sock','rm','-f',c],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

@@ -56,3 +56,38 @@ def reserve(req):
 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool: results=list(pool.map(reserve,requests))
 assert sorted(results)==['reserved','temporarily_unavailable'],results
 print('PASS two concurrent PostgREST reservations for same recipient: one reserved')
+# Own pending invitation DTO must not reveal an independent group's pending send.
+owned='40000000-0000-4000-8000-000000000076';owned_src='20000000-0000-4000-8000-000000000076';owned_email='pending-private@example.test'
+db("INSERT INTO public.player_profiles(id,display_name) VALUES('%s','仮'); INSERT INTO public.club_members(id,club_id,player_profile_id,role) VALUES('%s','%s','%s','member');"%(owned_src,owned,club,owned_src))
+status,v=http(R,'/rpc/check_club_invite_account',{'p_club':club,'p_member':owned,'p_email':owned_email},token);assert status==200 and v.get('status')=='signup_required',(status,v)
+op=str(uuid.uuid4());args={'p_actor':mgr,'p_club':club,'p_member':owned,'p_operation_id':op,'p_ticket':v['ticket'],'p_email':owned_email}
+status,v=http(R,'/rpc/reserve_club_invite_send',args,service);assert status==200 and v.get('status')=='reserved',(status,v);gen=v['generation'];owned_inv=v['invite_id']
+status,v=http(R,'/rpc/claim_club_invite_send',{'p_operation_id':op},service);assert status==200 and v.get('status')=='claimed',(status,v);owned_secret=v['secret']
+status,v=http(R,'/rpc/finalize_club_invite_send',{'p_operation_id':op,'p_generation':gen,'p_result':'sent','p_failure_code':None},service);assert status==200 and v.get('status')=='sent',(status,v)
+status,before=http(R,'/rpc/get_club_invite_status',{'p_club':club,'p_member':owned},token);assert status==200 and before.get('status')=='pending' and before.get('masked_email'),(status,before)
+db("""DO $$ DECLARE inv uuid:=gen_random_uuid();dg bytea:=club_invite_private.email_hmac('pending-private@example.test');g uuid:=gen_random_uuid();m uuid:=gen_random_uuid();u uuid:=gen_random_uuid();BEGIN
+ INSERT INTO club_invite_private.invitations(id,club_id,member_id,source_profile_id,inviter_auth_id,email_digest,generation,created_at,expires_at) VALUES(inv,g,m,gen_random_uuid(),u,dg,1,clock_timestamp()-interval '1 minute',clock_timestamp()+interval '1 day');
+ INSERT INTO club_invite_private.send_attempts(operation_id,invite_id,club_id,member_id,quota_manager_id,email_digest,generation,actor_kind,reserved_at,day_jst,status,kind,request_digest,actor_binding_digest,request_kind,reservation_auth_kind,reservation_actor_auth_id) VALUES(gen_random_uuid(),inv,g,m,u,dg,1,'manager',clock_timestamp(),(clock_timestamp() AT TIME ZONE 'Asia/Tokyo')::date,'reserved','auth_confirmation',dg,dg,'auth_resend','manager',u);
+ END $$;""")
+status,after=http(R,'/rpc/get_club_invite_status',{'p_club':club,'p_member':owned},token);assert status==200 and after==before,(status,before,after)
+print('PASS own pending DTO unchanged by another group same-recipient reserved attempt')
+# Per-invitation limiter concurrency, using synthetic digest and isolated sessions.
+def ref_attempt(_):return db("SELECT club_invite_private.take_anonymous_limit('invite',decode(repeat('44',32),'hex'),clock_timestamp())")
+with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool: ref_results=list(pool.map(ref_attempt,range(8)))
+assert ref_results.count('t')==3 and ref_results.count('f')==5,ref_results
+print('PASS invite limiter 8 parallel: 3 accepted, 5 denied')
+# Keep the recipient's signup unconfirmed; simulate the unrelated sender finishing.
+signup(owned_email)
+db("UPDATE club_invite_private.send_attempts SET status='failed',finished_at=clock_timestamp(),failure_code='not_claimed' WHERE email_digest=club_invite_private.email_hmac('pending-private@example.test') AND status='reserved';")
+# Move timestamps only in this disposable test database to avoid sleeping.
+for attempt_index in range(4):
+ db("UPDATE club_invite_private.send_attempts SET reserved_at=clock_timestamp()-interval '2 minutes',day_jst=((clock_timestamp()-interval '2 minutes') AT TIME ZONE 'Asia/Tokyo')::date WHERE email_digest=club_invite_private.email_hmac('pending-private@example.test');")
+ anon_op=str(uuid.uuid4());request={'p_actor':None,'p_mode':'bearer','p_invite':owned_inv,'p_generation':gen,'p_operation_id':anon_op,'p_kind':'auth_confirmation','p_secret':owned_secret,'p_ip_digest':'\\x'+('8%01x'%attempt_index)*32}
+ status,result=http(R,'/rpc/reserve_club_invite_resend',request,service);assert status==200,(status,result)
+ if result.get('status')=='reserved':
+  status,claim=http(R,'/rpc/claim_club_invite_send',{'p_operation_id':anon_op},service);assert status==200 and claim.get('status')=='claimed',(status,claim)
+  status,end=http(R,'/rpc/finalize_club_invite_send',{'p_operation_id':anon_op,'p_generation':gen,'p_result':'sent','p_failure_code':None},service);assert status==200 and end.get('status')=='sent',(status,end)
+ else: assert result.get('status')=='not_found',(status,result)
+count=db("SELECT attempt_count FROM club_invite_private.anonymous_limits WHERE scope='invite' AND subject_digest=club_invite_private.request_fingerprint(jsonb_build_array('anonymous-invite','%s'::uuid));"%owned_inv)
+assert count=='3',count
+print('PASS valid bearer resend reaches per-invite limit; subsequent request neutral-denied')

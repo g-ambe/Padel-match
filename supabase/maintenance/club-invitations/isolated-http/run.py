@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Disposable local GoTrue/PostgREST/Mailpit integration; synthetic data only."""
-import os,pathlib,subprocess,time,uuid
+import os,pathlib,subprocess,time,uuid,tempfile,shutil
 H=pathlib.Path(__file__).resolve().parent
 suffix=uuid.uuid4().hex[:10];network='task0802-http-'+suffix
 names={k:'task0802-'+k+'-'+suffix for k in ('db','auth','rest','mail')}
 env={k:v for k,v in os.environ.items() if k in ('PATH','HOME','USER','LANG','LC_ALL')}
 env.update({'DOCKER_HOST':'unix:///var/run/docker.sock','TASK0802_DB':names['db'],'TASK0802_AUTH':names['auth'],'TASK0802_REST':names['rest'],'TASK0802_MAIL':names['mail']})
+state_dir=tempfile.mkdtemp(prefix='task0802-fake-')
+env['TASK0802_STATE_DIR']=state_dir
 created=[];network_created=False
 def run(args,**kw):return subprocess.run(args,env=env,check=True,**kw)
 def docker(*args,**kw):return run(['docker','--host=unix:///var/run/docker.sock',*args],**kw)
@@ -27,7 +29,7 @@ try:
  start('auth','ghcr.io/supabase/gotrue:v2.197.0',*authenv,'-e','GOTRUE_API_HOST=0.0.0.0','-e','GOTRUE_API_PORT=9999','-e','GOTRUE_JWT_AUD=authenticated','-e','GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated','-e','GOTRUE_DISABLE_SIGNUP=false','-e','GOTRUE_EXTERNAL_EMAIL_ENABLED=true','-e','GOTRUE_MAILER_AUTOCONFIRM=false','-e','GOTRUE_SMTP_HOST=mail','-e','GOTRUE_SMTP_PORT=1025','-e','GOTRUE_SMTP_ADMIN_EMAIL=synthetic@example.test','-e','GOTRUE_SMTP_SENDER_NAME=Synthetic','-e','GOTRUE_MAILER_URLPATHS_CONFIRMATION=/verify')
  run(['python3',str(H/'bootstrap.py')]);start('rest','ghcr.io/supabase/postgrest:v16.5','-e','PGRST_DB_URI=postgres://authenticator:fake-postgrest-password@db:5432/postgres','-e','PGRST_DB_SCHEMAS=public','-e','PGRST_DB_ANON_ROLE=anon','-e','PGRST_JWT_SECRET=local-only-fake-jwt-secret-0123456789abcdef')
  time.sleep(3)
- for name in ('auth-check.py','unregistered.py','operations.py','scope-check.py','legacy-join.py','role-check.py'):run(['python3',str(H/name)])
+ for name in ('auth-check.py','unregistered.py','restore-check.py','operations.py','reinvite.py','scope-check.py','legacy-join.py','role-check.py'):run(['python3',str(H/name)])
  print('PASS selected local Auth / Mailpit / PostgREST tests; see omissions')
 finally:
  for c in reversed(created):subprocess.run(['docker','--host=unix:///var/run/docker.sock','rm','-f',c],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
@@ -35,4 +37,5 @@ finally:
  for c in created:
   if subprocess.run(['docker','--host=unix:///var/run/docker.sock','inspect',c],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:raise RuntimeError('container cleanup failed')
  if network_created and subprocess.run(['docker','--host=unix:///var/run/docker.sock','network','inspect',network],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:raise RuntimeError('network cleanup failed')
- print('local containers and network removed')
+ shutil.rmtree(state_dir)
+ print('local containers, network and synthetic state removed')

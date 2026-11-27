@@ -7,6 +7,8 @@ names={k:'task0802-'+k+'-'+suffix for k in ('db','auth','rest','mail')}
 env={k:v for k,v in os.environ.items() if k in ('PATH','HOME','USER','LANG','LC_ALL')}
 env.update({'DOCKER_HOST':'unix:///var/run/docker.sock','TASK0802_DB':names['db'],'TASK0802_AUTH':names['auth'],'TASK0802_REST':names['rest'],'TASK0802_MAIL':names['mail']})
 if os.environ.get('TASK0802_FORMAL') == '1': env['TASK0802_FORMAL']='1'
+if os.environ.get('TASK0802_RELEASE') == '1': env['TASK0802_FORMAL']='1'
+if os.environ.get('TASK0802_SCORE') == '1': env['TASK0802_FORMAL']='1';env['TASK0802_SCORE']='1'
 state_dir=tempfile.mkdtemp(prefix='task0802-fake-')
 env['TASK0802_STATE_DIR']=state_dir
 created=[];network_created=False
@@ -30,7 +32,7 @@ try:
  start('auth','ghcr.io/supabase/gotrue:v2.197.0',*authenv,'-e','GOTRUE_API_HOST=0.0.0.0','-e','GOTRUE_API_PORT=9999','-e','GOTRUE_JWT_AUD=authenticated','-e','GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated','-e','GOTRUE_DISABLE_SIGNUP=false','-e','GOTRUE_EXTERNAL_EMAIL_ENABLED=true','-e','GOTRUE_MAILER_AUTOCONFIRM=false','-e','GOTRUE_SMTP_HOST=mail','-e','GOTRUE_SMTP_PORT=1025','-e','GOTRUE_SMTP_ADMIN_EMAIL=synthetic@example.test','-e','GOTRUE_SMTP_SENDER_NAME=Synthetic','-e','GOTRUE_MAILER_URLPATHS_CONFIRMATION=/verify')
  run(['python3',str(H/'bootstrap.py')]);start('rest','ghcr.io/supabase/postgrest:v16.5','-e','PGRST_DB_URI=postgres://authenticator:fake-postgrest-password@db:5432/postgres','-e','PGRST_DB_SCHEMAS=public','-e','PGRST_DB_ANON_ROLE=anon','-e','PGRST_JWT_SECRET=local-only-fake-jwt-secret-0123456789abcdef')
  time.sleep(3)
- names_to_run = ('formal-check.py','formal-regression.py') if os.environ.get('TASK0802_FORMAL') == '1' else ('final-three.py',) if os.environ.get('TASK0802_FINAL_THREE') == '1' else ('auth-check.py','unregistered.py','restore-check.py','operations.py','reinvite.py','scope-check.py','legacy-join.py','role-check.py')
+ names_to_run = ('formal-check.py','score-probe.py') if os.environ.get('TASK0802_SCORE') == '1' else ('release-check.py',) if os.environ.get('TASK0802_RELEASE') == '1' else ('formal-check.py','formal-regression.py') if os.environ.get('TASK0802_FORMAL') == '1' else ('final-three.py',) if os.environ.get('TASK0802_FINAL_THREE') == '1' else ('auth-check.py','unregistered.py','restore-check.py','operations.py','reinvite.py','scope-check.py','legacy-join.py','role-check.py')
  for name in names_to_run:run(['python3',str(H/name)])
  print('PASS selected local Auth / Mailpit / PostgREST tests; see omissions')
 finally:

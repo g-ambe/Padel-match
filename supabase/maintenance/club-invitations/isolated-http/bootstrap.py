@@ -22,6 +22,16 @@ for old in (" OR to_regclass('public.h51_postcutover_data_preservation') IS NULL
  assert h52.count(old)==1;h52=h52.replace(old,'')
 sql(h52)
 if os.environ.get('TASK0802_FORMAL') == '1':
+ if os.environ.get('TASK0802_SCORE') == '1':
+  import re
+  migration=(M/'0040_event_fixed_pairs.sql').read_text()
+  # Only the baseline compatibility preflight is bypassed in this disposable
+  # copy. It expects production RLS/triggers absent from the synthetic setup;
+  # no product SQL or existing RLS/policies is modified.
+  migration,n=re.subn(r'do \$guard\$.*?end \$guard\$;',"-- synthetic baseline: production compatibility preflight omitted",migration,count=1,flags=re.S|re.I)
+  assert n==1
+  sql(migration)
+  for f in ('0041_atomic_round_lineups.sql','0042_round_lineup_safety.sql','0043_match_results_one_per_match.sql','20261125010835_nonfixed_round_lineup_protection.sql'):sql((M/f).read_text())
  sql("CREATE ROLE authenticator LOGIN PASSWORD 'fake-postgrest-password' NOINHERIT; GRANT anon,authenticated,service_role TO authenticator; GRANT USAGE ON SCHEMA public TO anon,authenticated,service_role;")
  print('PASS synthetic baseline prepared for formal candidate')
  raise SystemExit(0)

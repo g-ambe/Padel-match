@@ -1,5 +1,5 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
-require('node:module').registerHooks({resolve(s,c,next){return next(['./club-invite-delivery','./club-invite-smtp'].includes(s)?s+'.ts':s,c)}});
+require('node:module').registerHooks({resolve(s,c,next){return next(['./club-invite-delivery','./club-invite-smtp','./club-invite-email'].includes(s)?s+'.ts':s,c)}});
 const {handleInviteDelivery}=require('../lib/club-invite-send-handler.ts');
 const id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',origin='https://app.example.test';
 const body={mode:'initial',clubId:id,memberId:id,ticket:'a'.repeat(64),email:'fake@example.test',operationId:id};

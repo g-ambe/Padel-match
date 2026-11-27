@@ -1,3 +1,4 @@
+import { isSupportedInviteEmail } from "./club-invite-email";
 // Server-side adapter. It cannot choose its recipient; callers must pass the
 // private claim returned by the service-only claim RPC. No automatic retry.
 export type MailClaim = {inviteId:string;generation:number;email:string;secret:string;clubName:string;memberName:string;inviterName:string};
@@ -5,12 +6,11 @@ export type MailResult = {result:"sent";failure:null}|{result:"failed";failure:"
 export type SmtpSocket = {readable:ReadableStream<Uint8Array>;writable:WritableStream<Uint8Array>;close:()=>void|Promise<void>};
 export type SmtpConnect = (address:{hostname:string;port:number},options:{secureTransport:"on"})=>SmtpSocket;
 const from="padelclubwebapp@gmail.com", encoder=new TextEncoder();
-const emailPattern=/^[A-Za-z0-9.!#$%&'*+\-/=?^_`{|}~]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const escapeHtml=(s:string)=>s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
 function base64(s:string){let raw="";for(const b of encoder.encode(s))raw+=String.fromCharCode(b);return btoa(raw);}
 export function invitationMime(c:MailClaim,origin:string):string {
- if(!emailPattern.test(c.email)||c.email.length>254||!uuidPattern.test(c.inviteId)||!Number.isSafeInteger(c.generation)||c.generation<1||!/^[0-9a-f]{64}$/.test(c.secret))throw Error("invalid claim");
+ if(!isSupportedInviteEmail(c.email)||!uuidPattern.test(c.inviteId)||!Number.isSafeInteger(c.generation)||c.generation<1||!/^[0-9a-f]{64}$/.test(c.secret))throw Error("invalid claim");
  const base=new URL(origin);if(base.protocol!=="https:"||base.username||base.password||base.pathname!=="/"||base.search||base.hash)throw Error("invalid origin");
  if(![c.clubName,c.memberName,c.inviterName].every(n=>typeof n==="string"&&n.length>0&&n.length<=200&&!/[\u0000-\u001f\u007f-\u009f]/u.test(n)))throw Error("invalid names");
  const fragment=new URLSearchParams({invite:c.inviteId,generation:String(c.generation),secret:c.secret});

@@ -14,7 +14,7 @@ import sys
 
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "05_formal_install_CANDIDATE.sql"
-SOURCE_SHA256 = "69e565b8a1fe0ba68207ba129b94c32c4c239f97062695e29443e9755a524e6b"
+SOURCE_SHA256 = "0fa5f54a8bde06567b2608bb1e06b89008cf8739f71fbb1df383a1a3dfe7f7bf"
 NAME = "task08_club_invitations"
 BASELINE = (
     ("0047", "event_result_video"),

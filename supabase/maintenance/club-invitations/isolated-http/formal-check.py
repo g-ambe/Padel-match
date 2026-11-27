@@ -45,12 +45,12 @@ after_functions=functions_snapshot()
 assert all(after_functions.get(k)==v for k,v in before_functions.items()),'existing function definition or ACL changed'
 print('PASS existing public/private function definitions and ACL unchanged',flush=True)
 result=val("SELECT (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='club_invite_private' AND c.relkind='r')||'|'||(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='club_invite_private')||'|'||(SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname=ANY(ARRAY['check_club_invite_account','consume_club_invite_lookup','reserve_club_invite_send','reserve_club_invite_resend','claim_club_invite_send','finalize_club_invite_send','cancel_club_invite','get_club_invite_status','list_my_club_invites','preview_my_club_invite','preview_club_invite_rebind','rebind_club_invite','accept_my_club_invite','reject_my_club_invite']))")
-assert result=='6|30|14',result
+assert result=='6|31|14',result
 assert val("SELECT send_enabled::text FROM club_invite_private.settings")=='false'
 r=sql('UPDATE club_invite_private.settings SET send_enabled=true;',False);assert r.returncode and 'club_invite_review_send_off' in r.stderr
 assert val("SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='club_invite_private' AND c.relkind='r' AND c.relrowsecurity")=='6'
 assert val("SELECT has_schema_privilege('authenticated','club_invite_private','USAGE') OR has_schema_privilege('anon','club_invite_private','USAGE')")=='f'
-print('PASS 6 tables/30 internal/14 public RPC, RLS, private schema ACL, hard OFF',flush=True)
+print('PASS 6 tables/31 internal/14 public RPC, RLS, private schema ACL, hard OFF',flush=True)
 r=sql(approval+candidate,False);assert r.returncode and ('catalog drift' in r.stderr or 'already installed' in r.stderr)
 print('PASS reapplication rejected',flush=True)
 print('local catalog entries:',count,'missing:',catalog['missing'],'(not production)',flush=True)

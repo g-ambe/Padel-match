@@ -528,6 +528,13 @@ BEGIN
  RETURN v;
 END $$;
 
+-- Transport validation is separate from existing account normalization.
+CREATE FUNCTION club_invite_private.supported_delivery_email(p_email text)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+ SELECT coalesce(octet_length(p_email)<=254 AND length(split_part(p_email,'@',1))<=64
+ AND p_email ~ $mail$^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+([.][A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?[.])+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$mail$,false)
+$$;
+
 CREATE FUNCTION club_invite_private.key_bytes(p_purpose text)
 RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE v_h text; v_e text; h bytea; e bytea; n_h int; n_e int;
@@ -783,7 +790,9 @@ BEGIN
  IF NOT club_invite_private.manager_ok(v_actor,p_club,p_member)
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_now:=clock_timestamp();
- -- consume before address lookup; invalid input also counts for an authorized target.
+ -- Unsupported transport formats are rejected before consuming a lookup or send quota.
+ IF NOT club_invite_private.supported_delivery_email(club_invite_private.normalize_email(p_email))
+ THEN RETURN jsonb_build_object('status','invalid'); END IF;
  IF NOT club_invite_private.take_lookup(v_actor,v_now)
  THEN RETURN jsonb_build_object('status','lookup_limit'); END IF;
  BEGIN
@@ -956,6 +965,7 @@ BEGIN
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_email:=club_invite_private.normalize_email(p_email);
  v_ticket_hash:=club_invite_private.secret_hash(p_ticket);
+ IF NOT club_invite_private.supported_delivery_email(v_email) THEN RETURN jsonb_build_object('status','invalid'); END IF;
  IF v_email IS NULL OR v_ticket_hash IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
  v_digest:=club_invite_private.email_hmac(v_email);
  SELECT * INTO v_t FROM club_invite_private.lookup_tickets
@@ -1068,6 +1078,7 @@ BEGIN
  OR v_i.bound_auth_id IS NOT NULL OR v_i.email_ciphertext IS NULL
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_email:=club_invite_private.decrypt_email(v_i.email_ciphertext,v_i.email_digest);
+ IF NOT club_invite_private.supported_delivery_email(v_email) THEN RETURN jsonb_build_object('status','not_found'); END IF;
  SELECT account_kind INTO v_class FROM club_invite_private.classify_account(v_email);
  IF v_class IS NULL OR v_class='conflict' THEN RETURN jsonb_build_object('status','conflict'); END IF;
  IF p_kind='auth_confirmation' AND NOT club_invite_private.auth_resend_ok(v_email)
@@ -2459,6 +2470,13 @@ BEGIN
  RETURN v;
 END $$;
 
+-- Transport validation is separate from existing account normalization.
+CREATE FUNCTION club_invite_private.supported_delivery_email(p_email text)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+ SELECT coalesce(octet_length(p_email)<=254 AND length(split_part(p_email,'@',1))<=64
+ AND p_email ~ $mail$^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+([.][A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?[.])+[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$mail$,false)
+$$;
+
 CREATE FUNCTION club_invite_private.key_bytes(p_purpose text)
 RETURNS bytea LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE v_h text; v_e text; h bytea; e bytea; n_h int; n_e int;
@@ -2714,7 +2732,9 @@ BEGIN
  IF NOT club_invite_private.manager_ok(v_actor,p_club,p_member)
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_now:=clock_timestamp();
- -- consume before address lookup; invalid input also counts for an authorized target.
+ -- Unsupported transport formats are rejected before consuming a lookup or send quota.
+ IF NOT club_invite_private.supported_delivery_email(club_invite_private.normalize_email(p_email))
+ THEN RETURN jsonb_build_object('status','invalid'); END IF;
  IF NOT club_invite_private.take_lookup(v_actor,v_now)
  THEN RETURN jsonb_build_object('status','lookup_limit'); END IF;
  BEGIN
@@ -2887,6 +2907,7 @@ BEGIN
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_email:=club_invite_private.normalize_email(p_email);
  v_ticket_hash:=club_invite_private.secret_hash(p_ticket);
+ IF NOT club_invite_private.supported_delivery_email(v_email) THEN RETURN jsonb_build_object('status','invalid'); END IF;
  IF v_email IS NULL OR v_ticket_hash IS NULL THEN RETURN jsonb_build_object('status','invalid'); END IF;
  v_digest:=club_invite_private.email_hmac(v_email);
  SELECT * INTO v_t FROM club_invite_private.lookup_tickets
@@ -2999,6 +3020,7 @@ BEGIN
  OR v_i.bound_auth_id IS NOT NULL OR v_i.email_ciphertext IS NULL
  THEN RETURN jsonb_build_object('status','not_found'); END IF;
  v_email:=club_invite_private.decrypt_email(v_i.email_ciphertext,v_i.email_digest);
+ IF NOT club_invite_private.supported_delivery_email(v_email) THEN RETURN jsonb_build_object('status','not_found'); END IF;
  SELECT account_kind INTO v_class FROM club_invite_private.classify_account(v_email);
  IF v_class IS NULL OR v_class='conflict' THEN RETURN jsonb_build_object('status','conflict'); END IF;
  IF p_kind='auth_confirmation' AND NOT club_invite_private.auth_resend_ok(v_email)

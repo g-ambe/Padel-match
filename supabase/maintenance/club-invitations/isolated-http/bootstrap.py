@@ -36,7 +36,7 @@ if os.environ.get('TASK0802_FORMAL') == '1':
  print('PASS synthetic baseline prepared for formal candidate')
  raise SystemExit(0)
 candidate=P/'maintenance/club-invitations/04_integrated_review_candidate.sql'
-assert hashlib.sha256(candidate.read_bytes()).hexdigest()=='1c039a661628d229b25d1bd123946dda246233585e3e3901fc7614202429c7b6', 'candidate changed; review required'
+assert hashlib.sha256(candidate.read_bytes()).hexdigest()=='e9e2e0caba1d3c0b895c1feb54fe0569a87ebb48695de42c5adfcb8631832989', 'candidate changed; review required'
 c=candidate.read_text();assert c.count('ROLLBACK;')==1
 sql("SET padel.invite_review_isolated='synthetic-only';\n"+c.replace('ROLLBACK;','COMMIT;'))
 sql("ALTER TABLE club_invite_private.settings DROP CONSTRAINT club_invite_review_send_off; UPDATE club_invite_private.settings SET send_enabled=true; INSERT INTO vault.decrypted_secrets VALUES ('padel_club_invite_hmac_v1',encode(decode(repeat('11',32),'hex'),'base64')),('padel_club_invite_encryption_v1',encode(decode(repeat('22',32),'hex'),'base64')); CREATE ROLE authenticator LOGIN PASSWORD 'fake-postgrest-password' NOINHERIT; GRANT anon,authenticated,service_role TO authenticator; GRANT USAGE ON SCHEMA public TO anon,authenticated,service_role;")

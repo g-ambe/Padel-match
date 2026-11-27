@@ -35,6 +35,7 @@ try:
  names_to_run = ('formal-check.py','score-probe.py') if os.environ.get('TASK0802_SCORE') == '1' else ('release-check.py',) if os.environ.get('TASK0802_RELEASE') == '1' else ('formal-check.py','formal-regression.py') if os.environ.get('TASK0802_FORMAL') == '1' else ('final-three.py',) if os.environ.get('TASK0802_FINAL_THREE') == '1' else ('auth-check.py','unregistered.py','restore-check.py','operations.py','reinvite.py','scope-check.py','legacy-join.py','role-check.py')
  if os.environ.get('TASK0802_APP') == '1': names_to_run=('app-flow.py',)
  if os.environ.get('TASK0802_COMBINED') == '1': names_to_run=('combined-flow.py',)
+ if os.environ.get('TASK0802_EMAIL') == '1': names_to_run=('email-format.py',)
  for name in names_to_run:run(['python3',str(H/name)])
  print('PASS selected local Auth / Mailpit / PostgREST tests; see omissions')
 finally:

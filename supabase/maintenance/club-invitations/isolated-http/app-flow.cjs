@@ -1,6 +1,6 @@
 // Synthetic local JWT/PostgREST integration of application functions only.
 const fs=require('fs'),cp=require('child_process'),path=require('path'),assert=require('assert/strict');
-require('node:module').registerHooks({resolve(s,c,next){return next(['./profile-links','./player-profiles','./group-read','./friendly-round-history','./permissions','./club-invite-delivery','./club-invite-smtp'].includes(s)?s+'.ts':s,c)}});
+require('node:module').registerHooks({resolve(s,c,next){return next(['./profile-links','./player-profiles','./group-read','./friendly-round-history','./permissions','./club-invite-delivery','./club-invite-smtp','./club-invite-email'].includes(s)?s+'.ts':s,c)}});
 const root=path.resolve(__dirname,'../../../..'),{createClient}=require('@supabase/supabase-js');
 const {handleInviteDelivery}=require(path.join(root,'lib/club-invite-send-handler.ts'));
 const {deliverClaimedInvitation}=require(path.join(root,'lib/club-invite-delivery.ts'));

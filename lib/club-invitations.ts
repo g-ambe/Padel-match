@@ -17,11 +17,13 @@ export async function listClubInvitations(s: SupabaseClient): Promise<ClubInvita
 }
 export async function previewClubInvitation(s: SupabaseClient, invite: ClubInvitation): Promise<ClubInvitationPreview> {
   const r=await rpc(s,"preview_my_club_invite",{p_invite:invite.invite_id,p_generation:invite.generation});
-  if(r.status!=="ok" || r.invite_id!==invite.invite_id || r.generation!==invite.generation || r.club_id!==invite.club_id || typeof r.review_token!=="string" || !r.review_token || typeof r.group_display_name_suggestion!=="string" || (r.group_display_name_current!==null&&typeof r.group_display_name_current!=="string") || typeof r.expires_at!=="string" || (r.group_visibility!=="public"&&r.group_visibility!=="private")) throw new Error("招待の内容を確認できません。再読み込みしてください。");
+  if(r.status!=="ok" || r.invite_id!==invite.invite_id || r.generation!==invite.generation || r.club_id!==invite.club_id || typeof r.review_token!=="string" || !r.review_token || typeof r.group_display_name_suggestion!=="string" || (r.group_display_name_current!==null&&typeof r.group_display_name_current!=="string") || typeof r.expires_at!=="string" || !Number.isFinite(Date.parse(r.expires_at)) || (r.group_visibility!=="public"&&r.group_visibility!=="private") || ![r.participant_count,r.match_count,r.result_count,r.team_match_count,r.official_match_count].every(n=>Number.isSafeInteger(n)&&Number(n)>=0)) throw new Error("招待の内容を確認できません。再読み込みしてください。");
   return r as ClubInvitationPreview;
 }
 export async function acceptClubInvitation(s: SupabaseClient, p: ClubInvitationPreview, input: {name:string; publicChoice:boolean; consent:boolean; operationId:string}) {
-  if(!input.consent || !isValidProfileLinkDisplayName(input.name) || !p.review_token || !Number.isFinite(Date.parse(p.expires_at)) || Date.parse(p.expires_at)<=Date.now()) throw new Error("表示名と引継ぎへの同意を確認してください。");
+  // Server checks expiry for new operations and recognizes an exact replay
+  // after a successful commit, including after the original deadline.
+  if(!input.consent || !isValidProfileLinkDisplayName(input.name) || !p.review_token || !Number.isFinite(Date.parse(p.expires_at))) throw new Error("表示名と引継ぎへの同意を確認してください。");
   const r=await rpc(s,"accept_my_club_invite",{p_invite:p.invite_id,p_generation:p.generation,p_operation_id:input.operationId,p_review_token:p.review_token,p_expected_club_display_name:p.group_display_name_current,p_expected_visibility:p.group_visibility,p_club_display_name:input.name.trim(),p_public_confirmation:p.group_visibility==="public"&&input.publicChoice,p_inheritance_consent:true});
   if(r.status!=="approved" || r.invite_id!==p.invite_id || r.club_id!==p.club_id) throw new Error("参加を確定できません。入力を保持しています。招待内容を再確認してください。");
   return r;

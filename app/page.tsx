@@ -10,6 +10,11 @@ import { resetGuestModeData, setGuestMode } from "@/lib/guest-events";
 import { ensureAccountProfile, ensureLinkedPlayerProfile, preferredPlayerProfileId, profileErrorMessage } from "@/lib/player-profiles";
 
 import { padelBoardHref } from "@/lib/padel-board";
+import { postAuthInviteDestination } from "@/lib/club-invite-link";
+
+function postAuthDestination() {
+  try { return postAuthInviteDestination(window.sessionStorage); } catch { return "/home"; }
+}
 
 // 再開時はこの表示フラグだけを変更する。Supabase側のOAuth設定は変更しない。
 const GOOGLE_LOGIN_VISIBLE = false;
@@ -85,7 +90,7 @@ export default function LoginPage() {
     }
     setLoading(false);
     resetGuestModeData();
-    router.push("/home");
+    router.push(postAuthDestination());
   };
 
 
@@ -152,7 +157,7 @@ export default function LoginPage() {
         return;
       }
       resetGuestModeData();
-      router.push("/home");
+      router.push(postAuthDestination());
     } catch {
       setError("アカウント作成に失敗しました");
     } finally {

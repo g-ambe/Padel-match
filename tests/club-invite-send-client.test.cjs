@@ -1,0 +1,3 @@
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {requestInviteDelivery,InviteDeliveryNotReady}=require('../lib/club-invite-send-client.ts');
+test('固定OFFを準備中とし、その他の障害を同一視しない',async()=>{const original=global.fetch;try{global.fetch=async()=>new Response(JSON.stringify({status:'not_ready'}),{status:503});await assert.rejects(requestInviteDelivery('fake',{}),InviteDeliveryNotReady);global.fetch=async()=>new Response(JSON.stringify({status:'unavailable'}),{status:503});await assert.rejects(requestInviteDelivery('fake',{}),e=>!(e instanceof InviteDeliveryNotReady));global.fetch=async()=>new Response(JSON.stringify({status:'unknown'}));assert.equal(await requestInviteDelivery('fake',{}),'unknown');}finally{global.fetch=original}});

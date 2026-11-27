@@ -4,10 +4,10 @@ H=Path(__file__).parent
 fixture=(H/'auth-check.py').read_text();exec(fixture.split("args={'p_club':club")[0])
 unregistered=(H/'unregistered.py').read_text();exec(unregistered.split("status,d=http(R,'/rpc/reserve_club_invite_send'")[0])
 def node(body):
- body.update({'container':D,'rest':R});env=dict(os.environ,NODE_PATH=str(H.resolve().parents[3]/'node_modules'))
+ body.update({'container':D,'rest':R,'auth':A});env=dict(os.environ,NODE_PATH=str(H.resolve().parents[3]/'node_modules'))
  r=subprocess.run(['node',str(H/'app-flow.cjs')],input=json.dumps(body),text=True,capture_output=True,env=env)
  assert r.returncode==0,r.stderr[-2000:];return json.loads(r.stdout)
-sent=node({'mode':'send','service':service,'args':args});assert sent['invite'] and sent['generation']==1
+sent=node({'mode':'route','service':service,'token':mgr_token,'args':args});assert sent['invite'] and sent['generation']==1
 negative={'p_actor':mgr,'p_mode':'manager','p_invite':sent['invite'],'p_generation':sent['generation'],'p_operation_id':str(uuid.uuid4()),'p_kind':'auth_confirmation','p_secret':None,'p_ip_digest':None}
 status,unregistered=http(R,'/rpc/reserve_club_invite_resend',negative,service);assert status==200 and unregistered.get('status')!='reserved'
 negative['p_actor']=ids[outsider];negative['p_operation_id']=str(uuid.uuid4())

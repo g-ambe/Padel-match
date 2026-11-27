@@ -1,7 +1,8 @@
 // Synthetic local JWT/PostgREST integration of application functions only.
 const fs=require('fs'),cp=require('child_process'),path=require('path'),assert=require('assert/strict');
-require('node:module').registerHooks({resolve(s,c,next){return next(['./profile-links','./player-profiles','./group-read','./friendly-round-history','./permissions'].includes(s)?s+'.ts':s,c)}});
+require('node:module').registerHooks({resolve(s,c,next){return next(['./profile-links','./player-profiles','./group-read','./friendly-round-history','./permissions','./club-invite-delivery','./club-invite-smtp'].includes(s)?s+'.ts':s,c)}});
 const root=path.resolve(__dirname,'../../../..'),{createClient}=require('@supabase/supabase-js');
+const {handleInviteDelivery}=require(path.join(root,'lib/club-invite-send-handler.ts'));
 const {deliverClaimedInvitation}=require(path.join(root,'lib/club-invite-delivery.ts'));
 const {listClubInvitations,previewClubInvitation,acceptClubInvitation}=require(path.join(root,'lib/club-invitations.ts'));
 const input=JSON.parse(fs.readFileSync(0,'utf8'));
@@ -9,7 +10,14 @@ const localFetch=async(url,init={})=>{const p=new URL(String(url)),h=new Headers
 const client=token=>createClient('http://local.invalid','synthetic-key',{global:{fetch:localFetch,headers:{Authorization:'Bearer '+token}},auth:{persistSession:false,autoRefreshToken:false}});
 async function rpc(db,name,args){const {data,error}=await db.rpc(name,args);if(error)throw Error('synthetic RPC failure');return data}
 (async()=>{
- if(input.mode==='send'){
+ if(input.mode==='route'){
+  const svc=client(input.service);let reserved,delivered=0,syntheticSecret;
+  const body={mode:'initial',clubId:input.args.p_club,memberId:input.args.p_member,ticket:input.args.p_ticket,email:input.args.p_email,operationId:input.args.p_operation_id};
+  const make=()=>new Request('https://app.example.test/api/club-invitations/send',{method:'POST',headers:{origin:'https://app.example.test','content-type':'application/json',authorization:'Bearer '+input.token},body:JSON.stringify(body)});
+  const deps={enabled:true,origin:async()=>'https://app.example.test',backend:async request=>{const token=request.headers.get('authorization');const r=cp.spawnSync('docker',['--host=unix:///var/run/docker.sock','exec',input.container,'wget','-q','-O','-','--header=Authorization: '+token,'http://'+input.auth+'/user'],{encoding:'utf8'});if(r.status!==0)throw Error('local Auth refused');const actor=JSON.parse(r.stdout).id;return {actor,rpc:async(name,args)=>{const value=await rpc(svc,name,args);if(name==='reserve_club_invite_send')reserved=value;return value},send:async claim=>{assert.equal(claim.email,input.args.p_email);syntheticSecret=claim.secret;delivered++;return {result:'sent',failure:null}},sendConfirmation:async()=>{throw Error('not expected')}}}};
+  assert.equal((await (await handleInviteDelivery(make(),deps)).json()).status,'sent');assert.equal((await (await handleInviteDelivery(make(),deps)).json()).status,'sent');assert.equal(delivered,1);
+  console.log(JSON.stringify({invite:reserved.invite_id,generation:reserved.generation,secret:syntheticSecret}));
+ }else if(input.mode==='send'){
   const svc=client(input.service);let reserved,delivered=0,syntheticSecret;
   const deps={reserve:async()=>reserved=await rpc(svc,'reserve_club_invite_send',input.args),claim:async op=>rpc(svc,'claim_club_invite_send',{p_operation_id:op}),send:async claim=>{assert.equal(claim.email,input.args.p_email);syntheticSecret=claim.secret;delivered++;return {result:'sent',failure:null}},finalize:async(op,g,r)=>rpc(svc,'finalize_club_invite_send',{p_operation_id:op,p_generation:g,p_result:r.result,p_failure_code:r.failure})};
   assert.deepEqual(await deliverClaimedInvitation(input.args.p_operation_id,deps),{status:'sent'});

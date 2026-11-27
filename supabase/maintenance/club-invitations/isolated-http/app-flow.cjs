@@ -10,11 +10,12 @@ const client=token=>createClient('http://local.invalid','synthetic-key',{global:
 async function rpc(db,name,args){const {data,error}=await db.rpc(name,args);if(error)throw Error('synthetic RPC failure');return data}
 (async()=>{
  if(input.mode==='send'){
-  const svc=client(input.service);let reserved,delivered=0;
-  const deps={reserve:async()=>reserved=await rpc(svc,'reserve_club_invite_send',input.args),claim:async op=>rpc(svc,'claim_club_invite_send',{p_operation_id:op}),send:async claim=>{assert.equal(claim.email,input.args.p_email);delivered++;return {result:'sent',failure:null}},finalize:async(op,g,r)=>rpc(svc,'finalize_club_invite_send',{p_operation_id:op,p_generation:g,p_result:r.result,p_failure_code:r.failure})};
+  const svc=client(input.service);let reserved,delivered=0,syntheticSecret;
+  const deps={reserve:async()=>reserved=await rpc(svc,'reserve_club_invite_send',input.args),claim:async op=>rpc(svc,'claim_club_invite_send',{p_operation_id:op}),send:async claim=>{assert.equal(claim.email,input.args.p_email);syntheticSecret=claim.secret;delivered++;return {result:'sent',failure:null}},finalize:async(op,g,r)=>rpc(svc,'finalize_club_invite_send',{p_operation_id:op,p_generation:g,p_result:r.result,p_failure_code:r.failure})};
   assert.deepEqual(await deliverClaimedInvitation(input.args.p_operation_id,deps),{status:'sent'});
   assert.deepEqual(await deliverClaimedInvitation(input.args.p_operation_id,deps),{status:'sent'});assert.equal(delivered,1);
-  console.log(JSON.stringify({invite:reserved.invite_id,generation:reserved.generation}));
+  // Captured only by the parent process in the disposable synthetic fixture.
+  console.log(JSON.stringify({invite:reserved.invite_id,generation:reserved.generation,secret:syntheticSecret}));
  }else{
   const db=client(input.token),other=client(input.other);const items=await listClubInvitations(db);const item=items.find(i=>i.invite_id===input.invite);assert(item);const p=await previewClubInvitation(db,item);
   await assert.rejects(previewClubInvitation(other,item));

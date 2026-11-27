@@ -19,7 +19,7 @@ export async function handleInviteDelivery(request:Request,deps:Dependencies){
   if(!body||typeof body!=='object'||typeof body.operationId!=='string'||!uuid.test(body.operationId))return inviteDeliveryReply('unavailable',400);
   const initial=body.mode==='initial',resend=body.mode==='manager'||body.mode==='recipient';
   if(!initial&&!resend)return inviteDeliveryReply('unavailable',400);
-  if(initial&&(typeof body.clubId!=='string'||!uuid.test(body.clubId)||typeof body.memberId!=='string'||!uuid.test(body.memberId)||typeof body.ticket!=='string'||!/^[0-9a-f]{64}$/.test(body.ticket)||typeof body.email!=='string'||!isSupportedInviteEmail(body.email)))return inviteDeliveryReply('unavailable',400);
+  if(initial&&(typeof body.clubId!=='string'||!uuid.test(body.clubId)||typeof body.memberId!=='string'||!uuid.test(body.memberId)||typeof body.ticket!=='string'||!/^[0-9a-f]{64}$/.test(body.ticket)||typeof body.email!=='string'||!isSupportedInviteEmail(body.email.trim())))return inviteDeliveryReply('unavailable',400);
   if(resend&&body.kind!==undefined&&body.kind!=='group_invite'&&body.kind!=='auth_confirmation')return inviteDeliveryReply('unavailable',400);
   if(resend&&(typeof body.inviteId!=='string'||!uuid.test(body.inviteId)||!Number.isSafeInteger(body.generation)||body.generation<1))return inviteDeliveryReply('unavailable',400);
   const {actor,rpc,send,sendConfirmation}=await deps.backend(request,origin);

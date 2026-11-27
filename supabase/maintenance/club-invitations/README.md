@@ -160,3 +160,12 @@ SQL候補04 commit `844f285fde08874cd9fb6006870e02ce6fa618f1`（レビューの�
 - 修正06の変更はsettings初期値/postflight、reserve 2本のquota拒否status、get_statusの集計範囲、注記のみ。6表/14 public RPC/30 private functions、引数/ACL/既存関数/lock/cleanup本文/統合/戦績は維持。原本ROLLBACK・送信OFF維持。
 - 既存 isolated-evidence/ のrunnerは旧修正05 SHA256に固定されており、修正06では意図的にhash不一致で停止する。過去の証跡を変更せず保存。Codexは新候補のhashをレビュー後に対応する試験runner/期待値を更新し、前回「匿名閾値NULL」の負例は試験用DBで明示NULL設定して確認する。新規初期10/3、両閾値境界/固定枠更新/並行/欠落IP、匿名応答中立、同一宛先で別group予約中の自group DTO不変とquota中立拒否、同group自身の状態表示、既存quotaと冪等性を重点検証。Worker IP偽装/secret非公開は実装時ゲート、cron schedule/owner/失敗再処理は別途設定承認後。実Auth/PostgREST・既存通常加入/復元等の残試験と統合し、変更のない過去PASSを無条件に再実行しない。
 - 修正06 parser/DB/HTTP実行未実施。正式SQL確定・アプリ実装・本番適用は引き続きNO-GO。新規Issue/PRなし、既存PR Draft維持。
+
+## 2026-11-27 招待メールの対応形式（候補・未適用）
+
+Issue #262の追加指定により、招待用はASCII dot-atomのローカル部とASCIIドメイン（Punycodeを含む）を使用する。SMTPUTF8を要するローカル部・quoted local・Unicodeドメインは対象外。既存の `normalize_email` と既存アカウント照合は変更せず、招待の確認・予約・再送前に別の `supported_delivery_email` で検査する。非対応入力は検索枠・送信枠に計上しない。過去に非対応形式で作られた招待があれば、その宛先への再送は拒否される。これは候補SQLの変更であり、過去の検証証跡は旧SHAの結果として維持し、新たなSQL/RLS独立レビューと必要な再検証が必要。
+
+- 04 SHA256 `e9e2e0caba1d3c0b895c1feb54fe0569a87ebb48695de42c5adfcb8631832989`
+- 05 SHA256 `0fa5f54a8bde06567b2608bb1e06b89008cf8739f71fbb1df383a1a3dfe7f7bf`
+- 09 SHA256 `a26b0e66466efb7a37ddb37ef33147dc11a84182d72489ba8d445b809de8239d`（08から再生成。正式適用承認ではない）
+- 配送・匿名再送はOFFのまま。本番・正式Stageへ適用しない。

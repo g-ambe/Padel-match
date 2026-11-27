@@ -39,3 +39,7 @@ PR #7209635919 / Issue #7209633037、証跡HEAD a0f4e6d58425491723fcdc062565ef2e
 - 過去H61 178_h61_release_package.py / 180_h61_production_release_runbook.md と同じ管理された手動リリース方式を推奨。番号は次回Codexの無料ローカル環境で Supabase CLI の version/helpを確認し、使い捨て未link workspace内の migration new task08_club_invitations で発番（既存番号を推測しない）。main/既存branch/open PR/承認済み対象履歴との衝突を確認し、最新履歴より後の日時版を固定。CLIで生成した空ファイルを本番へpushしない。正式SQLはmaintenance配下、既存履歴のrepair/過去migration再適用なし。
 - 08_release_package_DRAFT.py はオフラインで05の検証済みSHA256を固定、正式guard後にhistory表をSHARE ROW EXCLUSIVEでlock、全30件version/name一致・現行score依存11定義hashを確認してDDLを実行、postflight後に新1行をINSERT（version/name/実行SQL segments、自己登録文と外側BEGIN/COMMITを除く）、score定義と31件履歴を確認し同一COMMIT。失敗時はDDLと新履歴双方がrollbackする設計。生成器は未実行/独立未レビュー。実DBを識別するものではなく、並行DDL停止・対象接続検証・実バックアップは別ゲート。version/name完全一致は過去statements内容の検査ではない。ユーザー承認なしに歴史的ACL・関数を変更しない。
 - 最終追加試験はこの履歴登録差分と現行score経路のみ。Codexは既存isolated-http runnerを使用、0040–0043（依存と20261125010835を確認）を適切な順で隔離baselineへ追加し、現行score関数/権限/依存が実本番の確認済み定義に対応することを明記。既存RLSを緩めず実JWT/PostgRESTで保存→値/完了/operationsの確認・同じ操作ID再試行・別グループの連携との両方向競合/失敗時rollbackと再試行を代表1件。実scoreのbody一致が成立しない場合はBLOCKED/差分報告、旧直接更新を代用しない。隔離専用期待値・履歴は明示コピーでのみ変更。全履歴差・新version衝突/登録失敗・登録後postflight強制失敗でDDL/新履歴とも残らず、正常で30→31（ローカルはそのbaseline+1）・記録内容・既存30不変・再適用拒否。05原本・製品SQL/アプリは無変更。過去PASSは再試験不要。番号と生成結果を既存PRへ保存して独立レビュー、正式Migration確定の可否を報告。Stage/本番/実メール/実鍵/cron/merge/deploy禁止。新規不具合以外で試験範囲拡大しない。
+
+## 2026-11-27 形式検証の候補変更
+
+上記の過去SHA・PASSは当時の候補を示す。招待メール形式の修正後の正本・派生SHAは `README.md` の「招待メールの対応形式」を参照する。候補SQLの変更を伴うため、適用前に新ハッシュで隔離検証・独立レビューと既存の安全ゲートを再確認する。配送・匿名再送はOFFのままとし、実環境へ適用しない。
